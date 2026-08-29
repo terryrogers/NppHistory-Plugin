@@ -17,10 +17,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Add MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
 
       - name: Build plugin
         run: msbuild .\vs.proj\NppHistory.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
@@ -32,7 +32,7 @@ jobs:
         run: .\build\tests\NppHistory.Tests.exe
 
       - name: Upload plugin DLL
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: NppHistory-x64-${{ github.sha }}
           path: build/x64/Release/NppHistory.dll
