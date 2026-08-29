@@ -1,0 +1,19 @@
+# Visual Studio and build outputs
+.vs/
+build/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+
+# Local test and plugin state
+*.log
+*.tmp
+*.bak
+NppHistory.ini
+catalog.db
+.npphistory/
+
+# Windows
+Thumbs.db
+Desktop.ini

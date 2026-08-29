@@ -1,0 +1,6 @@
+#pragma once
+
+#define NPPHISTORY_VERSION_TEXT "0.2.0 beta 20"
+#define NPPHISTORY_VERSION_TEXT_W L"0.2.0 beta 20"
+#define NPPHISTORY_RELEASE_DATE ""
+#define NPPHISTORY_RELEASE_DATE_W L""

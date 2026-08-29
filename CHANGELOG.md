@@ -1,0 +1,188 @@
+# Changelog
+
+## 0.2.0-beta.20
+
+- Replaced the original compact core smoke test with separate utility, settings/policy, diff, history-store and history-catalog suites totaling 180 behavioural checks.
+- Added direct configuration-policy coverage for every Auto Save and History trigger, including exact timer boundaries and master-switch overrides.
+- Added invalid, Unicode, empty, duplicate, large-document, migration, ambiguity and failure-path coverage.
+- Fixed Unicode custom history paths being corrupted when Windows created or retained an ANSI INI file; Settings now migrates the INI to UTF-16 before saving.
+- Prevented restore, comment editing and deletion from accepting missing revision files.
+- Expanded the live Notepad++ test to verify General options and Auto Save/History dependent-control enablement.
+- Added a repeatable full-verification runner, function coverage matrix and detailed verification report.
+
+## 0.2.0-beta.19
+
+- Standardized the General, Auto Save and History pages to the same outer and inner spacing grid.
+- Balanced the vertical gap above the OK and Cancel buttons with the gap below them.
+- Aligned the bottom edges of each page's content panels and preserved identical OK and Cancel button dimensions.
+- Increased the Auto Save what panel's lower breathing room and matched it on the General and History pages.
+- Added rendered live Notepad++ verification of all three settings pages.
+
+## 0.2.0-beta.18
+
+- Changed the History-pane Revision Actions menu from left-click to the conventional right-click action.
+- Added distinct Delete and Edit artwork and icon-labelled all four Revision Actions commands.
+- Separated automatic saving from revision history with independent enable switches.
+- Added History controls for creating revisions before saves, after saves and before restores.
+- Tightened the History location panel and clarified its adjacent and common-folder choices.
+- Added persistence and live Notepad++ coverage for the independent Auto Save and History settings and the right-click menu.
+
+## 0.2.0-beta.17
+
+- Changed revision timestamps to use the current Windows user's short-date and short-time regional formats, including the computer's 12/24-hour preference.
+- Added locale-aware display of the embedded ISO release date in the About window while preserving an empty release date for unreleased builds.
+- Added core coverage for locale-aware release-date formatting.
+
+## 0.2.0-beta.16
+
+- Restored the complete bottom border around the Auto Save what group.
+- Renamed the History-pane Reason column to Comment and widened it while tightening the Time column.
+- Changed revision timestamps to compact `dd/MM/yyyy h:mtt` display formatting.
+- Added a left-click Revision Actions menu to every history item with Delete, Edit, Compare and Restore commands.
+- Added a compact Edit Revision Comment dialog that updates revision metadata without changing its captured content.
+- Added confirmed revision deletion and recalculation of duplicate-suppression state from the newest remaining revision.
+- Added core coverage for timestamp formatting, comment editing and deletion, plus live Notepad++ coverage for the Revision Actions popup.
+
+## 0.2.0-beta.15
+
+- Removed the grey rectangular backdrops behind labels, checkboxes and radio buttons on all Settings pages.
+- Reduced the Settings window and tightened the General, Auto Save and History layouts while retaining the same controls.
+- Changed the responsive History-pane layout to use one uniform button width across every visible row.
+- Added live runtime verification that all six History-pane buttons have identical widths.
+
+## 0.2.0-beta.14
+
+- Rebuilt Settings around General, Auto Save and History tabs.
+- Added autosave triggers for editing inactivity, Notepad++ losing focus, timed minute intervals, file-tab changes and Notepad++ exit, with current-file or all-open-files scope.
+- Added General > Toolbar options for optional Capture, Compare and Restore buttons on the main Notepad++ toolbar.
+- Added an Update settings placeholder with an enable option and daily, weekly or monthly frequency; update checking is intentionally not implemented yet.
+- Added distinct icons to all six responsive History-pane buttons and to the three optional main-toolbar commands.
+- Fixed the History-pane Capture button and made an explicit capture create a Manual capture revision even when its contents match the latest revision.
+- Centred the About heading, changed the author to a clickable Terry Rogers website link, and added a Release Date field.
+- Added a separately maintained release-date value to the DLL version resource; it remains blank until this beta receives a release date.
+- Extended native and runtime coverage for settings persistence, tabs, autosave controls, toolbar registration, pane icons, the About link and forced manual captures.
+
+## 0.2.0-beta.13
+
+- Centred the comparison, settings and About windows on the main Notepad++ window.
+- Made the comparison window shrink to the available Notepad++ size before centring so the main file-tab area remains visible on smaller windows.
+- Added the NppHistory icon to the dock registration and to the comparison, settings and About window captions.
+- Expanded the docked history pane to Capture, Refresh, Compare, Restore, Settings and About buttons.
+- Made pane buttons measure their labels, share available row width and wrap across additional rows as the pane narrows.
+- Changed Plugins > NppHistory to exactly Show History, Capture Now, Settings and About.
+- Added a native JSTool-inspired About dialog with the NppHistory icon, author, version, architecture, licence and summary.
+- Extended runtime validation with rendered panel and About screenshots plus checks for responsive rows, menu names, icons and window centring.
+
+## 0.2.0-beta.12
+
+- Replaced the unreliable common-controls toolbar hints with an independent hover popup for every visible command button.
+- Changed toolbar hit detection to use the buttons' displayed rectangles, fixing missing hints on the comparison toolbar.
+- Made the source-header status icon accurately distinguish equal files from different files using WinMerge's corresponding status artwork.
+- Corrected the runtime hover regression so it exercises the toolbar without passing invalid cross-process pointer data.
+
+## 0.2.0-beta.11
+
+- Fixed toolbar hover hints by assigning text directly to every native tooltip tool and retaining notification-based text as a fallback.
+- Added a runtime assertion that reads back the native tooltip-control text rather than only counting registered hover regions.
+- Double-buffered the Location Pane so scroll and difference-navigation updates are composed off-screen and displayed in one operation.
+- Stopped requesting background erasure for routine Location Pane updates, removing the visible erase-then-redraw flash.
+
+## 0.2.0-beta.10
+
+- Eliminated stale copied pixels during Location Pane collapse and resizing by using no-copy child positioning followed by an opaque full-window redraw.
+- Made the pane and overall status fields repaint opaque backgrounds so shorter status text cannot leave repeated characters behind.
+- Removed the three-line menu indicator from the left filename header and anchored a separately drawn indicator at the far right of the revision header.
+- Added WinMerge's different-text-file status icon immediately to the left of the current filename.
+- Added a unique multi-resolution NppHistory document/history icon to the native window caption.
+- Changed the window caption to include the current filename, revision timestamp and revision reason.
+- Changed Open so its revision picker is positioned immediately beneath the Open toolbar button; the right revision header continues to open the same picker beneath that header.
+- Extended the rendered runtime regression to capture the comparison after Location Pane collapse and verify the caption metadata and icon.
+
+## 0.2.0-beta.9
+
+- Restored the Current Difference toolbar command between First and Last Difference.
+- Made Current Difference return both panes to the already-selected difference after manual scrolling, without changing the selection.
+- Added a runtime regression check confirming that the command re-centres the panes while the Location Pane remains stable and toolbar hints continue working.
+
+## 0.2.0-beta.8
+
+- Replaced the custom title strip and window buttons with the standard Windows caption, minimize, maximize/restore and close controls.
+- Removed the File, Edit, View, Merge and other decorative menu labels, plus the duplicate file-comparison tab.
+- Reduced the toolbar to the commands applicable to read-only history comparison: revision selection, difference navigation, revision navigation, options and refresh.
+- Removed the ambiguous Current Difference command that could trigger Location Pane flicker and interrupt toolbar hints.
+- Changed both pane headers to show concise source filenames; the revision header also shows its capture time and reason without exposing an internal history path.
+- Made Location Pane closure a single redraw-safe layout operation so the headers, editors and status fields resize together without stale or overlapping UI.
+- Extended the runtime test to verify the native window frame, concise headers, reduced toolbar hints and Location Pane collapse geometry.
+
+## 0.2.0-beta.7
+
+- Removed the synthetic `Current ↔ History` tab; the title strip now contains only the active file comparison tab.
+- Made double-clicking the comparison tab strip or either file header maximize or restore the window.
+- Added tooltip hints for every toolbar command, including explanations for disabled read-only merge actions.
+- Wired Open to revision selection and Select/Next/Previous/First/Current/Last Difference to navigation.
+- Wired First/Previous/Next/Last File to revision navigation.
+- Wired Options to the whitespace, blank-line, case and line-ending comparison filters.
+- Disabled the unsupported New command instead of leaving an enabled no-op button.
+- Extended the runtime test to verify the single tab, maximize/restore behavior, tooltip registration and revision-toolbar navigation.
+
+## 0.2.0-beta.6
+
+- Replaced the previous NppHistory-specific comparison layout with the WinMerge frame as the sole visual specification.
+- Added the WinMerge-style tab/title band, menu row, original toolbar artwork and command ordering.
+- Matched the Location Pane, paired rounded file headers, two editor panes, independent synchronized scrollbars, pane status fields and overall difference counter.
+- Removed the visible revision dropdown, comparison-option strip, centre scrollbar, marker lanes, legend and Close button.
+- Made the right file header open the revision picker while keeping the header visually consistent with WinMerge.
+- Kept history comparison read-only and disabled toolbar commands that would write or merge content.
+- Corrected plain-text files being syntax-coloured as C/C++ after apostrophes.
+- Added stronger WinMerge-style inline word-difference fills.
+
+## 0.2.0-beta.5
+
+- Replaced the RichEdit comparison controls with native Scintilla panes.
+- Added a WinMerge-style two-column Location Pane with proportional difference blocks, visible-area outlines, and click-to-navigate behavior.
+- Added blue-grey file headers above both panes and file information status bars below them.
+- Added native line-number margins, horizontal scrolling, synchronized caret/scroll updates, and syntax-colored comments, keywords, strings, and numbers.
+- Adopted WinMerge's gold, grey, and selected-red line palette plus stronger inline word-difference indicators.
+- Retained the shared centre scrollbar and red, green, and blue difference markers requested for NppHistory.
+- Updated the runtime test to verify native Scintilla line-number margins.
+
+## 0.2.0-beta.4
+
+- Rebuilt the comparison window as a native WinMerge-inspired, read-only viewer.
+- Added original line-number gutters and blank placeholders for vertically aligned rows.
+- Added character-level highlighting within paired changed lines.
+- Added Previous and Next navigation with a difference-group counter.
+- Added red, green, and blue visible-row dots and full-document location ticks.
+- Made the marker lanes clickable for direct navigation.
+- Added options to ignore whitespace, blank-line-only changes, case, and line endings.
+- Retained the shared centre scrollbar for synchronized vertical navigation.
+
+## 0.2.0-beta.3
+
+- Fixed inserted lines beside repeated blank lines causing identical later lines to be shown as changed.
+- Enlarged the red change dots and aligned them directly with visible highlighted rows.
+- Made the marker lanes refresh whenever the synchronized comparison view scrolls.
+
+## 0.2.0-beta.2
+
+- Replaced the two comparison-pane vertical scrollbars with one central scrollbar.
+- Made the centre scrollbar and mouse wheel keep both comparison panes on the same line.
+- Added proportional red change markers immediately to the left and right of the centre scrollbar.
+- Left-side markers identify current-side removals and changes; right-side markers identify revision-side additions and changes.
+
+## 0.2.0-beta.1
+
+- Changed the default storage to a hidden `.npphistory` folder beside each text file.
+- Added a configurable common history root.
+- Added the persistent `catalog.db` file/location catalogue.
+- Added automatic history relocation for Notepad++ renames and content-matched external moves.
+- Added missing-file detection and warnings when the recorded history cannot be located.
+- Replaced the unified comparison with a synchronized side-by-side view.
+- Added a revision dropdown and red, green, and blue line highlighting.
+
+## 0.1.0-beta.1
+
+- First beta.
+- Added pre-save and post-save revision capture with duplicate suppression.
+- Added configurable after-edit and periodic autosave modes.
+- Added dockable history list, unified diff, guarded restore, and manual capture.

@@ -1,0 +1,760 @@
+param(
+    [string]$NotepadExe = "C:\Program Files\Notepad++\notepad++.exe",
+    [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll"
+)
+
+$ErrorActionPreference = 'Stop'
+$testRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\build\runtime-autosave-test'))
+[IO.Directory]::CreateDirectory($testRoot) | Out-Null
+[IO.File]::WriteAllText((Join-Path $testRoot 'doLocalConf.xml'), '<!-- isolated portable test -->')
+$notePath = Join-Path $testRoot ("test-note-{0}.txt" -f [Guid]::NewGuid().ToString('N'))
+$initialText = "common line`r`nrevision only`r`nanchor line`r`nold wording`r`n"
+$initialText += (1..120 | ForEach-Object { "unchanged line {0:D3}`r`n" -f $_ }) -join ''
+[IO.File]::WriteAllText($notePath, $initialText)
+Copy-Item -LiteralPath $NotepadExe -Destination (Join-Path $testRoot 'notepad++.exe') -Force
+Copy-Item -Path (Join-Path (Split-Path $NotepadExe) '*.xml') -Destination $testRoot -Force
+
+$pluginFolder = Join-Path $testRoot 'plugins\NppHistory'
+$configFolder = Join-Path $testRoot 'plugins\Config\NppHistory'
+[IO.Directory]::CreateDirectory($pluginFolder) | Out-Null
+[IO.Directory]::CreateDirectory($configFolder) | Out-Null
+Copy-Item -LiteralPath $PluginDll -Destination (Join-Path $pluginFolder 'NppHistory.dll') -Force
+[IO.File]::WriteAllText((Join-Path $configFolder 'NppHistory.ini'), @"
+[NppHistory]
+AutoSaveEnabled=1
+Mode=0
+AutoSaveAfterEdit=1
+AfterEditSeconds=10
+PeriodicSeconds=300
+AutoSaveOnFocusLoss=0
+AutoSaveAtIntervals=0
+IntervalMinutes=10
+AutoSaveOnTabChange=0
+AutoSaveOnExit=0
+AutoSaveScope=1
+ToolbarCapture=1
+ToolbarCompare=1
+ToolbarRestore=1
+AutoUpdateEnabled=0
+UpdateFrequency=1
+HistoryEnabled=1
+HistoryBeforeSave=1
+HistoryAfterSave=1
+HistoryBeforeRestore=1
+"@)
+
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+public static class NppHistoryNative {
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+    private delegate bool EnumProc(IntPtr window, IntPtr state);
+    [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr state);
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr state);
+    [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetClassName(IntPtr window, StringBuilder name, int length);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int length);
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, EntryPoint="SendMessageW")]
+    private static extern IntPtr SendMessageText(IntPtr window, uint message, IntPtr wParam, StringBuilder text);
+    [DllImport("user32.dll", EntryPoint="SendMessageW")]
+    private static extern IntPtr SendMessagePoint(IntPtr window, uint message, IntPtr wParam, ref POINT point);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool UpdateWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr window);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr GetProp(IntPtr window, string name);
+    [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
+    [DllImport("user32.dll")] public static extern bool RedrawWindow(IntPtr window, IntPtr updateRect, IntPtr updateRegion, uint flags);
+    [DllImport("user32.dll")] private static extern IntPtr GetMenu(IntPtr window);
+    [DllImport("user32.dll")] private static extern IntPtr GetSubMenu(IntPtr menu, int position);
+    [DllImport("user32.dll")] private static extern int GetMenuItemCount(IntPtr menu);
+    [DllImport("user32.dll")] private static extern uint GetMenuItemID(IntPtr menu, int position);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetMenuString(IntPtr menu, uint item, StringBuilder text, int length, uint flags);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string title);
+    [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
+    [DllImport("user32.dll")] public static extern IntPtr GetParent(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out RECT rectangle);
+    [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref POINT point);
+    [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
+    public static IntPtr FindDescendant(IntPtr parent, string className) {
+        IntPtr result = IntPtr.Zero;
+        EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
+            var name = new StringBuilder(128);
+            GetClassName(window, name, name.Capacity);
+            if (name.ToString() == className) { result = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+    public static IntPtr FindScintillaWithContent(IntPtr parent) {
+        IntPtr result = IntPtr.Zero;
+        EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
+            var name = new StringBuilder(128);
+            GetClassName(window, name, name.Capacity);
+            if (name.ToString() == "Scintilla" && SendMessage(window, 2006, IntPtr.Zero, IntPtr.Zero).ToInt64() > 0) {
+                result = window;
+                return false;
+            }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+    public static IntPtr FindControl(IntPtr parent, int id) {
+        IntPtr result = IntPtr.Zero;
+        EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
+            if (GetDlgCtrlID(window) == id) { result = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+    public static IntPtr FindControlByText(IntPtr parent, string className, string text) {
+        IntPtr result = IntPtr.Zero;
+        EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
+            var actualClass = new StringBuilder(128);
+            var actualText = new StringBuilder(256);
+            GetClassName(window, actualClass, actualClass.Capacity);
+            GetWindowText(window, actualText, actualText.Capacity);
+            if (actualClass.ToString() == className && actualText.ToString() == text) { result = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+    public static string Describe(IntPtr window) {
+        if (window == IntPtr.Zero) return "zero";
+        var actualClass = new StringBuilder(128);
+        var actualText = new StringBuilder(256);
+        GetClassName(window, actualClass, actualClass.Capacity);
+        GetWindowText(window, actualText, actualText.Capacity);
+        return actualClass + "|" + actualText + "|" + GetDlgCtrlID(window);
+    }
+    public static string Text(IntPtr window) {
+        int length = SendMessage(window, 0x000E, IntPtr.Zero, IntPtr.Zero).ToInt32();
+        var value = new StringBuilder(length + 1);
+        SendMessageText(window, 0x000D, (IntPtr)value.Capacity, value);
+        return value.ToString();
+    }
+    public static POINT EditScroll(IntPtr window) {
+        POINT point = new POINT();
+        SendMessagePoint(window, 0x04DD, IntPtr.Zero, ref point); // EM_GETSCROLLPOS
+        return point;
+    }
+    public static void SetEditScroll(IntPtr window, int x, int y) {
+        POINT point = new POINT();
+        point.X = x; point.Y = y;
+        SendMessagePoint(window, 0x04DE, IntPtr.Zero, ref point); // EM_SETSCROLLPOS
+    }
+    public static void BeginCommand(IntPtr parent, int command, IntPtr control) {
+        var thread = new Thread(delegate() { SendMessage(parent, 0x0111, (IntPtr)command, control); });
+        thread.IsBackground = true;
+        thread.Start();
+    }
+    public static void BeginLeftClick(IntPtr window, int x, int y) {
+        POINT screen = new POINT(); screen.X = x; screen.Y = y;
+        ClientToScreen(window, ref screen);
+        SetCursorPos(screen.X, screen.Y);
+        IntPtr point = (IntPtr)((y << 16) | (x & 0xffff));
+        PostMessage(window, 0x0201, (IntPtr)1, point);
+        PostMessage(window, 0x0202, IntPtr.Zero, point);
+    }
+    public static void BeginRightClick(IntPtr window, int x, int y) {
+        POINT screen = new POINT(); screen.X = x; screen.Y = y;
+        ClientToScreen(window, ref screen);
+        SetCursorPos(screen.X, screen.Y);
+        IntPtr point = (IntPtr)((y << 16) | (x & 0xffff));
+        PostMessage(window, 0x0204, (IntPtr)2, point);
+        PostMessage(window, 0x0205, IntPtr.Zero, point);
+    }
+    public static string TopWindows(uint processId) {
+        var result = new StringBuilder();
+        EnumWindows(delegate(IntPtr window, IntPtr state) {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            if (owner == processId) result.Append(Describe(window)).Append(";");
+            return true;
+        }, IntPtr.Zero);
+        return result.ToString();
+    }
+    public static IntPtr FindTopWindowContaining(uint processId, string titlePart) {
+        IntPtr result = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr window, IntPtr state) {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            var title = new StringBuilder(256);
+            GetWindowText(window, title, title.Capacity);
+            if (owner == processId && title.ToString().Contains(titlePart)) { result = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
+    private static int FindMenuCommandIn(IntPtr menu, string text) {
+        int count = GetMenuItemCount(menu);
+        for (int index = 0; index < count; index++) {
+            IntPtr child = GetSubMenu(menu, index);
+            if (child != IntPtr.Zero) {
+                int nested = FindMenuCommandIn(child, text);
+                if (nested != 0) return nested;
+            }
+            var label = new StringBuilder(256);
+            GetMenuString(menu, (uint)index, label, label.Capacity, 0x400);
+            if (label.ToString().Replace("&", "") == text) return unchecked((int)GetMenuItemID(menu, index));
+        }
+        return 0;
+    }
+    private static IntPtr FindNamedSubMenu(IntPtr menu, string text) {
+        int count = GetMenuItemCount(menu);
+        for (int index = 0; index < count; index++) {
+            IntPtr child = GetSubMenu(menu, index);
+            var label = new StringBuilder(256);
+            GetMenuString(menu, (uint)index, label, label.Capacity, 0x400);
+            if (child != IntPtr.Zero && label.ToString().Replace("&", "") == text) return child;
+            if (child != IntPtr.Zero) {
+                IntPtr nested = FindNamedSubMenu(child, text);
+                if (nested != IntPtr.Zero) return nested;
+            }
+        }
+        return IntPtr.Zero;
+    }
+    public static int FindMenuCommand(IntPtr window, string text) { return FindMenuCommandIn(GetMenu(window), text); }
+    public static int FindPluginMenuCommand(IntPtr window, string plugin, string text) {
+        IntPtr pluginMenu = FindNamedSubMenu(GetMenu(window), plugin);
+        return pluginMenu == IntPtr.Zero ? 0 : FindMenuCommandIn(pluginMenu, text);
+    }
+}
+'@
+
+$process = Start-Process -FilePath (Join-Path $testRoot 'notepad++.exe') -ArgumentList '-multiInst','-nosession',$notePath -PassThru -WindowStyle Hidden
+try {
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    $editor = [IntPtr]::Zero
+    while ([DateTime]::UtcNow -lt $deadline -and $editor -eq [IntPtr]::Zero) {
+        Start-Sleep -Milliseconds 250
+        $process.Refresh()
+        $editor = [NppHistoryNative]::FindScintillaWithContent($process.MainWindowHandle)
+    }
+    if ($editor -eq [IntPtr]::Zero) { throw 'Could not find the active Scintilla editor.' }
+
+    $lengthBefore = [NppHistoryNative]::SendMessage($editor, 2006, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+    [void][NppHistoryNative]::SendMessage($editor, 2160, [IntPtr]13, [IntPtr]28) # SCI_SETSEL: revision-only line
+    [void][NppHistoryNative]::SendMessage($editor, 2180, [IntPtr]::Zero, [IntPtr]::Zero) # SCI_CLEAR
+    [void][NppHistoryNative]::SendMessage($editor, 2160, [IntPtr]26, [IntPtr]37) # SCI_SETSEL: old wording
+    foreach ($character in "new wording".ToCharArray()) {
+        [void][NppHistoryNative]::SendMessage($editor, 0x0102, [IntPtr][int]$character, [IntPtr]::Zero) # WM_CHAR
+    }
+    [void][NppHistoryNative]::SendMessage($editor, 2025, [IntPtr]39, [IntPtr]::Zero) # SCI_GOTOPOS
+    foreach ($character in "current only".ToCharArray()) {
+        [void][NppHistoryNative]::SendMessage($editor, 0x0102, [IntPtr][int]$character, [IntPtr]::Zero) # WM_CHAR
+    }
+    [void][NppHistoryNative]::SendMessage($editor, 2329, [IntPtr]::Zero, [IntPtr]::Zero) # SCI_NEWLINE
+    [void][NppHistoryNative]::SendMessage($editor, 2160, [IntPtr]1233, [IntPtr]1251) # line 060
+    foreach ($character in "changed middle 060".ToCharArray()) {
+        [void][NppHistoryNative]::SendMessage($editor, 0x0102, [IntPtr][int]$character, [IntPtr]::Zero)
+    }
+    [void][NppHistoryNative]::SendMessage($editor, 2160, [IntPtr]2033, [IntPtr]2053) # remove line 100
+    [void][NppHistoryNative]::SendMessage($editor, 2180, [IntPtr]::Zero, [IntPtr]::Zero) # SCI_CLEAR
+
+    $lengthAfter = [NppHistoryNative]::SendMessage($editor, 2006, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+    $modifiedAfter = [NppHistoryNative]::SendMessage($editor, 2159, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+    Start-Sleep -Seconds 12
+    $savedText = [IO.File]::ReadAllText($notePath)
+    $normalizedNotePath = [IO.Path]::GetFullPath($notePath).ToLowerInvariant()
+    $adjacentHistoryRoot = Join-Path $testRoot '.npphistory'
+    $pathMarker = Get-ChildItem $adjacentHistoryRoot -Filter path.txt -Recurse -ErrorAction Stop |
+        Where-Object { [IO.File]::ReadAllText($_.FullName) -eq $normalizedNotePath } |
+        Select-Object -First 1
+    $revisions = @()
+    $metadataText = ''
+    if ($pathMarker) {
+        $revisions = @(Get-ChildItem $pathMarker.DirectoryName -Filter *.rev)
+        $metadataText = (Get-ChildItem $pathMarker.DirectoryName -Filter *.meta | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+    }
+    $reasonsCaptured = $metadataText.Contains('reason=Before save') -and $metadataText.Contains('reason=Saved')
+    $historyAttributes = [IO.File]::GetAttributes($adjacentHistoryRoot)
+    $hiddenHistoryRoot = ($historyAttributes -band [IO.FileAttributes]::Hidden) -ne 0
+
+    $showHistoryCommand = [NppHistoryNative]::FindPluginMenuCommand($process.MainWindowHandle, 'NppHistory', 'Show History')
+    $captureMenuCommand = [NppHistoryNative]::FindPluginMenuCommand($process.MainWindowHandle, 'NppHistory', 'Capture Now')
+    $settingsMenuCommand = [NppHistoryNative]::FindPluginMenuCommand($process.MainWindowHandle, 'NppHistory', 'Settings')
+    $aboutMenuCommand = [NppHistoryNative]::FindPluginMenuCommand($process.MainWindowHandle, 'NppHistory', 'About')
+    $pluginMenuPassed = $showHistoryCommand -ne 0 -and $captureMenuCommand -ne 0 -and
+        $settingsMenuCommand -ne 0 -and $aboutMenuCommand -ne 0 -and
+        [NppHistoryNative]::FindPluginMenuCommand($process.MainWindowHandle, 'NppHistory', 'Capture Revision Now') -eq 0 -and
+        [NppHistoryNative]::FindPluginMenuCommand($process.MainWindowHandle, 'NppHistory', 'Settings...') -eq 0 -and
+        [NppHistoryNative]::FindPluginMenuCommand($process.MainWindowHandle, 'NppHistory', 'About NppHistory') -eq 0
+    if ($showHistoryCommand -ne 0) {
+        [void][NppHistoryNative]::SendMessage($process.MainWindowHandle, 0x0111, [IntPtr]$showHistoryCommand, [IntPtr]::Zero)
+    }
+    Start-Sleep -Milliseconds 500
+    $compareButton = [NppHistoryNative]::FindControlByText($process.MainWindowHandle, 'Button', 'Compare')
+    $historyPanel = [NppHistoryNative]::GetParent($compareButton)
+    $historyList = [NppHistoryNative]::FindControl($historyPanel, 1002)
+    $panelButtonLabels = @('Capture','Refresh','Compare','Restore','Settings','About')
+    $panelButtonIds = @(1006,1003,1004,1005,1007,1008)
+    $panelButtonsPassed = $historyPanel -ne [IntPtr]::Zero
+    $panelButtonWidths = @()
+    for ($buttonIndex = 0; $buttonIndex -lt $panelButtonIds.Count; $buttonIndex++) {
+        $button = [NppHistoryNative]::FindControl($historyPanel, $panelButtonIds[$buttonIndex])
+        $panelButtonsPassed = $panelButtonsPassed -and $button -ne [IntPtr]::Zero -and
+            [NppHistoryNative]::Text($button) -eq $panelButtonLabels[$buttonIndex]
+        $bounds = [NppHistoryNative+RECT]::new()
+        if ($button -ne [IntPtr]::Zero -and [NppHistoryNative]::GetWindowRect($button, [ref]$bounds)) {
+            $panelButtonWidths += $bounds.Right - $bounds.Left
+        }
+    }
+    $panelButtonWidthsPassed = $panelButtonWidths.Count -eq $panelButtonIds.Count -and
+        (@($panelButtonWidths | Select-Object -Unique).Count -eq 1)
+    $dockIconPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryDockIconReady') -ne [IntPtr]::Zero
+    $responsiveButtonsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryResponsiveButtonRows').ToInt64() -ge 1
+    $panelButtonIconsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryPanelButtonIconsReady') -ne [IntPtr]::Zero
+    [NppHistoryNative]::BeginRightClick($historyList, 10, 35)
+    Start-Sleep -Milliseconds 350
+    $revisionActionsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryRevisionActionsReady').ToInt64() -eq 5
+    [void][NppHistoryNative]::PostMessage($historyPanel, 0x001F, [IntPtr]::Zero, [IntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
+    $mainToolbarButtonsRegistered = [NppHistoryNative]::GetProp($process.MainWindowHandle, 'NppHistoryToolbarButtonsRegistered').ToInt64() - 1
+    $captureButtonPassed = $false
+    $captureButton = [NppHistoryNative]::FindControl($historyPanel, 1006)
+    $historyListCount = if ($historyList -ne [IntPtr]::Zero) {
+        [NppHistoryNative]::SendMessage($historyList, 0x1004, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+    } else { -1 }
+    $historyPanelScreenshot = Join-Path $testRoot 'history-panel.png'
+    Add-Type -AssemblyName System.Drawing
+    $mainCaptureRectangle = [NppHistoryNative+RECT]::new()
+    if ([NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$mainCaptureRectangle)) {
+        $bitmap = [Drawing.Bitmap]::new($mainCaptureRectangle.Right - $mainCaptureRectangle.Left, $mainCaptureRectangle.Bottom - $mainCaptureRectangle.Top)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        $deviceContext = $graphics.GetHdc()
+        try { [void][NppHistoryNative]::PrintWindow($process.MainWindowHandle, $deviceContext, 2) }
+        finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+        $bitmap.Save($historyPanelScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+        $bitmap.Dispose()
+    }
+    if ($compareButton -ne [IntPtr]::Zero) {
+        [NppHistoryNative]::BeginCommand([NppHistoryNative]::GetParent($compareButton), 1004, $compareButton)
+    }
+    $compareDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    $compareWindow = [IntPtr]::Zero
+    while ([DateTime]::UtcNow -lt $compareDeadline -and $compareWindow -eq [IntPtr]::Zero) {
+        Start-Sleep -Milliseconds 100
+        $compareWindow = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, ([string][char]0x2014 + ' NppHistory'))
+    }
+    $compareErrorWindow = if ($compareWindow -eq [IntPtr]::Zero) { [NppHistoryNative]::FindWindow($null, 'NppHistory') } else { [IntPtr]::Zero }
+    $leftComparison = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1021) } else { [IntPtr]::Zero }
+    $rightComparison = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1022) } else { [IntPtr]::Zero }
+    $revisionSelector = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1023) } else { [IntPtr]::Zero }
+    $leftMarkers = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1026) } else { [IntPtr]::Zero }
+    $centreScrollbar = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1027) } else { [IntPtr]::Zero }
+    $rightMarkers = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1028) } else { [IntPtr]::Zero }
+    $previousDifference = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1029) } else { [IntPtr]::Zero }
+    $nextDifference = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1030) } else { [IntPtr]::Zero }
+    $differenceStatus = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1031) } else { [IntPtr]::Zero }
+    $ignoreWhitespace = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1032) } else { [IntPtr]::Zero }
+    $ignoreBlank = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1033) } else { [IntPtr]::Zero }
+    $ignoreCase = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1034) } else { [IntPtr]::Zero }
+    $ignoreEol = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1035) } else { [IntPtr]::Zero }
+    $locationPane = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1037) } else { [IntPtr]::Zero }
+    $leftHeader = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1038) } else { [IntPtr]::Zero }
+    $rightHeader = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1039) } else { [IntPtr]::Zero }
+    $leftStatus = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1040) } else { [IntPtr]::Zero }
+    $rightStatus = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1041) } else { [IntPtr]::Zero }
+    $comparisonToolbar = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1043) } else { [IntPtr]::Zero }
+    $locationClose = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1052) } else { [IntPtr]::Zero }
+    $overallStatus = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::FindControl($compareWindow, 1053) } else { [IntPtr]::Zero }
+    $revisionChoiceCount = if ($revisionSelector -ne [IntPtr]::Zero) {
+        [NppHistoryNative]::SendMessage($revisionSelector, 0x0146, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+    } else { 0 }
+    $toolbarButtonCount = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::SendMessage($comparisonToolbar, 0x0418, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() } else { 0 }
+    $toolbarTooltip = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::SendMessage($comparisonToolbar, 0x0423, [IntPtr]::Zero, [IntPtr]::Zero) } else { [IntPtr]::Zero } # TB_GETTOOLTIPS
+    $hoverTooltip = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::GetProp($comparisonToolbar, 'NppHistoryHoverTooltip') } else { [IntPtr]::Zero }
+    $tooltipToolCount = if ($toolbarTooltip -ne [IntPtr]::Zero) { [NppHistoryNative]::SendMessage($toolbarTooltip, 0x040D, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() } else { 0 } # TTM_GETTOOLCOUNT
+    $allToolbarHintsRegistered = $true
+    $tooltipTextPassed = $compareWindow -ne [IntPtr]::Zero -and [NppHistoryNative]::GetProp($compareWindow, 'NppHistoryToolbarTooltipsReady') -ne [IntPtr]::Zero
+    $allToolbarHintsRegistered = $tooltipTextPassed
+    $windowStyle = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::GetWindowLongPtr($compareWindow, -16).ToInt64() } else { 0 }
+    $standardWindowFrame = ($windowStyle -band 0x00C00000) -eq 0x00C00000 -and ($windowStyle -band 0x00080000) -ne 0 -and ($windowStyle -band 0x00020000) -ne 0 -and ($windowStyle -band 0x00010000) -ne 0
+    $captionText = [NppHistoryNative]::Text($compareWindow)
+    $captionIcon = if ($compareWindow -ne [IntPtr]::Zero) { [NppHistoryNative]::SendMessage($compareWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero) } else { [IntPtr]::Zero } # WM_GETICON/ICON_SMALL
+    $headerLabelsPassed = ([NppHistoryNative]::Text($leftHeader) -match '^test-note-.*\.txt$') -and ([NppHistoryNative]::Text($rightHeader) -match '^test-note-.*\.txt') -and -not ([NppHistoryNative]::Text($leftHeader).Contains([char]0x2261)) -and -not ([NppHistoryNative]::Text($rightHeader).Contains([char]0x2261)) -and -not ([NppHistoryNative]::Text($rightHeader).Contains('.npphistory')) -and $captionText.Contains([IO.Path]::GetFileName($notePath)) -and ($captionText -match ' - (Saved|Before save) ') -and $captionIcon -ne [IntPtr]::Zero
+    $winMergeFramePresent = $locationPane -ne [IntPtr]::Zero -and $leftHeader -ne [IntPtr]::Zero -and $rightHeader -ne [IntPtr]::Zero -and $leftStatus -ne [IntPtr]::Zero -and $rightStatus -ne [IntPtr]::Zero -and $comparisonToolbar -ne [IntPtr]::Zero -and $overallStatus -ne [IntPtr]::Zero -and $toolbarButtonCount -ge 12 -and $toolbarButtonCount -le 16 -and $standardWindowFrame -and $headerLabelsPassed
+    $comparisonOpened = $leftComparison -ne [IntPtr]::Zero -and $rightComparison -ne [IntPtr]::Zero -and $revisionChoiceCount -eq 2 -and $winMergeFramePresent
+    $comparisonCentered = $false
+    $comparisonCenterDelta = ''
+    if ($comparisonOpened) {
+        $mainRectangle = [NppHistoryNative+RECT]::new()
+        $compareRectangle = [NppHistoryNative+RECT]::new()
+        [void][NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$mainRectangle)
+        [void][NppHistoryNative]::GetWindowRect($compareWindow, [ref]$compareRectangle)
+        $comparisonCentered = [Math]::Abs(($mainRectangle.Left + $mainRectangle.Right) - ($compareRectangle.Left + $compareRectangle.Right)) -le 12 -and
+            [Math]::Abs(($mainRectangle.Top + $mainRectangle.Bottom) - ($compareRectangle.Top + $compareRectangle.Bottom)) -le 12
+        $comparisonCenterDelta = "x=$([Math]::Abs(($mainRectangle.Left + $mainRectangle.Right) - ($compareRectangle.Left + $compareRectangle.Right))) y=$([Math]::Abs(($mainRectangle.Top + $mainRectangle.Bottom) - ($compareRectangle.Top + $compareRectangle.Bottom))) main=$($mainRectangle.Left),$($mainRectangle.Top),$($mainRectangle.Right),$($mainRectangle.Bottom) compare=$($compareRectangle.Left),$($compareRectangle.Top),$($compareRectangle.Right),$($compareRectangle.Bottom)"
+    }
+    $headerDoubleClickPassed = $false
+    if ($comparisonOpened) {
+        [void][NppHistoryNative]::SendMessage($leftHeader, 0x0203, [IntPtr]::Zero, [IntPtr]::Zero) # WM_LBUTTONDBLCLK
+        Start-Sleep -Milliseconds 100
+        $maximized = [NppHistoryNative]::IsZoomed($compareWindow)
+        [void][NppHistoryNative]::SendMessage($leftHeader, 0x0203, [IntPtr]::Zero, [IntPtr]::Zero)
+        Start-Sleep -Milliseconds 100
+        $restored = -not [NppHistoryNative]::IsZoomed($compareWindow)
+        $headerDoubleClickPassed = $maximized -and $restored
+    }
+    $tooltipHoverPassed = $false
+    $tooltipHoverText = ''
+    if ($comparisonOpened -and $hoverTooltip -ne [IntPtr]::Zero) {
+        # The first visible toolbar button occupies the first 37 x 34 client pixels.
+        $hoverPosition = [IntPtr](18 -bor (17 -shl 16))
+        [void][NppHistoryNative]::SendMessage($comparisonToolbar, 0x0200, [IntPtr]::Zero, $hoverPosition) # WM_MOUSEMOVE
+        $tooltipHoverText = [NppHistoryNative]::Text($hoverTooltip)
+        $tooltipHoverPassed = $tooltipHoverText.Contains('Choose revision') -and [NppHistoryNative]::GetProp($comparisonToolbar, 'NppHistoryHoverShown') -ne [IntPtr]::Zero
+        [void][NppHistoryNative]::SendMessage($comparisonToolbar, 0x02A3, [IntPtr]::Zero, [IntPtr]::Zero) # WM_MOUSELEAVE
+    }
+    if ($comparisonOpened) {
+        [void][NppHistoryNative]::SendMessage($revisionSelector, 0x014E, [IntPtr]1, [IntPtr]::Zero) # CB_SETCURSEL
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]66559, $revisionSelector) # CBN_SELCHANGE + control ID
+        Start-Sleep -Milliseconds 200
+    }
+    $lineNumbersRendered = $comparisonOpened -and [NppHistoryNative]::SendMessage($leftComparison, 2243, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -gt 0 # SCI_GETMARGINWIDTHN
+    $differenceNavigationPassed = $false
+    $currentDifferencePassed = $false
+    $currentDifferenceTop = -1
+    $tooltipToolCountAfterCurrent = -1
+    $locationVisibleAfterCurrent = $false
+    $revisionToolbarNavigationPassed = $false
+    $comparisonOptionsPassed = $false
+    if ($comparisonOpened) {
+        $beforeNavigation = [NppHistoryNative]::Describe($differenceStatus)
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3006, $comparisonToolbar)
+        Start-Sleep -Milliseconds 100
+        $afterNavigation = [NppHistoryNative]::Describe($differenceStatus)
+        $differenceNavigationPassed = $beforeNavigation.Contains('Difference 1 of') -and $afterNavigation.Contains('Difference 2 of')
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3012, $comparisonToolbar) # last difference
+        $selectedBeforeCurrent = [NppHistoryNative]::Describe($differenceStatus)
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0115, [IntPtr]6, $centreScrollbar) # SB_TOP
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3011, $comparisonToolbar) # current difference
+        Start-Sleep -Milliseconds 100
+        $currentDifferenceTop = [NppHistoryNative]::SendMessage($leftComparison, 2152, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+        $selectedAfterCurrent = [NppHistoryNative]::Describe($differenceStatus)
+        $tooltipToolCountAfterCurrent = if ([NppHistoryNative]::GetProp($comparisonToolbar, 'NppHistoryHoverTooltip') -ne [IntPtr]::Zero) { 1 } else { 0 }
+        $locationVisibleAfterCurrent = [NppHistoryNative]::IsWindowVisible($locationPane)
+        $currentDifferencePassed = $currentDifferenceTop -gt 0 -and $selectedAfterCurrent -eq $selectedBeforeCurrent -and $locationVisibleAfterCurrent -and $tooltipToolCountAfterCurrent -ge 1
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3020, $comparisonToolbar) # first revision
+        $firstRevision = [NppHistoryNative]::SendMessage($revisionSelector, 0x0147, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() # CB_GETCURSEL
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3023, $comparisonToolbar) # last revision
+        $lastRevision = [NppHistoryNative]::SendMessage($revisionSelector, 0x0147, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+        $revisionToolbarNavigationPassed = $firstRevision -eq 0 -and $lastRevision -eq 1
+        [void][NppHistoryNative]::SendMessage($ignoreWhitespace, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) # BM_CLICK
+        $checked = [NppHistoryNative]::SendMessage($ignoreWhitespace, 0x00F0, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() # BM_GETCHECK
+        [void][NppHistoryNative]::SendMessage($ignoreWhitespace, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+        $comparisonOptionsPassed = $checked -eq 1
+    }
+    $sharedScrollPassed = $false
+    if ($comparisonOpened) {
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0115, [IntPtr]3, $centreScrollbar) # WM_VSCROLL/SB_PAGEDOWN
+        $leftTopLine = [NppHistoryNative]::SendMessage($leftComparison, 2152, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() # SCI_GETFIRSTVISIBLELINE
+        $rightTopLine = [NppHistoryNative]::SendMessage($rightComparison, 2152, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+        $sharedScrollPassed = $leftTopLine -gt 0 -and $leftTopLine -eq $rightTopLine
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0115, [IntPtr]6, $centreScrollbar) # SB_TOP
+    }
+    $locationPaneCollapsePassed = $false
+    if ($comparisonOpened -and $locationClose -ne [IntPtr]::Zero) {
+        $leftBefore = [NppHistoryNative+RECT]::new()
+        $leftAfter = [NppHistoryNative+RECT]::new()
+        $leftStatusAfter = [NppHistoryNative+RECT]::new()
+        $rightStatusAfter = [NppHistoryNative+RECT]::new()
+        [void][NppHistoryNative]::GetWindowRect($leftHeader, [ref]$leftBefore)
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]1052, $locationClose)
+        Start-Sleep -Milliseconds 150
+        [void][NppHistoryNative]::GetWindowRect($leftHeader, [ref]$leftAfter)
+        [void][NppHistoryNative]::GetWindowRect($leftStatus, [ref]$leftStatusAfter)
+        [void][NppHistoryNative]::GetWindowRect($rightStatus, [ref]$rightStatusAfter)
+        $locationPaneCollapsePassed = -not [NppHistoryNative]::IsWindowVisible($locationPane) -and $leftAfter.Left -lt $leftBefore.Left -and ($leftAfter.Right - $leftAfter.Left) -gt ($leftBefore.Right - $leftBefore.Left) -and $leftStatusAfter.Right -le $rightStatusAfter.Left
+    }
+    Start-Sleep -Milliseconds 200
+    $comparisonScreenshot = Join-Path $testRoot 'side-by-side-comparison.png'
+    $winMergePaletteRendered = $false
+    if ($comparisonOpened) {
+        [void][NppHistoryNative]::RedrawWindow($compareWindow, [IntPtr]::Zero, [IntPtr]::Zero, 0x0181) # invalidate/update/all children
+        Add-Type -AssemblyName System.Drawing
+        $rectangle = [NppHistoryNative+RECT]::new()
+        if ([NppHistoryNative]::GetWindowRect($compareWindow, [ref]$rectangle)) {
+            $bitmap = [Drawing.Bitmap]::new($rectangle.Right - $rectangle.Left, $rectangle.Bottom - $rectangle.Top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $deviceContext = $graphics.GetHdc()
+            try { [void][NppHistoryNative]::PrintWindow($compareWindow, $deviceContext, 2) }
+            finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+            $bitmap.Save($comparisonScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
+            $bitmap = [Drawing.Bitmap]::FromFile($comparisonScreenshot)
+            $foundGold = $false; $foundSelectedRed = $false; $foundHeaderBlue = $false
+            for ($y = 0; $y -lt $bitmap.Height -and -not ($foundGold -and $foundSelectedRed -and $foundHeaderBlue); $y++) {
+                for ($x = 0; $x -lt $bitmap.Width; $x++) {
+                    $pixel = $bitmap.GetPixel($x, $y)
+                    if ($pixel.R -gt 220 -and $pixel.G -gt 160 -and $pixel.B -lt 60) { $foundGold = $true }
+                    if ($pixel.R -gt 210 -and $pixel.G -gt 70 -and $pixel.G -lt 160 -and $pixel.B -gt 60 -and $pixel.B -lt 160) { $foundSelectedRed = $true }
+                    if ($pixel.B -gt 220 -and $pixel.G -gt 200 -and $pixel.R -gt 180 -and $pixel.B -gt $pixel.R) { $foundHeaderBlue = $true }
+                }
+            }
+            $winMergePaletteRendered = $foundGold -and $foundSelectedRed -and $foundHeaderBlue
+            $bitmap.Dispose()
+        }
+    }
+    if ($compareWindow -ne [IntPtr]::Zero) {
+        [void][NppHistoryNative]::PostMessage($compareWindow, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+    }
+    if ($compareErrorWindow -ne [IntPtr]::Zero) {
+        [void][NppHistoryNative]::PostMessage($compareErrorWindow, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+    }
+    Start-Sleep -Milliseconds 300
+    if ($captureButton -ne [IntPtr]::Zero) {
+        [void][NppHistoryNative]::SendMessage($historyPanel, 0x0111, [IntPtr]1006, $captureButton)
+        Start-Sleep -Milliseconds 350
+        $historyListCountAfterCapture = [NppHistoryNative]::SendMessage($historyList, 0x1004, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+        $manualMetadata = (Get-ChildItem $pathMarker.DirectoryName -Filter *.meta | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        $captureButtonPassed = $historyListCountAfterCapture -eq 3 -and $manualMetadata.Contains('reason=Manual capture')
+    }
+
+    $settingsWindow = [IntPtr]::Zero
+    $settingsCentered = $false
+    $settingsIconPassed = $false
+    $settingsTabsPassed = $false
+    $settingsGeneralPassed = $false
+    $settingsAutoSavePassed = $false
+    $settingsAutoSaveEnablementPassed = $false
+    $settingsHistoryPassed = $false
+    $settingsHistoryEnablementPassed = $false
+    $settingsGeneralScreenshot = Join-Path $testRoot 'settings-general.png'
+    $settingsScreenshot = Join-Path $testRoot 'settings-auto-save.png'
+    $settingsHistoryScreenshot = Join-Path $testRoot 'settings-history.png'
+    if ($settingsMenuCommand -ne 0) {
+        [NppHistoryNative]::BeginCommand($process.MainWindowHandle, $settingsMenuCommand, [IntPtr]::Zero)
+        $settingsDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while ([DateTime]::UtcNow -lt $settingsDeadline -and $settingsWindow -eq [IntPtr]::Zero) {
+            Start-Sleep -Milliseconds 100
+            $settingsWindow = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'NppHistory Settings')
+        }
+        if ($settingsWindow -ne [IntPtr]::Zero) {
+            Start-Sleep -Milliseconds 250
+            [void][NppHistoryNative]::UpdateWindow($settingsWindow)
+            $mainRectangle = [NppHistoryNative+RECT]::new()
+            $settingsRectangle = [NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$mainRectangle)
+            [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsRectangle)
+            $settingsCentered = [Math]::Abs(($mainRectangle.Left + $mainRectangle.Right) - ($settingsRectangle.Left + $settingsRectangle.Right)) -le 12 -and
+                [Math]::Abs(($mainRectangle.Top + $mainRectangle.Bottom) - ($settingsRectangle.Top + $settingsRectangle.Bottom)) -le 12
+            $settingsIconPassed = [NppHistoryNative]::SendMessage($settingsWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero) -ne [IntPtr]::Zero
+            $settingsTabs = [NppHistoryNative]::FindControl($settingsWindow, 1070)
+            $settingsTabsPassed = $settingsTabs -ne [IntPtr]::Zero -and
+                [NppHistoryNative]::SendMessage($settingsTabs, 0x1304, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -eq 3 -and
+                [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1083))
+            $settingsGeneralPassed = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1071)) -eq 'Capture' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1072)) -eq 'Compare' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1073)) -eq 'Restore' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1074)) -eq 'Enable automatic update checks' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1075)) -eq 'Weekly'
+            Add-Type -AssemblyName System.Drawing
+            $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
+            $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $deviceContext = $graphics.GetHdc()
+            try { [void][NppHistoryNative]::PrintWindow($settingsWindow, $deviceContext, 2) }
+            finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+            $bitmap.Save($settingsGeneralScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
+            $autoTabPoint = [IntPtr](100 -bor (10 -shl 16))
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $autoTabPoint)
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $autoTabPoint)
+            Start-Sleep -Milliseconds 150
+            $settingsAutoSavePassed = [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1085)) -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1010)) -eq 'Enable automatic saving' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1076)) -eq 'Notepad++ loses focus' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1077)) -eq 'At timed intervals every' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1079)) -eq 'File tab changes' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1080)) -eq 'Notepad++ exits' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1082)) -eq 'All open files'
+            $autoSaveMaster = [NppHistoryNative]::FindControl($settingsWindow, 1010)
+            $afterEditControl = [NppHistoryNative]::FindControl($settingsWindow, 1011)
+            $intervalControl = [NppHistoryNative]::FindControl($settingsWindow, 1077)
+            $intervalMinutesControl = [NppHistoryNative]::FindControl($settingsWindow, 1078)
+            $intervalInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)
+            [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $intervalEnabledOnSelection = [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)
+            [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            [void][NppHistoryNative]::SendMessage($autoSaveMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $autoSaveChildrenDisabled = -not [NppHistoryNative]::IsWindowEnabled($afterEditControl) -and
+                -not [NppHistoryNative]::IsWindowEnabled($intervalControl)
+            [void][NppHistoryNative]::SendMessage($autoSaveMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $settingsAutoSaveEnablementPassed = $intervalInitiallyDisabled -and
+                $intervalEnabledOnSelection -and $autoSaveChildrenDisabled -and
+                [NppHistoryNative]::IsWindowEnabled($afterEditControl)
+            $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
+            $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $deviceContext = $graphics.GetHdc()
+            try { [void][NppHistoryNative]::PrintWindow($settingsWindow, $deviceContext, 2) }
+            finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+            $bitmap.Save($settingsScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
+            $historyTabPoint = [IntPtr](165 -bor (10 -shl 16))
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $historyTabPoint)
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $historyTabPoint)
+            Start-Sleep -Milliseconds 100
+            $settingsHistoryPassed = [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1087)) -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1096)) -eq 'Enable revision history' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1098)) -eq 'Before a file is saved' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1099)) -eq 'After a file is saved' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1101)) -eq 'Before restoring a revision' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1015)).Contains('.npphistory')
+            $historyMaster = [NppHistoryNative]::FindControl($settingsWindow, 1096)
+            $historyBeforeSave = [NppHistoryNative]::FindControl($settingsWindow, 1098)
+            $historyCustom = [NppHistoryNative]::FindControl($settingsWindow, 1016)
+            $historyPath = [NppHistoryNative]::FindControl($settingsWindow, 1017)
+            $historyBrowse = [NppHistoryNative]::FindControl($settingsWindow, 1018)
+            $customInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($historyPath) -and
+                -not [NppHistoryNative]::IsWindowEnabled($historyBrowse)
+            [void][NppHistoryNative]::SendMessage($historyCustom, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $customEnabledOnSelection = [NppHistoryNative]::IsWindowEnabled($historyPath) -and
+                [NppHistoryNative]::IsWindowEnabled($historyBrowse)
+            [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settingsWindow, 1015), 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            [void][NppHistoryNative]::SendMessage($historyMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $historyChildrenDisabled = -not [NppHistoryNative]::IsWindowEnabled($historyBeforeSave) -and
+                -not [NppHistoryNative]::IsWindowEnabled($historyCustom)
+            [void][NppHistoryNative]::SendMessage($historyMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $settingsHistoryEnablementPassed = $customInitiallyDisabled -and
+                $customEnabledOnSelection -and $historyChildrenDisabled -and
+                [NppHistoryNative]::IsWindowEnabled($historyBeforeSave)
+            $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
+            $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $deviceContext = $graphics.GetHdc()
+            try { [void][NppHistoryNative]::PrintWindow($settingsWindow, $deviceContext, 2) }
+            finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+            $bitmap.Save($settingsHistoryScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
+            [void][NppHistoryNative]::PostMessage($settingsWindow, 0x0111, [IntPtr]2, [IntPtr]::Zero)
+        }
+    }
+    Start-Sleep -Milliseconds 250
+
+    $aboutWindow = [IntPtr]::Zero
+    $aboutCentered = $false
+    $aboutWindowPassed = $false
+    $aboutScreenshot = Join-Path $testRoot 'about-npphistory.png'
+    if ($aboutMenuCommand -ne 0) {
+        [NppHistoryNative]::BeginCommand($process.MainWindowHandle, $aboutMenuCommand, [IntPtr]::Zero)
+        $aboutDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while ([DateTime]::UtcNow -lt $aboutDeadline -and $aboutWindow -eq [IntPtr]::Zero) {
+            Start-Sleep -Milliseconds 100
+            $aboutWindow = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'About NppHistory')
+        }
+        if ($aboutWindow -ne [IntPtr]::Zero) {
+            $mainRectangle = [NppHistoryNative+RECT]::new()
+            $aboutRectangle = [NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$mainRectangle)
+            [void][NppHistoryNative]::GetWindowRect($aboutWindow, [ref]$aboutRectangle)
+            $aboutCentered = [Math]::Abs(($mainRectangle.Left + $mainRectangle.Right) - ($aboutRectangle.Left + $aboutRectangle.Right)) -le 12 -and
+                [Math]::Abs(($mainRectangle.Top + $mainRectangle.Bottom) - ($aboutRectangle.Top + $aboutRectangle.Bottom)) -le 12
+            $aboutVersion = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1061))
+            $aboutAuthor = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1062))
+            $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
+            $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
+            $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
+            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 20') -and
+                $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
+                $aboutReleaseDate.Trim() -eq 'Release Date:' -and
+                $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero
+            Add-Type -AssemblyName System.Drawing
+            $bitmap = [Drawing.Bitmap]::new($aboutRectangle.Right - $aboutRectangle.Left, $aboutRectangle.Bottom - $aboutRectangle.Top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $deviceContext = $graphics.GetHdc()
+            try { [void][NppHistoryNative]::PrintWindow($aboutWindow, $deviceContext, 2) }
+            finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+            $bitmap.Save($aboutScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
+            [void][NppHistoryNative]::PostMessage($aboutWindow, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+        }
+    }
+
+    $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $aboutCentered -and $aboutWindowPassed
+    [pscustomobject]@{
+        AutoSaveUpdatedFile = $autoSaveCorrect
+        EditorLengthBefore = $lengthBefore
+        EditorLengthAfter = $lengthAfter
+        EditorMarkedModified = $modifiedAfter
+        RevisionCount = $revisions.Count
+        PreAndPostSaveCaptured = $reasonsCaptured
+        HiddenAdjacentHistory = $hiddenHistoryRoot
+        InternalCatalogCreated = (Test-Path (Join-Path $configFolder 'catalog.db'))
+        HistoryPanelRevisionCount = $historyListCount
+        HistoryPanelScreenshot = if (Test-Path $historyPanelScreenshot) { $historyPanelScreenshot } else { '' }
+        PluginMenuPassed = $pluginMenuPassed
+        PanelButtonsPassed = $panelButtonsPassed
+        PanelButtonWidthsPassed = $panelButtonWidthsPassed
+        PanelButtonWidths = $panelButtonWidths -join ','
+        PanelButtonIconsPassed = $panelButtonIconsPassed
+        RevisionActionsPassed = $revisionActionsPassed
+        CaptureButtonPassed = $captureButtonPassed
+        MainToolbarButtonsRegistered = $mainToolbarButtonsRegistered
+        DockIconPassed = $dockIconPassed
+        ResponsiveButtonsPassed = $responsiveButtonsPassed
+        HistoryPanelDescription = [NppHistoryNative]::Describe($historyPanel)
+        ResponsiveButtonRowsValue = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryResponsiveButtonRows').ToInt64()
+        SideBySideComparisonOpened = $comparisonOpened
+        ComparisonCentered = $comparisonCentered
+        ComparisonCenterDelta = $comparisonCenterDelta
+        WinMergeFramePresent = $winMergeFramePresent
+        ToolbarButtonCount = $toolbarButtonCount
+        ToolbarTooltipCount = $tooltipToolCount
+        ToolbarTooltipTextPassed = $tooltipTextPassed
+        ToolbarTooltipHoverPassed = $tooltipHoverPassed
+        ToolbarTooltipHoverText = $tooltipHoverText
+        StandardWindowFrame = $standardWindowFrame
+        HeaderLabelsPassed = $headerLabelsPassed
+        ComparisonCaption = $captionText
+        CaptionIconPresent = $captionIcon -ne [IntPtr]::Zero
+        HeaderDoubleClickPassed = $headerDoubleClickPassed
+        LocationPaneCollapsePassed = $locationPaneCollapsePassed
+        SynchronizedScrollPassed = $sharedScrollPassed
+        LineNumbersRendered = $lineNumbersRendered
+        DifferenceNavigationPassed = $differenceNavigationPassed
+        CurrentDifferencePassed = $currentDifferencePassed
+        CurrentDifferenceTopLine = $currentDifferenceTop
+        LocationVisibleAfterCurrent = $locationVisibleAfterCurrent
+        TooltipCountAfterCurrent = $tooltipToolCountAfterCurrent
+        RevisionToolbarNavigationPassed = $revisionToolbarNavigationPassed
+        WinMergePaletteRendered = $winMergePaletteRendered
+        RevisionSelectorCount = $revisionChoiceCount
+        ComparisonScreenshot = if (Test-Path $comparisonScreenshot) { $comparisonScreenshot } else { '' }
+        SettingsCentered = $settingsCentered
+        SettingsIconPassed = $settingsIconPassed
+        SettingsTabsPassed = $settingsTabsPassed
+        SettingsGeneralPassed = $settingsGeneralPassed
+        SettingsAutoSavePassed = $settingsAutoSavePassed
+        SettingsAutoSaveEnablementPassed = $settingsAutoSaveEnablementPassed
+        SettingsHistoryPassed = $settingsHistoryPassed
+        SettingsHistoryEnablementPassed = $settingsHistoryEnablementPassed
+        SettingsGeneralScreenshot = if (Test-Path $settingsGeneralScreenshot) { $settingsGeneralScreenshot } else { '' }
+        SettingsScreenshot = if (Test-Path $settingsScreenshot) { $settingsScreenshot } else { '' }
+        SettingsHistoryScreenshot = if (Test-Path $settingsHistoryScreenshot) { $settingsHistoryScreenshot } else { '' }
+        AboutCentered = $aboutCentered
+        AboutWindowPassed = $aboutWindowPassed
+        AboutScreenshot = if (Test-Path $aboutScreenshot) { $aboutScreenshot } else { '' }
+        Passed = $passed
+    }
+    if (-not $passed) { exit 1 }
+}
+finally {
+    if (-not $process.HasExited) {
+        Stop-Process -Id $process.Id
+        $process.WaitForExit(5000) | Out-Null
+    }
+}

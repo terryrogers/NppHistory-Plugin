@@ -1,0 +1,39 @@
+name: Windows build and core tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build plugin
+        run: msbuild .\vs.proj\NppHistory.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
+
+      - name: Build core tests
+        run: msbuild .\vs.proj\NppHistory.Tests.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
+
+      - name: Run core tests
+        run: .\build\tests\NppHistory.Tests.exe
+
+      - name: Upload plugin DLL
+        uses: actions/upload-artifact@v4
+        with:
+          name: NppHistory-x64-${{ github.sha }}
+          path: build/x64/Release/NppHistory.dll
+          if-no-files-found: error

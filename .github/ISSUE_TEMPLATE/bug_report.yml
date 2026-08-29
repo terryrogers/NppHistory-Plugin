@@ -1,0 +1,58 @@
+name: Bug report
+description: Report reproducible incorrect NppHistory behaviour.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please remove private information from note contents, paths, screenshots and history metadata before attaching them.
+  - type: input
+    id: version
+    attributes:
+      label: NppHistory version
+      placeholder: 0.2.0 beta 20
+    validations:
+      required: true
+  - type: input
+    id: notepad-version
+    attributes:
+      label: Notepad++ version and architecture
+      placeholder: 64-bit Notepad++ version number
+    validations:
+      required: true
+  - type: input
+    id: windows-version
+    attributes:
+      label: Windows version
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Include what you expected and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open...
+        2. Change...
+        3. Click...
+    validations:
+      required: true
+  - type: dropdown
+    id: history-location
+    attributes:
+      label: History location
+      options:
+        - Hidden .npphistory folder beside the file
+        - Common custom folder
+        - Not applicable or unknown
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Additional evidence
+      description: Attach sanitized screenshots or relevant details. Do not upload private note content.
