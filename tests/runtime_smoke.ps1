@@ -665,11 +665,14 @@ try {
             $aboutVersion = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1061))
             $aboutAuthor = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1062))
             $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
+            $expectedReleaseDate = [datetime]::ParseExact('2026-08-30', 'yyyy-MM-dd',
+                [Globalization.CultureInfo]::InvariantCulture).ToString('d',
+                [Globalization.CultureInfo]::CurrentCulture)
             $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
             $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
             $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 20') -and
                 $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
-                $aboutReleaseDate.Trim() -eq 'Release Date:' -and
+                $aboutReleaseDate.Trim() -eq "Release Date: $expectedReleaseDate" -and
                 $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero
             Add-Type -AssemblyName System.Drawing
             $bitmap = [Drawing.Bitmap]::new($aboutRectangle.Right - $aboutRectangle.Left, $aboutRectangle.Bottom - $aboutRectangle.Top)

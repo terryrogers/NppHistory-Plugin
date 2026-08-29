@@ -16,7 +16,7 @@ This report does not call every test a unit test. Pure logic and storage code is
 | Required DLL exports | 6 of 6 present |
 | Live Notepad++ verification | Passed |
 | DLL file/product version | 0.2.0-beta.20 |
-| DLL SHA-256 | `64CAE9B42B47C5E23AD0818CBF1BEBE52CD3AFCBBEAC7740685F1D0797F621CF` |
+| DLL SHA-256 | `79C9BBEE1543167F459AA3037896474E859C5CE1B2EDAF340A0ADEE6B07ED96D` |
 
 ## Test levels used
 

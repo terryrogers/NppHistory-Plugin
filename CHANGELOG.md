@@ -2,6 +2,7 @@
 
 ## 0.2.0-beta.20
 
+- Embedded the beta's 2026-08-30 publication date for locale-aware display in the About window and DLL metadata.
 - Replaced the original compact core smoke test with separate utility, settings/policy, diff, history-store and history-catalog suites totaling 180 behavioural checks.
 - Added direct configuration-policy coverage for every Auto Save and History trigger, including exact timer boundaries and master-switch overrides.
 - Added invalid, Unicode, empty, duplicate, large-document, migration, ambiguity and failure-path coverage.
