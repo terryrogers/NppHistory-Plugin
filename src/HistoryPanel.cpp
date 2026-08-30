@@ -21,6 +21,7 @@ namespace
 {
 constexpr UINT comparisonWheelMessage = WM_APP + 42;
 constexpr UINT comparisonMarkerClickMessage = WM_APP + 43;
+constexpr UINT_PTR panelTooltipTimer = 0x4E50;
 const wchar_t* toolbarHint(int image);
 
 HBITMAP createMenuBitmap(HINSTANCE instance, int resource)
@@ -227,12 +228,8 @@ void HistoryPanel::refresh(const std::filesystem::path& file)
     std::wstring status;
     if (!_fileSaved)
         status = L"Save File First";
-    else if (autoSaveExcluded && historyExcluded)
-        status = L"Excluded: Auto Save + History";
-    else if (autoSaveExcluded)
-        status = L"Excluded: Auto Save";
-    else if (historyExcluded)
-        status = L"Excluded: Revision History";
+    else if (autoSaveExcluded || historyExcluded)
+        status = L"File Excluded in Settings";
     SetDlgItemTextW(_dialog, IDC_SAVE_FILE_FIRST, status.c_str());
     ShowWindow(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST), status.empty() ? SW_HIDE : SW_SHOW);
     const HWND list = GetDlgItem(_dialog, IDC_REVISIONS);
@@ -262,12 +259,14 @@ void HistoryPanel::updateActionButtons()
 {
     if (!_dialog)
         return;
-    const bool captureAllowed = _fileSaved && _settings
+    const bool historyExcluded = _fileSaved && _settings && _settings->historyEnabled
+        && _settings->isHistoryExcluded(_currentFile);
+    const bool captureAllowed = _fileSaved && !historyExcluded && _settings
         && _settings->shouldCreateRevision(RevisionTrigger::manual)
         && !_settings->isHistoryExcluded(_currentFile);
     EnableWindow(GetDlgItem(_dialog, IDC_CAPTURE), captureAllowed);
-    EnableWindow(GetDlgItem(_dialog, IDC_REFRESH), _fileSaved);
-    const BOOL revisionSelected = _fileSaved && selectedIndex() >= 0;
+    EnableWindow(GetDlgItem(_dialog, IDC_REFRESH), _fileSaved && !historyExcluded);
+    const BOOL revisionSelected = _fileSaved && !historyExcluded && selectedIndex() >= 0;
     EnableWindow(GetDlgItem(_dialog, IDC_COMPARE), revisionSelected);
     EnableWindow(GetDlgItem(_dialog, IDC_RESTORE), revisionSelected);
 }
@@ -1187,7 +1186,23 @@ void HistoryPanel::layout()
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(rows.size())));
     const int buttonTop = area.bottom - margin - buttonsHeight;
     const bool showStatus = IsWindowVisible(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST)) != FALSE;
-    const int warningHeight = showStatus ? 20 : 0;
+    int warningHeight = 0;
+    if (showStatus)
+    {
+        const HWND status = GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST);
+        wchar_t text[256]{};
+        GetWindowTextW(status, text, static_cast<int>(std::size(text)));
+        HDC statusDc = GetDC(status);
+        const HGDIOBJ oldFont = SelectObject(statusDc,
+            reinterpret_cast<HFONT>(SendMessageW(status, WM_GETFONT, 0, 0)));
+        RECT measured{0, 0, available, 0};
+        DrawTextW(statusDc, text, -1, &measured,
+            DT_CALCRECT | DT_WORDBREAK | DT_CENTER | DT_NOPREFIX);
+        SelectObject(statusDc, oldFont);
+        ReleaseDC(status, statusDc);
+        warningHeight = (std::max)(20,
+            static_cast<int>(measured.bottom - measured.top + 6));
+    }
     const int warningTop = buttonTop - warningHeight;
     const int listTop = 35;
     MoveWindow(GetDlgItem(_dialog, IDC_REVISIONS), margin, listTop, available,
@@ -1209,12 +1224,79 @@ void HistoryPanel::layout()
     }
 }
 
+void HistoryPanel::updateButtonTooltip()
+{
+    if (!_buttonTooltip || !_dialog)
+        return;
+    const int buttonIds[] = {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE,
+        IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT};
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    int hovered = 0;
+    for (const int id : buttonIds)
+    {
+        RECT bounds{};
+        GetWindowRect(GetDlgItem(_dialog, id), &bounds);
+        if (PtInRect(&bounds, cursor))
+        {
+            hovered = id;
+            break;
+        }
+    }
+    if (hovered != _tooltipButton)
+    {
+        if (_tooltipButton)
+        {
+            TOOLINFOW oldTool{sizeof(oldTool)};
+            oldTool.hwnd = _dialog;
+            oldTool.uId = static_cast<UINT_PTR>(_tooltipButton);
+            SendMessageW(_buttonTooltip, TTM_TRACKACTIVATE, FALSE,
+                reinterpret_cast<LPARAM>(&oldTool));
+            RemovePropW(_dialog, L"NppHistoryPanelTooltipActive");
+        }
+        _tooltipButton = hovered;
+        _tooltipHoverStarted = GetTickCount64();
+    }
+    if (!_tooltipButton || GetTickCount64() - _tooltipHoverStarted < 400)
+        return;
+    RECT bounds{};
+    GetWindowRect(GetDlgItem(_dialog, _tooltipButton), &bounds);
+    TOOLINFOW tool{sizeof(tool)};
+    tool.hwnd = _dialog;
+    tool.uId = static_cast<UINT_PTR>(_tooltipButton);
+    SendMessageW(_buttonTooltip, TTM_TRACKPOSITION, 0,
+        MAKELPARAM(bounds.left, bounds.bottom + 2));
+    SendMessageW(_buttonTooltip, TTM_TRACKACTIVATE, TRUE,
+        reinterpret_cast<LPARAM>(&tool));
+    SetPropW(_dialog, L"NppHistoryPanelTooltipActive",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(_tooltipButton)));
+}
+
 void HistoryPanel::configureButtonIcons()
 {
     const int buttonIds[] = {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE,
         IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT};
     const int iconIds[] = {IDI_CAPTURE, IDI_REFRESH, IDI_COMPARE, IDI_RESTORE,
         IDI_SETTINGS, IDI_ABOUT};
+    const wchar_t* hints[] = {
+        L"Create a new revision of the current file now.",
+        L"Reload this file's revision list from history storage.",
+        L"Compare the current file with the selected revision.",
+        L"Replace the current file with the selected revision.",
+        L"Open NppHistory settings.",
+        L"Show NppHistory version and author information."
+    };
+    _buttonTooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        _dialog, nullptr, _instance, nullptr);
+    if (_buttonTooltip)
+    {
+        SendMessageW(_buttonTooltip, TTM_SETMAXTIPWIDTH, 0, 360);
+        SetTimer(_dialog, panelTooltipTimer, 100, nullptr);
+        SetPropW(_dialog, L"NppHistoryPanelButtonTooltipWindow", _buttonTooltip);
+    }
+    int tooltipsAdded = 0;
     for (int index = 0; index < static_cast<int>(std::size(buttonIds)); ++index)
     {
         const HWND button = GetDlgItem(_dialog, buttonIds[index]);
@@ -1228,9 +1310,22 @@ void HistoryPanel::configureButtonIcons()
             GetWindowLongPtrW(button, GWL_STYLE) | BS_OWNERDRAW);
         SetWindowSubclass(button, panelButtonSubclass, 1,
             reinterpret_cast<DWORD_PTR>(this));
+        if (_buttonTooltip)
+        {
+            TOOLINFOW tool{sizeof(tool)};
+            tool.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+            tool.hwnd = _dialog;
+            tool.uId = static_cast<UINT_PTR>(buttonIds[index]);
+            tool.lpszText = const_cast<wchar_t*>(hints[index]);
+            if (SendMessageW(_buttonTooltip, TTM_ADDTOOLW, 0,
+                reinterpret_cast<LPARAM>(&tool)))
+                ++tooltipsAdded;
+        }
     }
     SetPropW(_dialog, L"NppHistoryPanelButtonIconsReady", reinterpret_cast<HANDLE>(2));
     SetPropW(_dialog, L"NppHistoryPanelButtonHoverReady", reinterpret_cast<HANDLE>(6));
+    SetPropW(_dialog, L"NppHistoryPanelButtonTooltipsReady",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(tooltipsAdded)));
 }
 
 LRESULT CALLBACK HistoryPanel::panelButtonSubclass(HWND button, UINT message, WPARAM wParam,
@@ -1292,6 +1387,11 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
     }
     if (!panel)
         return FALSE;
+    if (message == WM_TIMER && wParam == panelTooltipTimer)
+    {
+        panel->updateButtonTooltip();
+        return TRUE;
+    }
     if (message == WM_SIZE) { panel->layout(); return TRUE; }
     if (message == WM_CTLCOLORSTATIC
         && GetDlgCtrlID(reinterpret_cast<HWND>(lParam)) == IDC_SAVE_FILE_FIRST)

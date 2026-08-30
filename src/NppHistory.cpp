@@ -169,57 +169,38 @@ void drawDocumentTabIndicators(HWND tabs, int view)
         RECT item{};
         if (!TabCtrl_GetItemRect(tabs, index, &item))
             continue;
-        const auto redSlash = [&](int x, int y) {
-            const HPEN slash = CreatePen(PS_SOLID, 2, RGB(210, 35, 35));
-            const HGDIOBJ previous = SelectObject(dc, slash);
-            MoveToEx(dc, x + 1, y + 13, nullptr);
-            LineTo(dc, x + 13, y + 1);
-            SelectObject(dc, previous);
-            DeleteObject(slash);
-        };
-        const auto autoSaveIcon = [&](int x) {
-            const int y = item.top + 2;
-            const HPEN outline = CreatePen(PS_SOLID, 1, RGB(125, 75, 10));
-            const HBRUSH body = CreateSolidBrush(RGB(245, 165, 45));
-            const HGDIOBJ previousPen = SelectObject(dc, outline);
-            const HGDIOBJ previousBrush = SelectObject(dc, body);
-            Rectangle(dc, x, y, x + 14, y + 14);
-            const HBRUSH detail = CreateSolidBrush(RGB(255, 248, 225));
-            SelectObject(dc, detail);
-            Rectangle(dc, x + 3, y + 1, x + 11, y + 5);
-            Rectangle(dc, x + 3, y + 8, x + 11, y + 13);
-            SelectObject(dc, previousBrush);
-            SelectObject(dc, previousPen);
-            DeleteObject(detail);
-            DeleteObject(body);
-            DeleteObject(outline);
-            redSlash(x, y);
-        };
-        const auto historyIcon = [&](int x) {
-            const int y = item.top + 2;
-            const HPEN outline = CreatePen(PS_SOLID, 1, RGB(25, 85, 155));
-            const HBRUSH face = CreateSolidBrush(RGB(205, 230, 255));
+        const auto badge = [&](int x, int width, const wchar_t* label,
+            COLORREF background, COLORREF border) {
+            const int height = 15;
+            const int y = item.top + ((item.bottom - item.top) - height) / 2;
+            const HPEN outline = CreatePen(PS_SOLID, 1, border);
+            const HBRUSH face = CreateSolidBrush(background);
             const HGDIOBJ previousPen = SelectObject(dc, outline);
             const HGDIOBJ previousBrush = SelectObject(dc, face);
-            Ellipse(dc, x, y, x + 14, y + 14);
-            MoveToEx(dc, x + 7, y + 3, nullptr);
-            LineTo(dc, x + 7, y + 7);
-            LineTo(dc, x + 11, y + 8);
+            RoundRect(dc, x, y, x + width, y + height, 4, 4);
+            const HGDIOBJ previousFont = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, RGB(25, 25, 25));
+            RECT labelBounds{x, y, x + width, y + height};
+            DrawTextW(dc, label, -1, &labelBounds,
+                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            SelectObject(dc, previousFont);
             SelectObject(dc, previousBrush);
             SelectObject(dc, previousPen);
             DeleteObject(face);
             DeleteObject(outline);
-            redSlash(x, y);
         };
         const bool autoSaveExcluded = settings.autoSaveEnabled
             && !settings.externalAutoSavePluginDetected && settings.isAutoSaveExcluded(path);
         const bool historyExcluded = settings.historyEnabled && settings.isHistoryExcluded(path);
-        // Keep the badges clear of Notepad++'s document icon, filename, pin and close glyphs.
-        // When both are visible they read left-to-right as Auto Save, then History.
+        // Extra tab padding is reserved before painting. The labelled badges therefore sit
+        // after the filename and before Notepad++'s pin/close glyphs without covering either.
         if (autoSaveExcluded)
-            autoSaveIcon(item.right - (historyExcluded ? 66 : 50));
+            badge(item.right - (historyExcluded ? 78 : 52), 22, L"AS",
+                RGB(255, 210, 125), RGB(175, 85, 0));
         if (historyExcluded)
-            historyIcon(item.right - 50);
+            badge(item.right - 52, 18, L"H",
+                RGB(195, 225, 255), RGB(25, 85, 155));
     }
     ReleaseDC(tabs, dc);
 }
@@ -269,6 +250,7 @@ void refreshDocumentTabIndicators()
         SetWindowSubclass(tabs, documentTabSubclass, static_cast<UINT_PTR>(view + 1),
             static_cast<DWORD_PTR>(view));
         const int count = TabCtrl_GetItemCount(tabs);
+        bool hasIndicators = false;
         for (int index = 0; index < count; ++index)
         {
             const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
@@ -276,10 +258,17 @@ void refreshDocumentTabIndicators()
             const fs::path path = pathForBuffer(bufferId);
             if (settings.autoSaveEnabled && !settings.externalAutoSavePluginDetected
                 && settings.isAutoSaveExcluded(path))
+            {
                 ++autoSaveIndicatorCount;
+                hasIndicators = true;
+            }
             if (settings.historyEnabled && settings.isHistoryExcluded(path))
+            {
                 ++historyIndicatorCount;
+                hasIndicators = true;
+            }
         }
+        SendMessageW(tabs, TCM_SETPADDING, 0, MAKELPARAM(hasIndicators ? 30 : 6, 3));
         InvalidateRect(tabs, nullptr, FALSE);
     }
     SetPropW(nppData._nppHandle, L"NppHistoryAutoSaveTabIndicatorCount",

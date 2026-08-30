@@ -288,6 +288,21 @@ public static class NppHistoryNative {
         }, IntPtr.Zero);
         return result;
     }
+    public static IntPtr FindTopWindowByClassAndText(uint processId, string className, string textPart) {
+        IntPtr result = IntPtr.Zero;
+        EnumWindows(delegate(IntPtr window, IntPtr state) {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            var actualClass = new StringBuilder(128);
+            var title = new StringBuilder(512);
+            GetClassName(window, actualClass, actualClass.Capacity);
+            GetWindowText(window, title, title.Capacity);
+            if (owner == processId && actualClass.ToString() == className &&
+                title.ToString().Contains(textPart)) { result = window; return false; }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
     private static int FindMenuCommandIn(IntPtr menu, string text) {
         int count = GetMenuItemCount(menu);
         for (int index = 0; index < count; index++) {
@@ -432,6 +447,9 @@ try {
     $panelButtonHoverRegistrationCount = [NppHistoryNative]::GetProp(
         $historyPanel, 'NppHistoryPanelButtonHoverReady').ToInt64()
     $panelButtonHoverReady = $panelButtonHoverRegistrationCount -eq 6
+    $panelButtonTooltipCount = [NppHistoryNative]::GetProp(
+        $historyPanel, 'NppHistoryPanelButtonTooltipsReady').ToInt64()
+    $panelButtonTooltipsPassed = $panelButtonTooltipCount -eq 6
     $panelHoverButton = [NppHistoryNative]::FindControl($historyPanel, 1006)
     $panelButtonHotOnEnter = 0
     for ($hoverAttempt = 0; $hoverAttempt -lt 5 -and $panelButtonHotOnEnter -ne 1006; $hoverAttempt++) {
@@ -1003,9 +1021,22 @@ try {
         $savedSettingsText.Contains('HistoryExclusions=*.txt|*.tmp')
     $exclusionStatus = [NppHistoryNative]::FindControl($historyPanel, 1104)
     $exclusionPanelIndicatorPassed = [NppHistoryNative]::IsWindowVisible($exclusionStatus) -and
-        [NppHistoryNative]::Text($exclusionStatus) -eq 'Excluded: Auto Save + History' -and
+        [NppHistoryNative]::Text($exclusionStatus) -eq 'File Excluded in Settings' -and
         -not [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1006)) -and
-        [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1003))
+        -not [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1003))
+    $excludedRefreshButton = [NppHistoryNative]::FindControl($historyPanel, 1003)
+    [NppHistoryNative]::MoveCursorToCenter($excludedRefreshButton)
+    for ($tooltipTick = 0; $tooltipTick -lt 6; ++$tooltipTick) {
+        Start-Sleep -Milliseconds 100
+        [void][NppHistoryNative]::SendMessage($historyPanel, 0x0113, [IntPtr]0x4E50, [IntPtr]::Zero)
+    }
+    $disabledRefreshTooltip = [NppHistoryNative]::GetProp(
+        $historyPanel, 'NppHistoryPanelButtonTooltipWindow')
+    $disabledRefreshTooltipActive = [NppHistoryNative]::GetProp(
+        $historyPanel, 'NppHistoryPanelTooltipActive').ToInt64()
+    $disabledRefreshTooltipPassed = $disabledRefreshTooltipActive -eq 1003 -and
+        $disabledRefreshTooltip -ne [IntPtr]::Zero -and
+        [NppHistoryNative]::IsWindowVisible($disabledRefreshTooltip)
     $autoSaveTabIndicatorCount = [NppHistoryNative]::GetProp(
         $process.MainWindowHandle, 'NppHistoryAutoSaveTabIndicatorCount').ToInt64()
     $historyTabIndicatorCount = [NppHistoryNative]::GetProp(
@@ -1132,7 +1163,7 @@ try {
         $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $panelButtonTooltipsPassed -and $disabledRefreshTooltipPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1157,6 +1188,10 @@ try {
         UnsavedPanelScreenshot = if (Test-Path $unsavedPanelScreenshot) { $unsavedPanelScreenshot } else { '' }
         PanelButtonIconsPassed = $panelButtonIconsPassed
         PanelButtonHoverPassed = $panelButtonHoverPassed
+        PanelButtonTooltipsPassed = $panelButtonTooltipsPassed
+        PanelButtonTooltipCount = $panelButtonTooltipCount
+        DisabledRefreshTooltipPassed = $disabledRefreshTooltipPassed
+        DisabledRefreshTooltipActive = $disabledRefreshTooltipActive
         PanelButtonHoverRegistrationCount = $panelButtonHoverRegistrationCount
         PanelButtonHotOnEnter = $panelButtonHotOnEnter
         PanelButtonHotAfterLeave = $panelButtonHotAfterLeave

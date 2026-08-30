@@ -60,6 +60,7 @@ private:
         LPARAM lParam, UINT_PTR subclassId, DWORD_PTR referenceData);
     void layout();
     void configureButtonIcons();
+    void updateButtonTooltip();
     void updateActionButtons();
     void showRevisionActions(int index, POINT anchor);
     void editSelectedComment();
@@ -81,6 +82,9 @@ private:
     HistoryStore* _store = nullptr;
     const Settings* _settings = nullptr;
     HWND _dialog = nullptr;
+    HWND _buttonTooltip = nullptr;
+    int _tooltipButton = 0;
+    unsigned long long _tooltipHoverStarted = 0;
     std::filesystem::path _currentFile;
     std::vector<RevisionInfo> _revisions;
     bool _fileSaved = false;

@@ -192,8 +192,9 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `navigateDifference` | Live previous/next navigation | PASS |
 | `showRevisionPicker` | Live picker position and revision count | PASS |
 | `restoreSelected` | Live confirmation, safety-revision preservation, file reload and pre-reload Informational audit | PASS |
-| `layout` | Live normal, resized, wrapped, collapsed and conditional unsaved warning layouts | PASS |
-| `configureButtonIcons` | Live all six pane icons | PASS |
+| `layout` | Live normal, resized, wrapped, collapsed and dynamically wrapped status layouts | PASS |
+| `configureButtonIcons` | Live all six pane icons and tooltip registrations | PASS |
+| `updateButtonTooltip` | Live active and visible tooltip over disabled Refresh | PASS |
 | `panelButtonSubclass` | Live enabled-button hover entry and leave state | PASS |
 | `dialogProc` | Live pane init, resize, commands and context menu | PASS |
 | `editCommentProc` | Live dialog construction, text replacement and Save submission | PASS |
@@ -216,7 +217,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `reconcileFile` | Live active file plus direct catalogue outcomes | PASS |
 | `detectMissingBuffers` | Notification/timer wiring built; disappearing-open-file alert remains manual UAT | PARTIAL |
 | `refreshPanel` | Live list refresh | PASS |
-| `documentTabControls` / `refreshDocumentTabIndicators` | Live crossed-out Auto Save/History badges for independently excluded files, gated by feature enablement and external AutoSave conflict | PASS |
+| `documentTabControls` / `refreshDocumentTabIndicators` | Live labelled AS/H badges in reserved filename-safe tab space, gated by feature enablement and external AutoSave conflict | PASS |
 | `saveBuffer` | Live actual after-edit save | PASS |
 | `saveConfiguredScope` | Live current test file and direct scope persistence; multi-file live path not automated | PARTIAL |
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |
