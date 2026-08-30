@@ -289,7 +289,9 @@ try {
 
     $automaticUpdateCheckPassed = $false
     $automaticUpdateLogPath = Join-Path $configFolder 'NppHistory.log'
-    $automaticUpdateDeadline = [DateTime]::UtcNow.AddSeconds(20)
+    # Production deliberately delays a due startup check by 90 seconds so plugin loading is
+    # never held up by network activity. Allow enough time to exercise that real schedule.
+    $automaticUpdateDeadline = [DateTime]::UtcNow.AddSeconds(110)
     while ([DateTime]::UtcNow -lt $automaticUpdateDeadline -and -not $automaticUpdateCheckPassed) {
         Start-Sleep -Milliseconds 100
         $automaticUpdateLog = if (Test-Path $automaticUpdateLogPath) {
@@ -856,7 +858,8 @@ try {
             $settingsUpdateEnablementPassed = $updateChildrenInitiallyEnabled -and
                 $updateChildrenDisabled -and $updateChildrenReenabled -and
                 [NppHistoryNative]::IsWindowVisible($updateStatus) -and
-                [NppHistoryNative]::Text($updateStatus).Contains('Status:')
+                [NppHistoryNative]::Text($updateStatus).Contains('Status:') -and
+                [NppHistoryNative]::Text($updateStatus).Contains('Next automatic check:')
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
             $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)

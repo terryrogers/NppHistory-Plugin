@@ -28,6 +28,9 @@ namespace
 {
 constexpr wchar_t pluginName[] = L"NppHistory";
 constexpr UINT timerPeriodMilliseconds = 1000;
+constexpr ULONGLONG startupUpdateDelayMilliseconds = 90ULL * 1000ULL;
+constexpr ULONGLONG resumeUpdateDelayMilliseconds = 30ULL * 1000ULL;
+constexpr ULONGLONG updateSchedulePeriodMilliseconds = 60ULL * 1000ULL;
 constexpr UINT updateCompleteMessage = WM_APP + 240;
 
 enum MenuIndex { showHistoryIndex, captureIndex, settingsIndex, aboutIndex,
@@ -58,6 +61,9 @@ bool configurationLoaded = false;
 UINT_PTR activeTimerId = 0;
 UINT_PTR lastActiveBuffer = 0;
 ULONGLONG lastIntervalTick = 0;
+ULONGLONG automaticUpdateEligibleTick = 0;
+ULONGLONG nextUpdateScheduleTick = 0;
+ULONGLONG nextUpdateStatusRefreshTick = 0;
 std::atomic_bool updateCheckInProgress = false;
 std::atomic_bool updateShuttingDown = false;
 HANDLE updateThreadHandle = nullptr;
@@ -258,6 +264,7 @@ void startUpdateCheck(bool manual, std::optional<bool> includePrereleases = std:
     if (!thread)
     {
         updateCheckInProgress = false;
+        settings.recordUpdateFailure(currentUnixSeconds());
         pluginLogger().write(LogLevel::error, L"Update check could not start",
             L"The background update-check thread could not be created");
         settings.lastUpdateStatus = L"Last check failed: update check could not be started";
@@ -281,7 +288,7 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         || completion->result.status == UpdateCheckStatus::upToDate;
     if (successful)
     {
-        settings.lastUpdateCheck = currentUnixSeconds();
+        settings.recordUpdateSuccess(currentUnixSeconds());
         std::wstring publishedVersion = completion->result.release.tag;
         if (publishedVersion.size() > 1 && (publishedVersion[0] == L'v'
             || publishedVersion[0] == L'V') && iswdigit(publishedVersion[1]))
@@ -298,6 +305,7 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
     }
     else
     {
+        settings.recordUpdateFailure(currentUnixSeconds());
         settings.lastUpdateStatus = L"Last check failed: " + completion->result.detail;
         if (!settings.save(settingsFile))
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
@@ -346,6 +354,14 @@ LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LP
         startUpdateCheck(true, wParam != FALSE);
         return 0;
     }
+    if (message == WM_POWERBROADCAST && ready
+        && (wParam == PBT_APMRESUMEAUTOMATIC || wParam == PBT_APMRESUMESUSPEND))
+    {
+        const ULONGLONG now = GetTickCount64();
+        automaticUpdateEligibleTick = now + resumeUpdateDelayMilliseconds;
+        nextUpdateScheduleTick = automaticUpdateEligibleTick;
+        return TRUE;
+    }
     if (message == WM_ACTIVATEAPP && wParam == FALSE && ready
         && settings.shouldAutoSave(AutoSaveTrigger::focusLoss))
         saveConfiguredScope();
@@ -359,9 +375,21 @@ void CALLBACK timerProc(HWND, UINT, UINT_PTR, DWORD)
     try
     {
         detectMissingBuffers();
+        const ULONGLONG now = GetTickCount64();
+        if (now >= nextUpdateStatusRefreshTick)
+        {
+            nextUpdateStatusRefreshTick = now + 60ULL * 1000ULL;
+            settings.refreshUpdateStatus(false);
+        }
+        if (settings.autoUpdateEnabled && now >= automaticUpdateEligibleTick
+            && now >= nextUpdateScheduleTick)
+        {
+            nextUpdateScheduleTick = now + updateSchedulePeriodMilliseconds;
+            if (!updateCheckInProgress && settings.updateCheckDue(currentUnixSeconds()))
+                startUpdateCheck(false);
+        }
         if (!settings.autoSaveEnabled)
             return;
-        const ULONGLONG now = GetTickCount64();
         if (settings.shouldAutoSave(AutoSaveTrigger::afterEdit) && !dirtyBuffers.empty())
         {
             std::vector<UINT_PTR> due;
@@ -506,6 +534,9 @@ void editSettings()
         refreshPanel();
         const ULONGLONG now = GetTickCount64();
         lastIntervalTick = now;
+        automaticUpdateEligibleTick = now + resumeUpdateDelayMilliseconds;
+        nextUpdateScheduleTick = automaticUpdateEligibleTick;
+        nextUpdateStatusRefreshTick = now;
         for (auto& [bufferId, state] : dirtyBuffers)
         {
             (void)bufferId;
@@ -663,7 +694,11 @@ void initialise()
         SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT);
     activeTimerId = SetTimer(nullptr, 0, timerPeriodMilliseconds, timerProc);
     lastActiveBuffer = currentBuffer();
-    lastIntervalTick = GetTickCount64();
+    const ULONGLONG now = GetTickCount64();
+    lastIntervalTick = now;
+    automaticUpdateEligibleTick = now + startupUpdateDelayMilliseconds;
+    nextUpdateScheduleTick = automaticUpdateEligibleTick;
+    nextUpdateStatusRefreshTick = now;
     SetWindowSubclass(nppData._nppHandle, mainWindowSubclass, 1, 0);
     const HMENU mainMenu = GetMenu(nppData._nppHandle);
     removeMenuCommand(mainMenu, menuItems[toolbarCompareIndex]._cmdID);
@@ -671,8 +706,6 @@ void initialise()
     DrawMenuBar(nppData._nppHandle);
     ready = true;
     updateShuttingDown = false;
-    if (settings.updateCheckDue(currentUnixSeconds()))
-        startUpdateCheck(false);
 }
 }
 

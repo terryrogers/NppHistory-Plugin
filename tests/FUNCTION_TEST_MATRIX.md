@@ -43,7 +43,10 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `Settings::shouldCreateRevision` | Direct all revision paths, selected/cleared/master-off | PASS |
 | `Settings::afterEditDue` | Direct pre/exact threshold, disabled and tick reversal | PASS |
 | `Settings::intervalDue` | Direct pre/exact threshold, disabled and tick reversal | PASS |
-| `Settings::updateCheckDue` | Direct disabled, daily, weekly and monthly boundaries | PASS |
+| `Settings::updateCheckDue` | Direct disabled, daily, weekly and monthly boundaries plus retry suppression | PASS |
+| `Settings::nextUpdateCheckTime` | Direct next deadline, due-now and retry deadline calculation | PASS |
+| `Settings::recordUpdateSuccess` | Direct successful-check timestamp and retry reset | PASS |
+| `Settings::recordUpdateFailure` | Direct 15-minute, one-hour and capped six-hour retry progression | PASS |
 | `Settings::load` | Direct defaults, all fields, clamping and legacy migration | PASS |
 | `Settings::save` | Direct all fields/frequencies and Unicode persistence | PASS |
 | `Settings::edit` | Live modal creation, centring, icon and content | PASS |
@@ -202,7 +205,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `updateThreadProc` | Live non-blocking GitHub request and completion message | PASS |
 | `startUpdateCheck` | Live manual background check, in-window checking state and duplicate-start policy | PASS |
 | `handleUpdateCompletion` | Live automatic/manual non-modal result, exact current-release status and timestamp persistence; available-link acceptance remains manual | PARTIAL |
-| `timerProc` | Live after-edit timer; interval branch directly policy-tested | PASS |
+| `timerProc` | Live delayed automatic update scheduling and after-edit timer; interval branch directly policy-tested | PASS |
 | `showHistory` | Live menu command and dock display | PASS |
 | `captureNow` | Live forced manual revision | PASS |
 | `compareFromToolbar` | Live main-toolbar comparison | PASS |

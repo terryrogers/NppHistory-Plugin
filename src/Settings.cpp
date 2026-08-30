@@ -101,14 +101,14 @@ void updateUpdateControls(HWND dialog)
 
 std::wstring updateStatusText(const Settings& settings)
 {
-    if (settings.lastUpdateStatus.empty() && settings.lastUpdateCheck == 0)
-        return L"Status: Never checked.";
     std::wstring result = L"Status: " + (settings.lastUpdateStatus.empty()
-        ? std::wstring(L"Last check completed.") : settings.lastUpdateStatus);
-    if (settings.lastUpdateCheck != 0)
-    {
+        ? (settings.lastUpdateCheck == 0 ? std::wstring(L"Never checked.")
+            : std::wstring(L"Last check completed."))
+        : settings.lastUpdateStatus);
+    const auto localTime = [](unsigned long long timestamp) {
+        std::wstring text;
         ULARGE_INTEGER value{};
-        value.QuadPart = (settings.lastUpdateCheck + 11644473600ULL) * 10000000ULL;
+        value.QuadPart = (timestamp + 11644473600ULL) * 10000000ULL;
         FILETIME utc{value.LowPart, value.HighPart}, local{};
         SYSTEMTIME time{};
         if (FileTimeToLocalFileTime(&utc, &local) && FileTimeToSystemTime(&local, &time))
@@ -118,7 +118,54 @@ std::wstring updateStatusText(const Settings& settings)
                 date, static_cast<int>(std::size(date)), nullptr);
             GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &time, nullptr,
                 clock, static_cast<int>(std::size(clock)));
-            result += L"\r\nLast successful check: " + std::wstring(date) + L" " + clock;
+            text = std::wstring(date) + L" " + clock;
+        }
+        return text;
+    };
+    if (settings.lastUpdateCheck != 0)
+    {
+        const std::wstring display = localTime(settings.lastUpdateCheck);
+        if (!display.empty())
+            result += L"\r\nLast successful check: " + display;
+    }
+    if (!settings.autoUpdateEnabled)
+        result += L"\r\nAutomatic checks are disabled.";
+    else
+    {
+        const unsigned long long now = currentUnixSeconds();
+        const unsigned long long next = settings.nextUpdateCheckTime(now);
+        if (next <= now)
+            result += L"\r\nNext automatic check: Due now.";
+        else
+        {
+            const unsigned long long remaining = next - now;
+            const auto unit = [](unsigned long long value, const wchar_t* singular,
+                const wchar_t* plural) {
+                return std::to_wstring(value) + L" " + (value == 1 ? singular : plural);
+            };
+            std::wstring duration;
+            if (remaining >= 86400)
+            {
+                const unsigned long long days = remaining / 86400;
+                const unsigned long long hours = (remaining % 86400) / 3600;
+                duration = unit(days, L"day", L"days");
+                if (hours != 0)
+                    duration += L", " + unit(hours, L"hour", L"hours");
+            }
+            else if (remaining >= 3600)
+            {
+                const unsigned long long hours = remaining / 3600;
+                const unsigned long long minutes = (remaining % 3600) / 60;
+                duration = unit(hours, L"hour", L"hours");
+                if (minutes != 0)
+                    duration += L", " + unit(minutes, L"minute", L"minutes");
+            }
+            else
+                duration = unit((remaining + 59) / 60, L"minute", L"minutes");
+            const std::wstring display = localTime(next);
+            result += L"\r\nNext automatic check: "
+                + (display.empty() ? std::wstring() : display + L" ")
+                + L"(in " + duration + L")";
         }
     }
     return result;
@@ -557,9 +604,41 @@ bool Settings::updateCheckDue(unsigned long long nowSeconds) const noexcept
 {
     if (!autoUpdateEnabled)
         return false;
+    if (nextUpdateRetry != 0 && nowSeconds < nextUpdateRetry)
+        return false;
     const unsigned days = updateFrequency == UpdateFrequency::daily ? 1
         : updateFrequency == UpdateFrequency::weekly ? 7 : 30;
     return elapsedFrequencyDue(nowSeconds, lastUpdateCheck, days);
+}
+
+unsigned long long Settings::nextUpdateCheckTime(unsigned long long nowSeconds) const noexcept
+{
+    if (!autoUpdateEnabled)
+        return 0;
+    const unsigned long long days = updateFrequency == UpdateFrequency::daily ? 1ULL
+        : updateFrequency == UpdateFrequency::weekly ? 7ULL : 30ULL;
+    const unsigned long long scheduled = lastUpdateCheck == 0
+        ? nowSeconds : lastUpdateCheck + days * 86400ULL;
+    if (scheduled > nowSeconds)
+        return scheduled;
+    return nextUpdateRetry > nowSeconds ? nextUpdateRetry : nowSeconds;
+}
+
+void Settings::recordUpdateSuccess(unsigned long long nowSeconds) noexcept
+{
+    lastUpdateCheck = nowSeconds;
+    lastUpdateAttempt = nowSeconds;
+    nextUpdateRetry = 0;
+    updateFailureCount = 0;
+}
+
+void Settings::recordUpdateFailure(unsigned long long nowSeconds) noexcept
+{
+    lastUpdateAttempt = nowSeconds;
+    updateFailureCount = (std::min)(updateFailureCount + 1U, 3U);
+    const unsigned long long delay = updateFailureCount == 1 ? 15ULL * 60ULL
+        : updateFailureCount == 2 ? 60ULL * 60ULL : 6ULL * 60ULL * 60ULL;
+    nextUpdateRetry = nowSeconds + delay;
 }
 
 void Settings::load(const std::filesystem::path& file)
@@ -589,6 +668,11 @@ void Settings::load(const std::filesystem::path& file)
     updateFrequency = static_cast<UpdateFrequency>((std::max)(0, (std::min)(2, frequency)));
     includePrereleaseUpdates = readBoolean(file, L"IncludePrereleaseUpdates", true);
     lastUpdateCheck = readUnsigned64(file, L"LastUpdateCheck", 0);
+    lastUpdateAttempt = readUnsigned64(file, L"LastUpdateAttempt", 0);
+    nextUpdateRetry = readUnsigned64(file, L"NextUpdateRetry", 0);
+    const int loadedFailures = GetPrivateProfileIntW(L"NppHistory", L"UpdateFailureCount", 0,
+        file.c_str());
+    updateFailureCount = static_cast<unsigned>((std::max)(0, (std::min)(3, loadedFailures)));
     std::wstring notified(128, L'\0');
     GetPrivateProfileStringW(L"NppHistory", L"LastNotifiedVersion", L"", notified.data(),
         static_cast<DWORD>(notified.size()), file.c_str());
@@ -658,6 +742,9 @@ bool Settings::save(const std::filesystem::path& file) const
         && write(L"UpdateFrequency", std::to_wstring(static_cast<int>(updateFrequency)))
         && write(L"IncludePrereleaseUpdates", includePrereleaseUpdates ? L"1" : L"0")
         && write(L"LastUpdateCheck", std::to_wstring(lastUpdateCheck))
+        && write(L"LastUpdateAttempt", std::to_wstring(lastUpdateAttempt))
+        && write(L"NextUpdateRetry", std::to_wstring(nextUpdateRetry))
+        && write(L"UpdateFailureCount", std::to_wstring(updateFailureCount))
         && write(L"LastNotifiedVersion", lastNotifiedVersion)
         && write(L"LastUpdateStatus", lastUpdateStatus)
         && write(L"LoggingEnabled", loggingEnabled ? L"1" : L"0")
@@ -693,6 +780,9 @@ void Settings::refreshUpdateStatus(bool checking) const
     if (!checking && activeSettings && activeSettings != this)
     {
         activeSettings->lastUpdateCheck = lastUpdateCheck;
+        activeSettings->lastUpdateAttempt = lastUpdateAttempt;
+        activeSettings->nextUpdateRetry = nextUpdateRetry;
+        activeSettings->updateFailureCount = updateFailureCount;
         activeSettings->lastUpdateStatus = lastUpdateStatus;
         activeSettings->lastNotifiedVersion = lastNotifiedVersion;
     }

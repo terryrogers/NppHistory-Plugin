@@ -77,6 +77,9 @@ struct Settings
     UpdateFrequency updateFrequency = UpdateFrequency::weekly;
     bool includePrereleaseUpdates = true;
     unsigned long long lastUpdateCheck = 0;
+    unsigned long long lastUpdateAttempt = 0;
+    unsigned long long nextUpdateRetry = 0;
+    unsigned updateFailureCount = 0;
     std::wstring lastNotifiedVersion;
     std::wstring lastUpdateStatus;
     bool loggingEnabled = false;
@@ -100,6 +103,9 @@ struct Settings
     bool afterEditDue(unsigned long long now, unsigned long long lastEdit) const noexcept;
     bool intervalDue(unsigned long long now, unsigned long long lastInterval) const noexcept;
     bool updateCheckDue(unsigned long long nowSeconds) const noexcept;
+    unsigned long long nextUpdateCheckTime(unsigned long long nowSeconds) const noexcept;
+    void recordUpdateSuccess(unsigned long long nowSeconds) noexcept;
+    void recordUpdateFailure(unsigned long long nowSeconds) noexcept;
 
     void load(const std::filesystem::path& file);
     bool save(const std::filesystem::path& file) const;

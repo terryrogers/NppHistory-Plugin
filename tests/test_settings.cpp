@@ -24,6 +24,9 @@ bool sameSettings(const Settings& left, const Settings& right)
         && left.updateFrequency == right.updateFrequency
         && left.includePrereleaseUpdates == right.includePrereleaseUpdates
         && left.lastUpdateCheck == right.lastUpdateCheck
+        && left.lastUpdateAttempt == right.lastUpdateAttempt
+        && left.nextUpdateRetry == right.nextUpdateRetry
+        && left.updateFailureCount == right.updateFailureCount
         && left.lastNotifiedVersion == right.lastNotifiedVersion
         && left.lastUpdateStatus == right.lastUpdateStatus
         && left.loggingEnabled == right.loggingEnabled
@@ -69,6 +72,9 @@ void runSettingsTests(TestContext& context)
     configured.updateFrequency = UpdateFrequency::monthly;
     configured.includePrereleaseUpdates = false;
     configured.lastUpdateCheck = 123456789ULL;
+    configured.lastUpdateAttempt = 123456999ULL;
+    configured.nextUpdateRetry = 123457899ULL;
+    configured.updateFailureCount = 2;
     configured.lastNotifiedVersion = L"v0.2.0-beta.20";
     configured.lastUpdateStatus = L"Up to date";
     configured.loggingEnabled = true;
@@ -121,6 +127,12 @@ void runSettingsTests(TestContext& context)
         "IncludePrereleaseUpdates round-trips");
     context.expect(configured.lastUpdateCheck == roundTrip.lastUpdateCheck,
         "LastUpdateCheck round-trips a 64-bit value");
+    context.expect(configured.lastUpdateAttempt == roundTrip.lastUpdateAttempt,
+        "LastUpdateAttempt round-trips a 64-bit value");
+    context.expect(configured.nextUpdateRetry == roundTrip.nextUpdateRetry,
+        "NextUpdateRetry round-trips a 64-bit value");
+    context.expect(configured.updateFailureCount == roundTrip.updateFailureCount,
+        "UpdateFailureCount round-trips");
     context.expect(configured.lastNotifiedVersion == roundTrip.lastNotifiedVersion,
         "LastNotifiedVersion round-trips");
     context.expect(configured.lastUpdateStatus == roundTrip.lastUpdateStatus,
@@ -282,6 +294,40 @@ void runSettingsTests(TestContext& context)
     policy.autoUpdateEnabled = false;
     context.expect(!policy.updateCheckDue(9'999'999),
         "disabled automatic updates never become due");
+
+    policy.autoUpdateEnabled = true;
+    policy.updateFrequency = UpdateFrequency::daily;
+    policy.lastUpdateCheck = 100;
+    policy.nextUpdateRetry = 0;
+    context.expect(policy.nextUpdateCheckTime(200) == 86'500,
+        "nextUpdateCheckTime reports the daily wall-clock deadline");
+    context.expect(policy.nextUpdateCheckTime(86'500) == 86'500,
+        "nextUpdateCheckTime reports an overdue check as due now");
+    policy.autoUpdateEnabled = false;
+    context.expect(policy.nextUpdateCheckTime(200) == 0,
+        "nextUpdateCheckTime reports no deadline when automatic checks are disabled");
+    policy.autoUpdateEnabled = true;
+    policy.lastUpdateCheck = 200;
+    policy.nextUpdateRetry = 1'100;
+    context.expect(policy.nextUpdateCheckTime(300) == 86'600,
+        "a manual failure does not move a future automatic deadline earlier");
+    policy.lastUpdateCheck = 100;
+    policy.nextUpdateRetry = 0;
+    policy.recordUpdateFailure(86'500);
+    context.expect(policy.updateFailureCount == 1 && policy.nextUpdateRetry == 87'400,
+        "the first update failure schedules a 15-minute retry");
+    context.expect(!policy.updateCheckDue(87'399) && policy.updateCheckDue(87'400),
+        "the retry deadline suppresses automatic checks until it is reached");
+    policy.recordUpdateFailure(87'400);
+    context.expect(policy.updateFailureCount == 2 && policy.nextUpdateRetry == 91'000,
+        "the second update failure schedules a one-hour retry");
+    policy.recordUpdateFailure(91'000);
+    context.expect(policy.updateFailureCount == 3 && policy.nextUpdateRetry == 112'600,
+        "later update failures use the capped six-hour retry");
+    policy.recordUpdateSuccess(112'600);
+    context.expect(policy.lastUpdateCheck == 112'600 && policy.lastUpdateAttempt == 112'600
+        && policy.nextUpdateRetry == 0 && policy.updateFailureCount == 0,
+        "a successful update check resets retry state");
 
     const auto normalizedPath = directory.path() / L"normalized.ini";
     WritePrivateProfileStringW(L"NppHistory", L"AfterEditSeconds", L"0", normalizedPath.c_str());
