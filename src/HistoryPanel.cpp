@@ -219,7 +219,21 @@ void HistoryPanel::refresh(const std::filesystem::path& file)
     if (!_dialog)
         return;
     SetDlgItemTextW(_dialog, IDC_CURRENT_FILE, file.empty() ? L"No file selected" : file.c_str());
-    ShowWindow(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST), _fileSaved ? SW_HIDE : SW_SHOW);
+    const bool autoSaveExcluded = _fileSaved && _settings
+        && _settings->isAutoSaveExcluded(file);
+    const bool historyExcluded = _fileSaved && _settings
+        && _settings->isHistoryExcluded(file);
+    std::wstring status;
+    if (!_fileSaved)
+        status = L"Save File First";
+    else if (autoSaveExcluded && historyExcluded)
+        status = L"Excluded: Auto Save + History";
+    else if (autoSaveExcluded)
+        status = L"Excluded: Auto Save";
+    else if (historyExcluded)
+        status = L"Excluded: Revision History";
+    SetDlgItemTextW(_dialog, IDC_SAVE_FILE_FIRST, status.c_str());
+    ShowWindow(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST), status.empty() ? SW_HIDE : SW_SHOW);
     const HWND list = GetDlgItem(_dialog, IDC_REVISIONS);
     ListView_DeleteAllItems(list);
     for (int index = 0; index < static_cast<int>(_revisions.size()); ++index)
@@ -247,7 +261,10 @@ void HistoryPanel::updateActionButtons()
 {
     if (!_dialog)
         return;
-    EnableWindow(GetDlgItem(_dialog, IDC_CAPTURE), _fileSaved);
+    const bool captureAllowed = _fileSaved && _settings
+        && _settings->shouldCreateRevision(RevisionTrigger::manual)
+        && !_settings->isHistoryExcluded(_currentFile);
+    EnableWindow(GetDlgItem(_dialog, IDC_CAPTURE), captureAllowed);
     EnableWindow(GetDlgItem(_dialog, IDC_REFRESH), _fileSaved);
     const BOOL revisionSelected = _fileSaved && selectedIndex() >= 0;
     EnableWindow(GetDlgItem(_dialog, IDC_COMPARE), revisionSelected);
@@ -1076,7 +1093,8 @@ void HistoryPanel::restoreSelected()
     }
     const RevisionInfo selected = _revisions[index];
     const bool retainSafetyRevision = _settings
-        && _settings->shouldCreateRevision(RevisionTrigger::beforeRestore);
+        && _settings->shouldCreateRevision(RevisionTrigger::beforeRestore)
+        && !_settings->isHistoryExcluded(_currentFile);
     const wchar_t* confirmation = retainSafetyRevision
         ? L"Restore this revision? The current saved file will be retained as a safety revision."
         : L"Restore this revision? History is not configured to create a safety revision first.";
@@ -1167,12 +1185,13 @@ void HistoryPanel::layout()
     SetPropW(_dialog, L"NppHistoryResponsiveButtonRows",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(rows.size())));
     const int buttonTop = area.bottom - margin - buttonsHeight;
-    const int warningHeight = _fileSaved ? 0 : 20;
+    const bool showStatus = IsWindowVisible(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST)) != FALSE;
+    const int warningHeight = showStatus ? 20 : 0;
     const int warningTop = buttonTop - warningHeight;
     const int listTop = 35;
     MoveWindow(GetDlgItem(_dialog, IDC_REVISIONS), margin, listTop, available,
         (std::max)(0, warningTop - gap - listTop), TRUE);
-    if (!_fileSaved)
+    if (showStatus)
         MoveWindow(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST), margin, warningTop,
             available, warningHeight, TRUE);
     int y = buttonTop;
@@ -1217,7 +1236,7 @@ LRESULT CALLBACK HistoryPanel::panelButtonSubclass(HWND button, UINT message, WP
     LPARAM lParam, UINT_PTR subclassId, DWORD_PTR referenceData)
 {
     auto* panel = reinterpret_cast<HistoryPanel*>(referenceData);
-    if (panel && message == WM_MOUSEMOVE && IsWindowEnabled(button))
+    if (panel && message == WM_MOUSEMOVE)
     {
         if (panel->_hotButton != button)
         {

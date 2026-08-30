@@ -70,6 +70,7 @@ struct Settings
     bool autoSaveOnTabChange = false;
     bool autoSaveOnExit = false;
     AutoSaveScope autoSaveScope = AutoSaveScope::allOpenFiles;
+    std::wstring autoSaveExclusions;
     bool toolbarCapture = false;
     bool toolbarCompare = false;
     bool toolbarRestore = false;
@@ -98,9 +99,12 @@ struct Settings
     bool historyBeforeRestore = true;
     HistoryLocationMode historyLocationMode = HistoryLocationMode::adjacent;
     std::filesystem::path customHistoryRoot;
+    std::wstring historyExclusions;
 
     bool shouldAutoSave(AutoSaveTrigger trigger) const noexcept;
     bool shouldCreateRevision(RevisionTrigger trigger) const noexcept;
+    bool isAutoSaveExcluded(const std::filesystem::path& path) const;
+    bool isHistoryExcluded(const std::filesystem::path& path) const;
     bool afterEditDue(unsigned long long now, unsigned long long lastEdit) const noexcept;
     bool intervalDue(unsigned long long now, unsigned long long lastInterval) const noexcept;
     bool updateCheckDue(unsigned long long nowSeconds) const noexcept;

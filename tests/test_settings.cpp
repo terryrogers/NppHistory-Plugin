@@ -17,6 +17,7 @@ bool sameSettings(const Settings& left, const Settings& right)
         && left.autoSaveOnTabChange == right.autoSaveOnTabChange
         && left.autoSaveOnExit == right.autoSaveOnExit
         && left.autoSaveScope == right.autoSaveScope
+        && left.autoSaveExclusions == right.autoSaveExclusions
         && left.toolbarCapture == right.toolbarCapture
         && left.toolbarCompare == right.toolbarCompare
         && left.toolbarRestore == right.toolbarRestore
@@ -40,6 +41,7 @@ bool sameSettings(const Settings& left, const Settings& right)
         && left.historyBeforeSave == right.historyBeforeSave
         && left.historyAfterSave == right.historyAfterSave
         && left.historyBeforeRestore == right.historyBeforeRestore
+        && left.historyExclusions == right.historyExclusions
         && left.historyLocationMode == right.historyLocationMode
         && left.customHistoryRoot == right.customHistoryRoot;
 }
@@ -65,6 +67,7 @@ void runSettingsTests(TestContext& context)
     configured.autoSaveOnTabChange = true;
     configured.autoSaveOnExit = true;
     configured.autoSaveScope = AutoSaveScope::currentFile;
+    configured.autoSaveExclusions = L"*.log\r\nmyfile*.com";
     configured.toolbarCapture = true;
     configured.toolbarCompare = true;
     configured.toolbarRestore = true;
@@ -88,6 +91,7 @@ void runSettingsTests(TestContext& context)
     configured.historyBeforeSave = false;
     configured.historyAfterSave = false;
     configured.historyBeforeRestore = false;
+    configured.historyExclusions = L"*.tmp\r\nprivate-?.txt";
     configured.historyLocationMode = HistoryLocationMode::customRoot;
     configured.customHistoryRoot = directory.path() / L"Histories \u03A9";
     const auto configuredPath = directory.path() / L"nested" / L"NppHistory.ini";
@@ -113,6 +117,8 @@ void runSettingsTests(TestContext& context)
         "AutoSaveOnExit round-trips");
     context.expect(configured.autoSaveScope == roundTrip.autoSaveScope,
         "AutoSaveScope round-trips");
+    context.expect(configured.autoSaveExclusions == roundTrip.autoSaveExclusions,
+        "AutoSaveExclusions round-trips a multiline wildcard list");
     context.expect(configured.toolbarCapture == roundTrip.toolbarCapture,
         "ToolbarCapture round-trips");
     context.expect(configured.toolbarCompare == roundTrip.toolbarCompare,
@@ -159,6 +165,8 @@ void runSettingsTests(TestContext& context)
         "HistoryAfterSave round-trips");
     context.expect(configured.historyBeforeRestore == roundTrip.historyBeforeRestore,
         "HistoryBeforeRestore round-trips");
+    context.expect(configured.historyExclusions == roundTrip.historyExclusions,
+        "HistoryExclusions round-trips a multiline wildcard list");
     context.expect(configured.historyLocationMode == roundTrip.historyLocationMode,
         "HistoryLocationMode round-trips");
     context.expect(configured.customHistoryRoot == roundTrip.customHistoryRoot,
@@ -170,6 +178,20 @@ void runSettingsTests(TestContext& context)
             << "  actual CustomHistoryRoot: "
             << wideToUtf8(roundTrip.customHistoryRoot.wstring())
             << " (" << roundTrip.customHistoryRoot.wstring().size() << ")\n";
+
+    Settings exclusions;
+    exclusions.autoSaveExclusions = L"*.log\r\nmyfile*.com";
+    exclusions.historyExclusions = L"*.tmp";
+    context.expect(exclusions.isAutoSaveExcluded(L"C:\\Notes\\PLUGIN.LOG"),
+        "auto-save exclusions are case-insensitive");
+    context.expect(exclusions.isAutoSaveExcluded(L"C:\\Notes\\myfile.com")
+        && exclusions.isAutoSaveExcluded(L"C:\\Notes\\myfiles.com"),
+        "auto-save exclusions support a star matching zero or more characters");
+    context.expect(!exclusions.isAutoSaveExcluded(L"C:\\Notes\\other.com"),
+        "auto-save exclusions remain anchored to the complete filename");
+    context.expect(!exclusions.isHistoryExcluded(L"C:\\Notes\\PLUGIN.LOG")
+        && exclusions.isHistoryExcluded(L"C:\\Notes\\cache.tmp"),
+        "auto-save and revision-history exclusions are independent");
 
     for (const auto frequency : {UpdateFrequency::daily, UpdateFrequency::weekly,
         UpdateFrequency::monthly})

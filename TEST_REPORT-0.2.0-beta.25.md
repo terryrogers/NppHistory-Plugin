@@ -12,7 +12,7 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 | Area | Evidence | Status |
 |---|---|---|
-| Core behavioural suite | 307 checks, 0 failures | PASS |
+| Core behavioural suite | 321 checks, 0 failures | PASS |
 | Plugin build | Release x64 | PASS |
 | Restart-installer build | Release x64 | PASS |
 | Core-test build | Release x64 | PASS |
@@ -24,6 +24,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 | History pane selection state | Compare and Restore disabled until a revision is selected | PASS |
 | Revision size display | Dynamic B, KB, MB and GB formatting with direct boundary checks | PASS |
 | History pane button hover | All six buttons register and clear pointer hover state | PASS |
+| Independent exclusions | Multiline wildcard persistence, matching, Auto Save suppression, manual-save allowance and History suppression | PASS |
+| Exclusion indicators | Live orange/blue document-tab dots and concise red History pane status | PASS |
 | Revision capture/comment/delete/restore | Live UI and audit-log evidence | PASS |
 | Comparison interface | Live rendering, navigation, shared scrolling, tooltips and pane behavior | PASS |
 | Settings and About | Five tabs, dependent controls, numeric version and blank candidate release date | PASS |
@@ -32,8 +34,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `BC3DFB38AE6FED6C4C75CDEF2535D23892D121151825500816D8665321B4F030`
-- Candidate updater SHA-256: `4193D5C86707D51A4D34B1009CC7FC0216D0E2F2395C0CB40096DA174DB656FD`
+- Candidate DLL SHA-256: `E885580A3DDDF401ECDD464DDF6FC8E7DC0FF2A87C633E62BF6C5903B8E3755F`
+- Candidate updater SHA-256: `DE15E5F52E8C3D1C60F2D04DF4AC7CC420834B113E938C0CD9DE2C79910AE55E`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 
@@ -52,7 +54,7 @@ The access-error live path exposed two over-strict test assumptions: a failed fi
 
 ## CI and publication gates
 
-- Normal pushes and pull requests now build the plugin, updater and core tests, run the 307-check suite, run updater replacement/rollback smoke tests and upload both binaries.
+- Normal pushes and pull requests now build the plugin, updater and core tests, run the 321-check suite, run updater replacement/rollback smoke tests and upload both binaries.
 - Tagged releases repeat the core and updater tests.
 - Publication rejects mismatched semantic tags, numeric plugin versions, missing/invalid publication dates and missing version-specific release notes.
 - The manual ZIP is structured as `NppHistory\NppHistory.dll`.

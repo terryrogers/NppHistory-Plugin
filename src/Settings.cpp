@@ -30,6 +30,44 @@ bool readBoolean(const std::filesystem::path& file, const wchar_t* key, bool fal
     return GetPrivateProfileIntW(L"NppHistory", key, fallback ? 1 : 0, file.c_str()) != 0;
 }
 
+std::wstring readTextSetting(const std::filesystem::path& file, const wchar_t* key)
+{
+    std::wstring value(32768, L'\0');
+    GetPrivateProfileStringW(L"NppHistory", key, L"", value.data(),
+        static_cast<DWORD>(value.size()), file.c_str());
+    value.resize(wcslen(value.c_str()));
+    return value;
+}
+
+std::wstring decodePatternSetting(std::wstring value)
+{
+    std::wstring decoded;
+    for (const wchar_t character : value)
+        decoded += character == L'|' ? L"\r\n" : std::wstring(1, character);
+    return decoded;
+}
+
+std::wstring encodePatternSetting(std::wstring_view value)
+{
+    std::wstring encoded;
+    for (std::size_t index = 0; index < value.size(); ++index)
+    {
+        if (value[index] == L'\r')
+            continue;
+        encoded += value[index] == L'\n' ? L'|' : value[index];
+    }
+    return encoded;
+}
+
+std::wstring dialogText(HWND dialog, int control)
+{
+    const int length = GetWindowTextLengthW(GetDlgItem(dialog, control));
+    std::wstring value(static_cast<std::size_t>((std::max)(0, length)) + 1, L'\0');
+    GetDlgItemTextW(dialog, control, value.data(), static_cast<int>(value.size()));
+    value.resize(wcslen(value.c_str()));
+    return value;
+}
+
 unsigned long long readUnsigned64(const std::filesystem::path& file,
     const wchar_t* key, unsigned long long fallback)
 {
@@ -69,7 +107,8 @@ void updateHistoryControls(HWND dialog)
     const BOOL enabled = IsDlgButtonChecked(dialog, IDC_HISTORY_ENABLED) == BST_CHECKED;
     for (const int control : {IDC_HISTORY_CREATE_GROUP, IDC_HISTORY_BEFORE_SAVE,
         IDC_HISTORY_AFTER_SAVE, IDC_HISTORY_BEFORE_RESTORE, IDC_HISTORY_GROUP,
-        IDC_HISTORY_ADJACENT, IDC_HISTORY_CUSTOM})
+        IDC_HISTORY_ADJACENT, IDC_HISTORY_CUSTOM, IDC_HISTORY_EXCLUSIONS_GROUP,
+        IDC_HISTORY_EXCLUSIONS, IDC_HISTORY_EXCLUSIONS_NOTE})
         EnableWindow(GetDlgItem(dialog, control), enabled);
     updateLocationControls(dialog);
 }
@@ -83,7 +122,8 @@ void updateAutoSaveControls(HWND dialog)
     EnableWindow(GetDlgItem(dialog, IDC_AFTER_EDIT_LABEL), afterEdit);
     for (const int control : {IDC_AUTOSAVE_FOCUS_LOSS, IDC_AUTOSAVE_INTERVAL,
         IDC_AUTOSAVE_TAB_CHANGE, IDC_AUTOSAVE_EXIT, IDC_AUTOSAVE_CURRENT_FILE,
-        IDC_AUTOSAVE_ALL_FILES})
+        IDC_AUTOSAVE_ALL_FILES, IDC_AUTOSAVE_EXCLUSIONS_GROUP,
+        IDC_AUTOSAVE_EXCLUSIONS, IDC_AUTOSAVE_EXCLUSIONS_NOTE})
         EnableWindow(GetDlgItem(dialog, control), enabled);
     const BOOL interval = enabled
         && IsDlgButtonChecked(dialog, IDC_AUTOSAVE_INTERVAL) == BST_CHECKED;
@@ -212,11 +252,14 @@ void showSettingsPage(HWND dialog, int page)
         IDC_AFTER_EDIT_SECONDS, IDC_AFTER_EDIT_LABEL, IDC_AUTOSAVE_FOCUS_LOSS,
         IDC_AUTOSAVE_INTERVAL, IDC_AUTOSAVE_INTERVAL_MINUTES, IDC_INTERVAL_LABEL,
         IDC_AUTOSAVE_TAB_CHANGE, IDC_AUTOSAVE_EXIT, IDC_AUTOSAVE_WHAT_GROUP,
-        IDC_AUTOSAVE_CURRENT_FILE, IDC_AUTOSAVE_ALL_FILES};
+        IDC_AUTOSAVE_CURRENT_FILE, IDC_AUTOSAVE_ALL_FILES,
+        IDC_AUTOSAVE_EXCLUSIONS_GROUP, IDC_AUTOSAVE_EXCLUSIONS,
+        IDC_AUTOSAVE_EXCLUSIONS_NOTE};
     const int history[] = {IDC_HISTORY_ENABLED, IDC_HISTORY_CREATE_GROUP,
         IDC_HISTORY_BEFORE_SAVE, IDC_HISTORY_AFTER_SAVE, IDC_HISTORY_BEFORE_RESTORE,
         IDC_HISTORY_GROUP, IDC_HISTORY_ADJACENT, IDC_HISTORY_CUSTOM,
-        IDC_HISTORY_PATH, IDC_HISTORY_BROWSE};
+        IDC_HISTORY_PATH, IDC_HISTORY_BROWSE, IDC_HISTORY_EXCLUSIONS_GROUP,
+        IDC_HISTORY_EXCLUSIONS, IDC_HISTORY_EXCLUSIONS_NOTE};
     const int logging[] = {IDC_LOGGING_ENABLED, IDC_LOGGING_LEVEL_GROUP,
         IDC_LOGGING_LEVEL_LABEL, IDC_LOGGING_LEVEL, IDC_LOGGING_FILE_GROUP,
         IDC_LOGGING_DEFAULT, IDC_LOGGING_CUSTOM, IDC_LOGGING_PATH,
@@ -352,6 +395,8 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         CheckRadioButton(dialog, IDC_AUTOSAVE_CURRENT_FILE, IDC_AUTOSAVE_ALL_FILES,
             settings->autoSaveScope == AutoSaveScope::currentFile
                 ? IDC_AUTOSAVE_CURRENT_FILE : IDC_AUTOSAVE_ALL_FILES);
+        SetDlgItemTextW(dialog, IDC_AUTOSAVE_EXCLUSIONS,
+            settings->autoSaveExclusions.c_str());
 
         CheckDlgButton(dialog, IDC_HISTORY_ENABLED,
             settings->historyEnabled ? BST_CHECKED : BST_UNCHECKED);
@@ -365,6 +410,8 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             settings->historyLocationMode == HistoryLocationMode::adjacent
                 ? IDC_HISTORY_ADJACENT : IDC_HISTORY_CUSTOM);
         SetDlgItemTextW(dialog, IDC_HISTORY_PATH, settings->customHistoryRoot.c_str());
+        SetDlgItemTextW(dialog, IDC_HISTORY_EXCLUSIONS,
+            settings->historyExclusions.c_str());
         updateHistoryControls(dialog);
         updateAutoSaveControls(dialog);
         showSettingsPage(dialog, 0);
@@ -513,6 +560,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         settings->autoSaveScope = IsDlgButtonChecked(dialog,
             IDC_AUTOSAVE_CURRENT_FILE) == BST_CHECKED
             ? AutoSaveScope::currentFile : AutoSaveScope::allOpenFiles;
+        settings->autoSaveExclusions = dialogText(dialog, IDC_AUTOSAVE_EXCLUSIONS);
 
         settings->historyEnabled = IsDlgButtonChecked(dialog,
             IDC_HISTORY_ENABLED) == BST_CHECKED;
@@ -527,6 +575,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         wchar_t path[32768]{};
         GetDlgItemTextW(dialog, IDC_HISTORY_PATH, path, static_cast<int>(std::size(path)));
         settings->customHistoryRoot = path;
+        settings->historyExclusions = dialogText(dialog, IDC_HISTORY_EXCLUSIONS);
         if (settings->historyEnabled
             && settings->historyLocationMode == HistoryLocationMode::customRoot
             && settings->customHistoryRoot.empty())
@@ -586,6 +635,16 @@ bool Settings::shouldCreateRevision(RevisionTrigger trigger) const noexcept
     case RevisionTrigger::manual: return true;
     }
     return false;
+}
+
+bool Settings::isAutoSaveExcluded(const std::filesystem::path& path) const
+{
+    return !path.empty() && pathMatchesWildcardList(path, autoSaveExclusions);
+}
+
+bool Settings::isHistoryExcluded(const std::filesystem::path& path) const
+{
+    return !path.empty() && pathMatchesWildcardList(path, historyExclusions);
 }
 
 bool Settings::afterEditDue(unsigned long long now, unsigned long long lastEdit) const noexcept
@@ -659,6 +718,7 @@ void Settings::load(const std::filesystem::path& file)
     autoSaveOnExit = readBoolean(file, L"AutoSaveOnExit", false);
     autoSaveScope = GetPrivateProfileIntW(L"NppHistory", L"AutoSaveScope", 1,
         file.c_str()) == 0 ? AutoSaveScope::currentFile : AutoSaveScope::allOpenFiles;
+    autoSaveExclusions = decodePatternSetting(readTextSetting(file, L"AutoSaveExclusions"));
     toolbarCapture = readBoolean(file, L"ToolbarCapture", false);
     toolbarCompare = readBoolean(file, L"ToolbarCompare", false);
     toolbarRestore = readBoolean(file, L"ToolbarRestore", false);
@@ -715,6 +775,7 @@ void Settings::load(const std::filesystem::path& file)
         static_cast<DWORD>(path.size()), file.c_str());
     path.resize(wcslen(path.c_str()));
     customHistoryRoot = path;
+    historyExclusions = decodePatternSetting(readTextSetting(file, L"HistoryExclusions"));
 }
 
 bool Settings::save(const std::filesystem::path& file) const
@@ -735,6 +796,7 @@ bool Settings::save(const std::filesystem::path& file) const
         && write(L"AutoSaveOnTabChange", autoSaveOnTabChange ? L"1" : L"0")
         && write(L"AutoSaveOnExit", autoSaveOnExit ? L"1" : L"0")
         && write(L"AutoSaveScope", autoSaveScope == AutoSaveScope::currentFile ? L"0" : L"1")
+        && write(L"AutoSaveExclusions", encodePatternSetting(autoSaveExclusions))
         && write(L"ToolbarCapture", toolbarCapture ? L"1" : L"0")
         && write(L"ToolbarCompare", toolbarCompare ? L"1" : L"0")
         && write(L"ToolbarRestore", toolbarRestore ? L"1" : L"0")
@@ -759,7 +821,8 @@ bool Settings::save(const std::filesystem::path& file) const
         && write(L"HistoryAfterSave", historyAfterSave ? L"1" : L"0")
         && write(L"HistoryBeforeRestore", historyBeforeRestore ? L"1" : L"0")
         && write(L"HistoryLocationMode", historyLocationMode == HistoryLocationMode::customRoot ? L"1" : L"0")
-        && write(L"CustomHistoryRoot", customHistoryRoot.wstring());
+        && write(L"CustomHistoryRoot", customHistoryRoot.wstring())
+        && write(L"HistoryExclusions", encodePatternSetting(historyExclusions));
 }
 
 bool Settings::edit(HWND owner, HINSTANCE instance)

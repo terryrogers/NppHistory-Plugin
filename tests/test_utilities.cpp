@@ -102,6 +102,28 @@ void runUtilityTests(TestContext& context)
         && formatFileSize(5ULL * 1024ULL * 1024ULL * 1024ULL) == L"5 GB",
         "formatFileSize selects dynamic units for larger revisions");
 
+    context.expect(wildcardMatchCaseInsensitive(L"*.log", L"NppHistory.LOG"),
+        "wildcard matching is case-insensitive and supports star");
+    context.expect(wildcardMatchCaseInsensitive(L"myfile*.com", L"myfile.com")
+        && wildcardMatchCaseInsensitive(L"myfile*.com", L"myfiles.com"),
+        "star matches zero or more filename characters");
+    context.expect(wildcardMatchCaseInsensitive(L"report-????.txt", L"report-2026.txt")
+        && !wildcardMatchCaseInsensitive(L"report-????.txt", L"report-26.txt"),
+        "question mark matches exactly one character");
+    context.expect(!wildcardMatchCaseInsensitive(L"*.log", L"notes.log.bak"),
+        "wildcard matching is anchored to the complete value");
+    context.expect(pathMatchesWildcardList(L"C:\\Notes\\NppHistory.LOG",
+        L"\r\n *.tmp \n  *.log\t\r\n"),
+        "multiline wildcard lists ignore blank rows and surrounding whitespace");
+    context.expect(pathMatchesWildcardList(L"C:\\Notes\\NppHistory.log",
+        L"C:/Notes/*.log"),
+        "patterns containing a path separator match the normalized full path");
+    context.expect(!pathMatchesWildcardList(L"C:\\Other\\NppHistory.log",
+        L"C:/Notes/*.log"),
+        "full-path wildcard patterns do not match a different directory");
+    context.expect(!pathMatchesWildcardList(L"C:\\Notes\\NppHistory.log", L""),
+        "an empty wildcard list excludes no files");
+
     centerWindowOnOwner(nullptr, nullptr);
     fitWindowWithinOwner(nullptr, nullptr, 0, 0, 0, 0);
     context.expect(true, "window helpers safely ignore null handles");

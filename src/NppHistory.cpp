@@ -138,6 +138,120 @@ fs::path currentPath()
     return pathForBuffer(currentBuffer());
 }
 
+std::vector<HWND> documentTabControls()
+{
+    std::vector<HWND> controls;
+    EnumChildWindows(nppData._nppHandle, [](HWND window, LPARAM value) -> BOOL {
+        if (GetParent(window) != nppData._nppHandle)
+            return TRUE;
+        wchar_t className[64]{};
+        GetClassNameW(window, className, static_cast<int>(std::size(className)));
+        if (wcscmp(className, WC_TABCONTROLW) == 0)
+            reinterpret_cast<std::vector<HWND>*>(value)->push_back(window);
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&controls));
+    return controls;
+}
+
+void drawDocumentTabIndicators(HWND tabs, int view)
+{
+    const HDC dc = GetDC(tabs);
+    if (!dc)
+        return;
+    const HPEN pen = CreatePen(PS_SOLID, 1, RGB(80, 80, 80));
+    const HGDIOBJ previousPen = SelectObject(dc, pen);
+    const int count = TabCtrl_GetItemCount(tabs);
+    for (int index = 0; index < count; ++index)
+    {
+        const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
+            NPPM_GETBUFFERIDFROMPOS, index, view));
+        const fs::path path = pathForBuffer(bufferId);
+        if (path.empty())
+            continue;
+        RECT item{};
+        if (!TabCtrl_GetItemRect(tabs, index, &item))
+            continue;
+        const auto dot = [&](int offset, COLORREF color) {
+            const HBRUSH brush = CreateSolidBrush(color);
+            const HGDIOBJ previousBrush = SelectObject(dc, brush);
+            Ellipse(dc, item.left + offset, item.top + 2,
+                item.left + offset + 7, item.top + 9);
+            SelectObject(dc, previousBrush);
+            DeleteObject(brush);
+        };
+        if (settings.isAutoSaveExcluded(path))
+            dot(2, RGB(230, 135, 20));
+        if (settings.isHistoryExcluded(path))
+            dot(11, RGB(45, 120, 210));
+    }
+    SelectObject(dc, previousPen);
+    DeleteObject(pen);
+    ReleaseDC(tabs, dc);
+}
+
+LRESULT CALLBACK documentTabSubclass(HWND tabs, UINT message, WPARAM wParam, LPARAM lParam,
+    UINT_PTR subclassId, DWORD_PTR referenceData)
+{
+    if (message == WM_NCDESTROY)
+    {
+        RemoveWindowSubclass(tabs, documentTabSubclass, subclassId);
+        return DefSubclassProc(tabs, message, wParam, lParam);
+    }
+    const LRESULT result = DefSubclassProc(tabs, message, wParam, lParam);
+    if (message == WM_PAINT)
+        drawDocumentTabIndicators(tabs, static_cast<int>(referenceData));
+    return result;
+}
+
+void refreshDocumentTabIndicators()
+{
+    if (!nppData._nppHandle)
+        return;
+    auto controls = documentTabControls();
+    std::array<HWND, 2> viewTabs{};
+    int autoSaveIndicatorCount = 0;
+    int historyIndicatorCount = 0;
+    std::vector<bool> used(controls.size(), false);
+    for (int view = 0; view < 2; ++view)
+    {
+        const int expected = static_cast<int>(SendMessageW(nppData._nppHandle,
+            NPPM_GETNBOPENFILES, 0, view == 0 ? PRIMARY_VIEW : SECOND_VIEW));
+        for (std::size_t index = 0; index < controls.size(); ++index)
+        {
+            if (!used[index] && TabCtrl_GetItemCount(controls[index]) == expected)
+            {
+                viewTabs[view] = controls[index];
+                used[index] = true;
+                break;
+            }
+        }
+    }
+    for (int view = 0; view < 2; ++view)
+    {
+        const HWND tabs = viewTabs[view];
+        if (!tabs)
+            continue;
+        SetWindowSubclass(tabs, documentTabSubclass, static_cast<UINT_PTR>(view + 1),
+            static_cast<DWORD_PTR>(view));
+        const int count = TabCtrl_GetItemCount(tabs);
+        for (int index = 0; index < count; ++index)
+        {
+            const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
+                NPPM_GETBUFFERIDFROMPOS, index, view));
+            const fs::path path = pathForBuffer(bufferId);
+            if (settings.isAutoSaveExcluded(path))
+                ++autoSaveIndicatorCount;
+            if (settings.isHistoryExcluded(path))
+                ++historyIndicatorCount;
+        }
+        InvalidateRect(tabs, nullptr, FALSE);
+    }
+    SetPropW(nppData._nppHandle, L"NppHistoryAutoSaveTabIndicatorCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(autoSaveIndicatorCount)));
+    SetPropW(nppData._nppHandle, L"NppHistoryHistoryTabIndicatorCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(historyIndicatorCount)));
+}
+
 HWND currentEditor()
 {
     int view = 0;
@@ -221,7 +335,10 @@ void detectMissingBuffers()
 void refreshPanel()
 {
     if (ready)
+    {
+        refreshDocumentTabIndicators();
         historyPanel.refresh(currentPath());
+    }
 }
 
 void saveBuffer(UINT_PTR bufferId)
@@ -232,6 +349,8 @@ void saveBuffer(UINT_PTR bufferId)
         dirtyBuffers.erase(bufferId);
         return;
     }
+    if (settings.isAutoSaveExcluded(path))
+        return;
     SendMessageW(nppData._nppHandle, NPPM_SAVEFILE, 0, reinterpret_cast<LPARAM>(path.c_str()));
 }
 
@@ -240,7 +359,17 @@ void saveConfiguredScope(UINT_PTR preferredBuffer = 0)
     if (!settings.autoSaveEnabled || dirtyBuffers.empty())
         return;
     if (settings.autoSaveScope == AutoSaveScope::allOpenFiles)
-        SendMessageW(nppData._nppHandle, NPPM_SAVEALLFILES, 0, 0);
+    {
+        std::vector<UINT_PTR> buffers;
+        buffers.reserve(dirtyBuffers.size());
+        for (const auto& [bufferId, state] : dirtyBuffers)
+        {
+            static_cast<void>(state);
+            buffers.push_back(bufferId);
+        }
+        for (const UINT_PTR bufferId : buffers)
+            saveBuffer(bufferId);
+    }
     else
         saveBuffer(preferredBuffer ? preferredBuffer : currentBuffer());
 }
@@ -664,6 +793,13 @@ void captureNow()
             pluginName, MB_OK | MB_ICONINFORMATION);
         return;
     }
+    if (settings.isHistoryExcluded(path))
+    {
+        MessageBoxW(nppData._nppHandle,
+            L"Revision history is disabled for this file by an exclusion pattern.",
+            pluginName, MB_OK | MB_ICONINFORMATION);
+        return;
+    }
     reconcileFile(currentBuffer(), path);
     if (SendMessageW(currentEditor(), SCI_GETMODIFY, 0, 0) != 0)
     {
@@ -726,12 +862,14 @@ void logSettingsChanges(const Settings& previous, const Settings& current)
     boolean(L"Save on tab change", previous.autoSaveOnTabChange, current.autoSaveOnTabChange);
     boolean(L"Save on exit", previous.autoSaveOnExit, current.autoSaveOnExit);
     change(L"Auto Save scope", std::to_wstring(static_cast<int>(previous.autoSaveScope)), std::to_wstring(static_cast<int>(current.autoSaveScope)));
+    change(L"Auto Save exclusions", previous.autoSaveExclusions, current.autoSaveExclusions);
     boolean(L"History enabled", previous.historyEnabled, current.historyEnabled);
     boolean(L"Revision before save", previous.historyBeforeSave, current.historyBeforeSave);
     boolean(L"Revision after save", previous.historyAfterSave, current.historyAfterSave);
     boolean(L"Revision before restore", previous.historyBeforeRestore, current.historyBeforeRestore);
     change(L"History location", std::to_wstring(static_cast<int>(previous.historyLocationMode)), std::to_wstring(static_cast<int>(current.historyLocationMode)));
     change(L"Custom history root", previous.customHistoryRoot.wstring(), current.customHistoryRoot.wstring());
+    change(L"History exclusions", previous.historyExclusions, current.historyExclusions);
     boolean(L"Logging enabled", previous.loggingEnabled, current.loggingEnabled);
     change(L"Log level", std::to_wstring(static_cast<int>(previous.logLevel)), std::to_wstring(static_cast<int>(current.logLevel)));
     change(L"Log location", std::to_wstring(static_cast<int>(previous.logLocationMode)), std::to_wstring(static_cast<int>(current.logLocationMode)));
@@ -1048,7 +1186,8 @@ void handleNotification(SCNotification* notification)
     if (code == NPPN_FILEBEFORESAVE)
     {
         const fs::path path = pathForBuffer(bufferId);
-        if (settings.shouldCreateRevision(RevisionTrigger::beforeSave) && isSavableFile(path))
+        if (settings.shouldCreateRevision(RevisionTrigger::beforeSave)
+            && isSavableFile(path) && !settings.isHistoryExcluded(path))
         {
             if (historyStore.captureFile(path, L"Before save"))
                 pluginLogger().write(LogLevel::informational, L"Revision created",
@@ -1064,7 +1203,8 @@ void handleNotification(SCNotification* notification)
         else
             reconcileFile(bufferId, path);
         pluginLogger().write(LogLevel::informational, L"File saved", path.wstring());
-        if (settings.shouldCreateRevision(RevisionTrigger::afterSave) && !path.empty())
+        if (settings.shouldCreateRevision(RevisionTrigger::afterSave) && !path.empty()
+            && !settings.isHistoryExcluded(path))
         {
             if (historyStore.captureFile(path, L"Saved"))
                 pluginLogger().write(LogLevel::informational, L"Revision created",

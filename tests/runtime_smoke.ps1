@@ -113,6 +113,10 @@ public static class NppHistoryNative {
     public static extern IntPtr SendMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll", CharSet=CharSet.Unicode, EntryPoint="SendMessageW")]
     private static extern IntPtr SendMessageText(IntPtr window, uint message, IntPtr wParam, StringBuilder text);
+    [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+    private struct TCITEM { public uint mask, state, stateMask; public IntPtr text; public int textMax, image; public IntPtr parameter; }
+    [DllImport("user32.dll", CharSet=CharSet.Unicode, EntryPoint="SendMessageW")]
+    private static extern IntPtr SendMessageTabItem(IntPtr window, uint message, IntPtr wParam, ref TCITEM item);
     [DllImport("user32.dll", EntryPoint="SendMessageW")]
     private static extern IntPtr SendMessagePoint(IntPtr window, uint message, IntPtr wParam, ref POINT point);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
@@ -202,6 +206,26 @@ public static class NppHistoryNative {
             var value = new StringBuilder(1024);
             GetWindowText(window, value, value.Capacity);
             if (value.Length > 0) result.Append(value).Append(" ");
+            return true;
+        }, IntPtr.Zero);
+        return result.ToString();
+    }
+    public static string AllDocumentTabText(IntPtr parent) {
+        var result = new StringBuilder();
+        EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
+            if (GetParent(window) != parent) return true;
+            var name = new StringBuilder(128);
+            GetClassName(window, name, name.Capacity);
+            if (name.ToString() != "SysTabControl32") return true;
+            int count = SendMessage(window, 0x1304, IntPtr.Zero, IntPtr.Zero).ToInt32();
+            for (int index = 0; index < count; ++index) {
+                IntPtr buffer = Marshal.AllocHGlobal(2048 * sizeof(char));
+                try {
+                    var item = new TCITEM(); item.mask = 1; item.text = buffer; item.textMax = 2048;
+                    if (SendMessageTabItem(window, 0x133C, (IntPtr)index, ref item) != IntPtr.Zero)
+                        result.Append(Marshal.PtrToStringUni(buffer)).Append("|");
+                } finally { Marshal.FreeHGlobal(buffer); }
+            }
             return true;
         }, IntPtr.Zero);
         return result.ToString();
@@ -409,10 +433,14 @@ try {
         $historyPanel, 'NppHistoryPanelButtonHoverReady').ToInt64()
     $panelButtonHoverReady = $panelButtonHoverRegistrationCount -eq 6
     $panelHoverButton = [NppHistoryNative]::FindControl($historyPanel, 1006)
-    [NppHistoryNative]::MoveCursorToCenter($panelHoverButton)
-    [void][NppHistoryNative]::SendMessage($panelHoverButton, 0x0200, [IntPtr]::Zero, [IntPtr]0x00050005)
-    $panelButtonHotOnEnter = [NppHistoryNative]::GetProp(
-        $historyPanel, 'NppHistoryPanelHotButton').ToInt64()
+    $panelButtonHotOnEnter = 0
+    for ($hoverAttempt = 0; $hoverAttempt -lt 5 -and $panelButtonHotOnEnter -ne 1006; $hoverAttempt++) {
+        [NppHistoryNative]::MoveCursorToCenter($panelHoverButton)
+        [void][NppHistoryNative]::SendMessage($panelHoverButton, 0x0200, [IntPtr]::Zero, [IntPtr]0x00050005)
+        $panelButtonHotOnEnter = [NppHistoryNative]::GetProp(
+            $historyPanel, 'NppHistoryPanelHotButton').ToInt64()
+        if ($panelButtonHotOnEnter -ne 1006) { Start-Sleep -Milliseconds 20 }
+    }
     $panelButtonHoverPassed = $panelButtonHoverReady -and $panelButtonHotOnEnter -eq 1006
     [void][NppHistoryNative]::SendMessage($panelHoverButton, 0x02A3, [IntPtr]::Zero, [IntPtr]::Zero)
     $panelButtonHotAfterLeave = [NppHistoryNative]::GetProp(
@@ -778,22 +806,29 @@ try {
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1077)) -eq 'At timed intervals every' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1079)) -eq 'File tab changes' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1080)) -eq 'Notepad++ exits' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1082)) -eq 'All open files'
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1082)) -eq 'All open files' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1127)) -eq 'Disable Auto Save for:' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1131)) -eq 'One wildcard pattern per line' -and
+                [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1128))
             $autoSaveMaster = [NppHistoryNative]::FindControl($settingsWindow, 1010)
             $afterEditControl = [NppHistoryNative]::FindControl($settingsWindow, 1011)
             $intervalControl = [NppHistoryNative]::FindControl($settingsWindow, 1077)
             $intervalMinutesControl = [NppHistoryNative]::FindControl($settingsWindow, 1078)
+            $autoSaveExclusions = [NppHistoryNative]::FindControl($settingsWindow, 1128)
             $intervalInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)
             [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $intervalEnabledOnSelection = [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)
             [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             [void][NppHistoryNative]::SendMessage($autoSaveMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $autoSaveChildrenDisabled = -not [NppHistoryNative]::IsWindowEnabled($afterEditControl) -and
-                -not [NppHistoryNative]::IsWindowEnabled($intervalControl)
+                -not [NppHistoryNative]::IsWindowEnabled($intervalControl) -and
+                -not [NppHistoryNative]::IsWindowEnabled($autoSaveExclusions)
             [void][NppHistoryNative]::SendMessage($autoSaveMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $settingsAutoSaveEnablementPassed = $intervalInitiallyDisabled -and
                 $intervalEnabledOnSelection -and $autoSaveChildrenDisabled -and
-                [NppHistoryNative]::IsWindowEnabled($afterEditControl)
+                [NppHistoryNative]::IsWindowEnabled($afterEditControl) -and
+                [NppHistoryNative]::IsWindowEnabled($autoSaveExclusions)
+            [NppHistoryNative]::SetText($autoSaveExclusions, "*.txt`r`n*.log")
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
             $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
@@ -812,12 +847,16 @@ try {
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1098)) -eq 'Before a file is saved' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1099)) -eq 'After a file is saved' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1101)) -eq 'Before restoring a revision' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1015)).Contains('.npphistory')
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1015)).Contains('.npphistory') -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1129)) -eq 'Disable revision history for:' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1132)) -eq 'One wildcard pattern per line' -and
+                [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1130))
             $historyMaster = [NppHistoryNative]::FindControl($settingsWindow, 1096)
             $historyBeforeSave = [NppHistoryNative]::FindControl($settingsWindow, 1098)
             $historyCustom = [NppHistoryNative]::FindControl($settingsWindow, 1016)
             $historyPath = [NppHistoryNative]::FindControl($settingsWindow, 1017)
             $historyBrowse = [NppHistoryNative]::FindControl($settingsWindow, 1018)
+            $historyExclusions = [NppHistoryNative]::FindControl($settingsWindow, 1130)
             $customInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($historyPath) -and
                 -not [NppHistoryNative]::IsWindowEnabled($historyBrowse)
             [void][NppHistoryNative]::SendMessage($historyCustom, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
@@ -826,11 +865,14 @@ try {
             [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settingsWindow, 1015), 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             [void][NppHistoryNative]::SendMessage($historyMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $historyChildrenDisabled = -not [NppHistoryNative]::IsWindowEnabled($historyBeforeSave) -and
-                -not [NppHistoryNative]::IsWindowEnabled($historyCustom)
+                -not [NppHistoryNative]::IsWindowEnabled($historyCustom) -and
+                -not [NppHistoryNative]::IsWindowEnabled($historyExclusions)
             [void][NppHistoryNative]::SendMessage($historyMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $settingsHistoryEnablementPassed = $customInitiallyDisabled -and
                 $customEnabledOnSelection -and $historyChildrenDisabled -and
-                [NppHistoryNative]::IsWindowEnabled($historyBeforeSave)
+                [NppHistoryNative]::IsWindowEnabled($historyBeforeSave) -and
+                [NppHistoryNative]::IsWindowEnabled($historyExclusions)
+            [NppHistoryNative]::SetText($historyExclusions, "*.txt`r`n*.tmp")
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
             $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
@@ -948,6 +990,46 @@ try {
         $timestampMatch.Success -and [uint64]$timestampMatch.Groups[1].Value -gt 0 -and
             (-not $updateFeedAccessible -or $savedSettingsText.Contains('LastUpdateStatus=' + $expectedUpdateStatus))
     }
+    $exclusionSettingsPersisted = $savedSettingsText.Contains('AutoSaveExclusions=*.txt|*.log') -and
+        $savedSettingsText.Contains('HistoryExclusions=*.txt|*.tmp')
+    $exclusionStatus = [NppHistoryNative]::FindControl($historyPanel, 1104)
+    $exclusionPanelIndicatorPassed = [NppHistoryNative]::IsWindowVisible($exclusionStatus) -and
+        [NppHistoryNative]::Text($exclusionStatus) -eq 'Excluded: Auto Save + History' -and
+        -not [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1006)) -and
+        [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1003))
+    $autoSaveTabIndicatorCount = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryAutoSaveTabIndicatorCount').ToInt64()
+    $historyTabIndicatorCount = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryHistoryTabIndicatorCount').ToInt64()
+    $exclusionTabIndicatorsPassed = $autoSaveTabIndicatorCount -ge 1 -and
+        $historyTabIndicatorCount -ge 1
+    $exclusionIndicatorsScreenshot = Join-Path $testRoot 'exclusion-indicators.png'
+    $exclusionRectangle = [NppHistoryNative+RECT]::new()
+    if ([NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$exclusionRectangle)) {
+        $bitmap = [Drawing.Bitmap]::new($exclusionRectangle.Right - $exclusionRectangle.Left,
+            $exclusionRectangle.Bottom - $exclusionRectangle.Top)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        $deviceContext = $graphics.GetHdc()
+        try { [void][NppHistoryNative]::PrintWindow($process.MainWindowHandle, $deviceContext, 2) }
+        finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+        $bitmap.Save($exclusionIndicatorsScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+        $bitmap.Dispose()
+    }
+    $excludedDiskBefore = [IO.File]::ReadAllText($notePath)
+    $excludedRevisionCountBefore = @(Get-ChildItem $pathMarker.DirectoryName -Filter *.rev).Count
+    [void][NppHistoryNative]::SendMessage($editor, 2318, [IntPtr]::Zero, [IntPtr]::Zero) # SCI_DOCUMENTEND
+    foreach ($character in "`r`nexcluded automatic save edit".ToCharArray()) {
+        [void][NppHistoryNative]::SendMessage($editor, 0x0102, [IntPtr][int]$character, [IntPtr]::Zero)
+    }
+    Start-Sleep -Seconds 12
+    $autoSaveExclusionEnforced = [IO.File]::ReadAllText($notePath) -eq $excludedDiskBefore -and
+        [NppHistoryNative]::SendMessage($editor, 2159, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -eq 1
+    [void][NppHistoryNative]::SendMessage($process.MainWindowHandle, 0x0111, [IntPtr]41006, [IntPtr]::Zero) # IDM_FILE_SAVE
+    Start-Sleep -Milliseconds 750
+    $historyExclusionEnforced = @(Get-ChildItem $pathMarker.DirectoryName -Filter *.rev).Count -eq
+        $excludedRevisionCountBefore
+    $manualSaveAllowedForExcludedFile = [IO.File]::ReadAllText($notePath).Contains(
+        'excluded automatic save edit')
 
     $aboutWindow = [IntPtr]::Zero
     $aboutCentered = $false
@@ -1041,7 +1123,7 @@ try {
         $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1132,6 +1214,18 @@ try {
         SettingsAutoSaveEnablementPassed = $settingsAutoSaveEnablementPassed
         SettingsHistoryPassed = $settingsHistoryPassed
         SettingsHistoryEnablementPassed = $settingsHistoryEnablementPassed
+        ExclusionSettingsPersisted = $exclusionSettingsPersisted
+        ExclusionPanelIndicatorPassed = $exclusionPanelIndicatorPassed
+        ExclusionPanelIndicatorText = [NppHistoryNative]::Text($exclusionStatus)
+        ExclusionTabIndicatorsPassed = $exclusionTabIndicatorsPassed
+        AutoSaveTabIndicatorCount = $autoSaveTabIndicatorCount
+        HistoryTabIndicatorCount = $historyTabIndicatorCount
+        ExclusionIndicatorsScreenshot = if (Test-Path $exclusionIndicatorsScreenshot) {
+            $exclusionIndicatorsScreenshot
+        } else { '' }
+        AutoSaveExclusionEnforced = $autoSaveExclusionEnforced
+        HistoryExclusionEnforced = $historyExclusionEnforced
+        ManualSaveAllowedForExcludedFile = $manualSaveAllowedForExcludedFile
         SettingsGeneralScreenshot = if (Test-Path $settingsGeneralScreenshot) { $settingsGeneralScreenshot } else { '' }
         SettingsScreenshot = if (Test-Path $settingsScreenshot) { $settingsScreenshot } else { '' }
         SettingsHistoryScreenshot = if (Test-Path $settingsHistoryScreenshot) { $settingsHistoryScreenshot } else { '' }

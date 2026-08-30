@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cwctype>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -56,6 +57,77 @@ std::wstring formatFileSize(std::uintmax_t bytes)
         && formatted.compare(formatted.size() - 2, 2, L".0") == 0)
         formatted.resize(formatted.size() - 2);
     return formatted + L" " + units[unit];
+}
+
+bool wildcardMatchCaseInsensitive(std::wstring_view pattern, std::wstring_view value) noexcept
+{
+    std::size_t patternIndex = 0;
+    std::size_t valueIndex = 0;
+    std::size_t starIndex = std::wstring_view::npos;
+    std::size_t starValueIndex = 0;
+    while (valueIndex < value.size())
+    {
+        if (patternIndex < pattern.size()
+            && (pattern[patternIndex] == L'?'
+                || std::towlower(pattern[patternIndex]) == std::towlower(value[valueIndex])))
+        {
+            ++patternIndex;
+            ++valueIndex;
+        }
+        else if (patternIndex < pattern.size() && pattern[patternIndex] == L'*')
+        {
+            starIndex = patternIndex++;
+            starValueIndex = valueIndex;
+        }
+        else if (starIndex != std::wstring_view::npos)
+        {
+            patternIndex = starIndex + 1;
+            valueIndex = ++starValueIndex;
+        }
+        else
+        {
+            return false;
+        }
+    }
+    while (patternIndex < pattern.size() && pattern[patternIndex] == L'*')
+        ++patternIndex;
+    return patternIndex == pattern.size();
+}
+
+bool pathMatchesWildcardList(const fs::path& path, std::wstring_view patterns)
+{
+    std::error_code error;
+    std::wstring fullPath = fs::absolute(path, error).lexically_normal().wstring();
+    if (error)
+        fullPath = path.lexically_normal().wstring();
+    std::replace(fullPath.begin(), fullPath.end(), L'/', L'\\');
+    const std::wstring fileName = path.filename().wstring();
+
+    std::size_t start = 0;
+    while (start <= patterns.size())
+    {
+        const std::size_t end = patterns.find(L'\n', start);
+        std::wstring pattern(patterns.substr(start,
+            end == std::wstring_view::npos ? patterns.size() - start : end - start));
+        if (!pattern.empty() && pattern.back() == L'\r')
+            pattern.pop_back();
+        const auto first = pattern.find_first_not_of(L" \t");
+        const auto last = pattern.find_last_not_of(L" \t");
+        if (first != std::wstring::npos)
+        {
+            pattern = pattern.substr(first, last - first + 1);
+            std::replace(pattern.begin(), pattern.end(), L'/', L'\\');
+            const bool fullPathPattern = pattern.find(L'\\') != std::wstring::npos
+                || pattern.find(L':') != std::wstring::npos;
+            if (wildcardMatchCaseInsensitive(pattern,
+                    fullPathPattern ? std::wstring_view(fullPath) : std::wstring_view(fileName)))
+                return true;
+        }
+        if (end == std::wstring_view::npos)
+            break;
+        start = end + 1;
+    }
+    return false;
 }
 
 bool writeAllBytesAtomic(const fs::path& path, const std::vector<std::uint8_t>& bytes)
