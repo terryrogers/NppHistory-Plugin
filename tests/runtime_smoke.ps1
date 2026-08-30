@@ -846,6 +846,7 @@ try {
             $updatePrereleases = [NppHistoryNative]::FindControl($settingsWindow, 1102)
             $updateCheckNow = [NppHistoryNative]::FindControl($settingsWindow, 1103)
             $updateStatus = [NppHistoryNative]::FindControl($settingsWindow, 1106)
+            $updateInstall = [NppHistoryNative]::FindControl($settingsWindow, 1126)
             $updateChildrenInitiallyEnabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
                 [NppHistoryNative]::IsWindowEnabled($updatePrereleases) -and
                 [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
@@ -859,7 +860,10 @@ try {
                 $updateChildrenDisabled -and $updateChildrenReenabled -and
                 [NppHistoryNative]::IsWindowVisible($updateStatus) -and
                 [NppHistoryNative]::Text($updateStatus).Contains('Status:') -and
-                [NppHistoryNative]::Text($updateStatus).Contains('Next automatic check:')
+                [NppHistoryNative]::Text($updateStatus).Contains('Next automatic check:') -and
+                [NppHistoryNative]::IsWindowVisible($updateInstall) -and
+                [NppHistoryNative]::Text($updateInstall) -eq 'Restart and install...' -and
+                -not [NppHistoryNative]::IsWindowEnabled($updateInstall)
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
             $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)

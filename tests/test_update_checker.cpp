@@ -1,5 +1,6 @@
 #include "TestHarness.h"
 #include "UpdateChecker.h"
+#include "UpdateInstaller.h"
 
 #include <winhttp.h>
 
@@ -64,6 +65,46 @@ void runUpdateCheckerTests(TestContext& context)
         "release parser rejects trailing response data");
     context.expect(parseGitHubReleases("[{\"tag_name\":\"v1.0.0\"}]").empty(),
         "release parser rejects incomplete release records");
+
+    const std::string installableJson = R"json([{
+      "tag_name":"v0.3.0-beta.1",
+      "html_url":"https://github.com/terryrogers/NppHistory-Plugin/releases/tag/v0.3.0-beta.1",
+      "draft":false,"prerelease":true,
+      "assets":[
+        {"name":"NppHistory-0.3.0-beta.1-source.zip","browser_download_url":"https://example.invalid/source.zip","digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","size":90000},
+        {"name":"NppHistory-0.3.0-beta.1-x64.dll","browser_download_url":"https://github.com/terryrogers/NppHistory-Plugin/releases/download/v0.3.0-beta.1/NppHistory-0.3.0-beta.1-x64.dll","digest":"sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","size":500000},
+        {"name":"NppHistoryUpdater.exe","browser_download_url":"https://github.com/terryrogers/NppHistory-Plugin/releases/download/v0.3.0-beta.1/NppHistoryUpdater.exe","digest":"sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789","size":180000}
+      ]
+    }])json";
+    const auto installableReleases = parseGitHubReleases(installableJson);
+    context.expect(installableReleases.size() == 1
+        && trustedUpdateAsset(installableReleases.front()),
+        "release parsing selects and trusts the exact versioned x64 DLL asset");
+    ReleaseInfo tampered = installableReleases.front();
+    tampered.assetUrl = L"https://evil.invalid/NppHistory.dll";
+    context.expect(!trustedUpdateAsset(tampered),
+        "automatic installation rejects an untrusted asset host");
+    tampered = installableReleases.front();
+    tampered.assetDigest = L"sha256:not-a-digest";
+    context.expect(!trustedUpdateAsset(tampered),
+        "automatic installation rejects malformed release digests");
+    tampered = installableReleases.front();
+    tampered.assetName = L"NppHistory-other-x64.dll";
+    context.expect(!trustedUpdateAsset(tampered),
+        "automatic installation requires the asset version to match the release tag");
+    tampered = installableReleases.front();
+    tampered.updaterUrl = L"https://evil.invalid/NppHistoryUpdater.exe";
+    context.expect(!trustedUpdateAsset(tampered),
+        "automatic installation also verifies the staged updater's exact release URL");
+    tampered = installableReleases.front();
+    tampered.tag = L"../malicious";
+    context.expect(!trustedUpdateAsset(tampered),
+        "automatic installation rejects a non-semantic release tag before staging paths are formed");
+    context.expect(quoteCommandLineArgument(L"C:\\Program Files\\Notepad++\\notepad++.exe")
+        == L"\"C:\\Program Files\\Notepad++\\notepad++.exe\"",
+        "updater command-line quoting preserves paths containing spaces");
+    context.expect(quoteCommandLineArgument(L"C:\\trailing\\") == L"\"C:\\trailing\\\\\"",
+        "updater command-line quoting safely doubles a trailing backslash");
 
     const auto betaUpdate = selectNewestUpdate(releases, L"0.2.0-beta.21", true);
     context.expect(betaUpdate && betaUpdate->tag == L"v1.0.0",

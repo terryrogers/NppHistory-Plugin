@@ -16,6 +16,8 @@ namespace
 {
 constexpr wchar_t releaseUrlPrefix[] =
     L"https://github.com/terryrogers/NppHistory-Plugin/releases/";
+constexpr wchar_t assetUrlPrefix[] =
+    L"https://github.com/terryrogers/NppHistory-Plugin/releases/download/";
 
 bool parseNumber(std::wstring_view text, std::uint64_t& value)
 {
@@ -138,6 +140,60 @@ void skipJsonValue(std::string_view text, std::size_t& position)
         ++position;
 }
 
+std::vector<std::string_view> topLevelObjects(std::string_view json);
+
+bool parseAssetObject(std::string_view object, ReleaseInfo& candidate)
+{
+    if (object.empty() || object.front() != '{')
+        return false;
+    bool haveName = false, haveUrl = false, haveDigest = false, haveSize = false;
+    std::size_t position = 1;
+    while (position < object.size())
+    {
+        while (position < object.size() && (std::isspace(static_cast<unsigned char>(object[position]))
+            || object[position] == ','))
+            ++position;
+        if (position >= object.size() || object[position] == '}')
+            break;
+        std::string key;
+        if (!parseJsonString(object, position, key))
+            return false;
+        while (position < object.size() && std::isspace(static_cast<unsigned char>(object[position])))
+            ++position;
+        if (position >= object.size() || object[position++] != ':')
+            return false;
+        while (position < object.size() && std::isspace(static_cast<unsigned char>(object[position])))
+            ++position;
+        if (key == "name" || key == "browser_download_url" || key == "digest")
+        {
+            std::string value;
+            if (!parseJsonString(object, position, value))
+                return false;
+            const std::wstring wide = utf8ToWide(value);
+            if (wide.empty() && !value.empty())
+                return false;
+            if (key == "name") { candidate.assetName = wide; haveName = true; }
+            else if (key == "browser_download_url") { candidate.assetUrl = wide; haveUrl = true; }
+            else { candidate.assetDigest = wide; haveDigest = true; }
+        }
+        else if (key == "size")
+        {
+            const std::size_t start = position;
+            while (position < object.size() && object[position] >= '0' && object[position] <= '9')
+                ++position;
+            const auto digits = object.substr(start, position - start);
+            const auto result = std::from_chars(digits.data(), digits.data() + digits.size(),
+                candidate.assetSize);
+            if (digits.empty() || result.ec != std::errc{} || result.ptr != digits.data() + digits.size())
+                return false;
+            haveSize = true;
+        }
+        else
+            skipJsonValue(object, position);
+    }
+    return haveName && haveUrl && haveDigest && haveSize;
+}
+
 bool parseReleaseObject(std::string_view object, ReleaseInfo& release, bool& draft)
 {
     if (object.empty() || object.front() != '{')
@@ -182,6 +238,32 @@ bool parseReleaseObject(std::string_view object, ReleaseInfo& release, bool& dra
             else return false;
             if (key == "draft") { draft = value; haveDraft = true; }
             else { release.prerelease = value; havePrerelease = true; }
+        }
+        else if (key == "assets")
+        {
+            const std::size_t start = position;
+            skipJsonValue(object, position);
+            for (const auto assetObject : topLevelObjects(object.substr(start, position - start)))
+            {
+                ReleaseInfo candidate;
+                if (!parseAssetObject(assetObject, candidate))
+                    continue;
+                if (candidate.assetName.size() > 8
+                    && candidate.assetName.rfind(L"NppHistory-", 0) == 0
+                    && candidate.assetName.substr(candidate.assetName.size() - 8) == L"-x64.dll")
+                {
+                    release.assetName = std::move(candidate.assetName);
+                    release.assetUrl = std::move(candidate.assetUrl);
+                    release.assetDigest = std::move(candidate.assetDigest);
+                    release.assetSize = candidate.assetSize;
+                }
+                else if (candidate.assetName == L"NppHistoryUpdater.exe")
+                {
+                    release.updaterUrl = std::move(candidate.assetUrl);
+                    release.updaterDigest = std::move(candidate.assetDigest);
+                    release.updaterSize = candidate.assetSize;
+                }
+            }
         }
         else
         {
@@ -441,6 +523,34 @@ bool trustedReleaseUrl(std::wstring_view url) noexcept
 {
     return url.size() > std::size(releaseUrlPrefix) - 1
         && url.substr(0, std::size(releaseUrlPrefix) - 1) == releaseUrlPrefix;
+}
+
+bool trustedUpdateAsset(const ReleaseInfo& release)
+{
+    SemanticVersion parsedVersion;
+    if (!parseSemanticVersion(release.tag, parsedVersion))
+        return false;
+    std::wstring version = release.tag;
+    if (!version.empty() && (version.front() == L'v' || version.front() == L'V'))
+        version.erase(version.begin());
+    const std::wstring expectedName = L"NppHistory-" + version + L"-x64.dll";
+    const std::wstring expectedUrl = std::wstring(assetUrlPrefix) + release.tag + L"/" + expectedName;
+    const std::wstring expectedUpdaterUrl = std::wstring(assetUrlPrefix) + release.tag
+        + L"/NppHistoryUpdater.exe";
+    if (release.assetName != expectedName || release.assetUrl != expectedUrl
+        || release.assetSize < 64ULL * 1024ULL || release.assetSize > 32ULL * 1024ULL * 1024ULL
+        || release.assetDigest.size() != 71 || release.assetDigest.substr(0, 7) != L"sha256:"
+        || release.updaterUrl != expectedUpdaterUrl || release.updaterSize < 32ULL * 1024ULL
+        || release.updaterSize > 16ULL * 1024ULL * 1024ULL
+        || release.updaterDigest.size() != 71
+        || release.updaterDigest.substr(0, 7) != L"sha256:")
+        return false;
+    const auto hexadecimal = [](std::wstring_view digest) {
+        return std::all_of(digest.begin() + 7, digest.end(), [](wchar_t value) {
+            return (value >= L'0' && value <= L'9') || (value >= L'a' && value <= L'f');
+        });
+    };
+    return hexadecimal(release.assetDigest) && hexadecimal(release.updaterDigest);
 }
 
 bool shouldNotifyUpdate(std::wstring_view availableVersion,

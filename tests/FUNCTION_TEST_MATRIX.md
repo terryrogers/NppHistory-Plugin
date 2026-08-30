@@ -73,17 +73,25 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 |---|---|---|
 | `parseSemanticVersion` | Direct valid, prerelease, metadata, overflow/format and leading-zero cases | PASS |
 | `compareSemanticVersions` | Direct major/minor/patch, stable/prerelease, numeric/string and sequence precedence | PASS |
-| `parseGitHubReleases` | Direct nested fields, draft, trusted origin, incomplete and malformed responses | PASS |
+| `parseGitHubReleases` | Direct nested fields/assets, draft, trusted origin, incomplete and malformed responses | PASS |
 | `selectNewestRelease` | Direct stable/prerelease reporting independent of the installed version | PASS |
 | `selectNewestUpdate` | Direct stable/prerelease channels, newest/current and invalid-installed-version cases | PASS |
 | `elapsedFrequencyDue` | Direct first run, pre/exact threshold and clock rollback | PASS |
 | `trustedReleaseUrl` | Direct HTTPS host/owner/repository allow-list cases | PASS |
+| `trustedUpdateAsset` | Direct exact tag/name/URL/size/SHA-256 contract and tampering rejection | PASS |
 | `shouldNotifyUpdate` | Direct new, duplicate, manual and empty-tag cases | PASS |
 | `updateAccessErrorMessage` | Direct rate-limit, repository, proxy, HTTP, timeout, DNS, connection, TLS and unknown errors | PASS |
 | `currentUnixSeconds` | Indirect persisted successful live-check timestamp | PASS |
 | `evaluateReleaseJson` | Direct update-available, current, stable-only and invalid/unusable response results | PASS |
 | `checkGitHubForUpdates` | Live background request to the real public Releases endpoint | PASS |
 | `downloadReleaseJson` | Indirect automatic/manual live HTTPS requests plus direct rate-limit, oversized, HTTP and network failure classification | PASS |
+
+## UpdateInstaller.cpp
+
+| Function | Evidence | Status |
+|---|---|---|
+| `downloadVerifiedUpdatePackage` | Exact DLL/updater validation and failure paths direct; real future installable release download awaits the next release asset | PARTIAL |
+| `quoteCommandLineArgument` | Direct spaces and trailing-backslash Windows argument cases | PASS |
 
 ## TextDiff.cpp
 
@@ -205,6 +213,10 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `updateThreadProc` | Live non-blocking GitHub request and completion message | PASS |
 | `startUpdateCheck` | Live manual background check, in-window checking state and duplicate-start policy | PASS |
 | `handleUpdateCompletion` | Live automatic/manual non-modal result, exact current-release status and timestamp persistence; available-link acceptance remains manual | PARTIAL |
+| `installThreadProc` | Built and message wiring inspected; live release download awaits an installable future release | PARTIAL |
+| `beginUpdateInstall` | Trusted-asset and duplicate-download policies direct; available-update user flow awaits manual UAT | PARTIAL |
+| `handleInstallCompletion` | Isolated updater success/failure replacement tests; Notepad++ restart path awaits manual UAT | PARTIAL |
+| `showPendingUpdateResult` | Result-file parsing and display path built; dialog remains manual UAT | PARTIAL |
 | `timerProc` | Live delayed automatic update scheduling and after-edit timer; interval branch directly policy-tested | PASS |
 | `showHistory` | Live menu command and dock display | PASS |
 | `captureNow` | Live forced manual revision | PASS |

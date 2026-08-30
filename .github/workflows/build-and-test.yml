@@ -25,15 +25,20 @@ jobs:
       - name: Build plugin
         run: msbuild .\vs.proj\NppHistory.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
 
+      - name: Build restart installer
+        run: msbuild .\vs.proj\NppHistoryUpdater.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
+
       - name: Build core tests
         run: msbuild .\vs.proj\NppHistory.Tests.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
 
       - name: Run core tests
         run: .\build\tests\NppHistory.Tests.exe
 
-      - name: Upload plugin DLL
+      - name: Upload plugin package files
         uses: actions/upload-artifact@v7
         with:
           name: NppHistory-x64-${{ github.sha }}
-          path: build/x64/Release/NppHistory.dll
+          path: |
+            build/x64/Release/NppHistory.dll
+            build/x64/Release/NppHistoryUpdater.exe
           if-no-files-found: error

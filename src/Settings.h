@@ -91,6 +91,8 @@ struct Settings
     unsigned logArchivesToRetain = 5;
     std::filesystem::path defaultLogFile;
     bool openLogNow = false;
+    bool updateInstallAvailable = false;
+    bool installUpdateNow = false;
     bool historyEnabled = true;
     bool historyBeforeSave = true;
     bool historyAfterSave = true;

@@ -6,6 +6,7 @@
 #include "Settings.h"
 #include "Utilities.h"
 #include "UpdateChecker.h"
+#include "UpdateInstaller.h"
 #include "Version.h"
 #include "resource.h"
 
@@ -32,6 +33,7 @@ constexpr ULONGLONG startupUpdateDelayMilliseconds = 90ULL * 1000ULL;
 constexpr ULONGLONG resumeUpdateDelayMilliseconds = 30ULL * 1000ULL;
 constexpr ULONGLONG updateSchedulePeriodMilliseconds = 60ULL * 1000ULL;
 constexpr UINT updateCompleteMessage = WM_APP + 240;
+constexpr UINT installCompleteMessage = WM_APP + 243;
 
 enum MenuIndex { showHistoryIndex, captureIndex, settingsIndex, aboutIndex,
     toolbarCompareIndex, toolbarRestoreIndex, menuCount };
@@ -67,6 +69,9 @@ ULONGLONG nextUpdateStatusRefreshTick = 0;
 std::atomic_bool updateCheckInProgress = false;
 std::atomic_bool updateShuttingDown = false;
 HANDLE updateThreadHandle = nullptr;
+std::atomic_bool installDownloadInProgress = false;
+HANDLE installThreadHandle = nullptr;
+ReleaseInfo availableUpdate;
 
 struct UpdateRequest
 {
@@ -79,6 +84,23 @@ struct UpdateCompletion
 {
     bool manual = false;
     UpdateCheckResult result;
+};
+
+struct InstallRequest
+{
+    HWND notifyWindow = nullptr;
+    ReleaseInfo release;
+    fs::path destination;
+    fs::path updaterDestination;
+};
+
+struct InstallCompletion
+{
+    ReleaseInfo release;
+    fs::path destination;
+    fs::path updaterDestination;
+    bool success = false;
+    std::wstring detail;
 };
 
 struct ToolbarAsset
@@ -276,6 +298,181 @@ void startUpdateCheck(bool manual, std::optional<bool> includePrereleases = std:
     updateThreadHandle = reinterpret_cast<HANDLE>(thread);
 }
 
+fs::path moduleFilePath()
+{
+    std::wstring path(32768, L'\0');
+    const DWORD length = GetModuleFileNameW(moduleInstance, path.data(),
+        static_cast<DWORD>(path.size()));
+    if (length == 0 || length >= path.size())
+        return {};
+    path.resize(length);
+    return path;
+}
+
+void openReleasePage(const ReleaseInfo& release)
+{
+    if (!trustedReleaseUrl(release.url))
+        return;
+    const auto opened = reinterpret_cast<INT_PTR>(ShellExecuteW(nppData._nppHandle,
+        L"open", release.url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+    if (opened <= 32)
+        MessageBoxW(nppData._nppHandle,
+            L"Windows could not open the release page. Visit the NppHistory-Plugin repository on GitHub manually.",
+            L"NppHistory Update", MB_OK | MB_ICONWARNING);
+}
+
+unsigned __stdcall installThreadProc(void* parameter)
+{
+    std::unique_ptr<InstallRequest> request(static_cast<InstallRequest*>(parameter));
+    auto completion = std::make_unique<InstallCompletion>();
+    completion->release = request->release;
+    completion->destination = request->destination;
+    completion->updaterDestination = request->updaterDestination;
+    completion->success = downloadVerifiedUpdatePackage(request->release,
+        request->destination, request->updaterDestination, completion->detail);
+    if (updateShuttingDown || !PostMessageW(request->notifyWindow, installCompleteMessage, 0,
+        reinterpret_cast<LPARAM>(completion.get())))
+    {
+        installDownloadInProgress = false;
+        return 0;
+    }
+    completion.release();
+    return 0;
+}
+
+void beginUpdateInstall(const ReleaseInfo& release)
+{
+    if (!trustedUpdateAsset(release))
+    {
+        MessageBoxW(nppData._nppHandle,
+            L"This release does not contain the verified x64 asset required for automatic installation. You can still install it from the release page.",
+            L"NppHistory Update", MB_OK | MB_ICONINFORMATION);
+        openReleasePage(release);
+        return;
+    }
+    bool expected = false;
+    if (!installDownloadInProgress.compare_exchange_strong(expected, true))
+    {
+        MessageBoxW(nppData._nppHandle, L"The update is already being downloaded.",
+            L"NppHistory Update", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (installThreadHandle)
+    {
+        CloseHandle(installThreadHandle);
+        installThreadHandle = nullptr;
+    }
+    auto request = std::make_unique<InstallRequest>();
+    request->notifyWindow = nppData._nppHandle;
+    request->release = release;
+    request->destination = pluginConfigPath / L"updates" / release.tag
+        / L"NppHistory.pending.dll";
+    request->updaterDestination = request->destination.parent_path()
+        / L"NppHistoryUpdater.pending.exe";
+    settings.lastUpdateStatus = L"Downloading and verifying " + release.tag + L"...";
+    settings.refreshUpdateStatus(false);
+    pluginLogger().write(LogLevel::informational, L"Update download started", release.tag);
+    const uintptr_t thread = _beginthreadex(nullptr, 0, installThreadProc, request.get(), 0, nullptr);
+    if (!thread)
+    {
+        installDownloadInProgress = false;
+        settings.lastUpdateStatus = L"Update installation could not start";
+        settings.refreshUpdateStatus(false);
+        MessageBoxW(nppData._nppHandle,
+            L"The background update download could not be started.", L"NppHistory Update",
+            MB_OK | MB_ICONERROR);
+        return;
+    }
+    request.release();
+    installThreadHandle = reinterpret_cast<HANDLE>(thread);
+}
+
+bool directoryWritable(const fs::path& directory)
+{
+    const fs::path probe = directory / (L"NppHistory-access-"
+        + std::to_wstring(GetCurrentProcessId()) + L".tmp");
+    HANDLE file = CreateFileW(probe.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
+        FILE_ATTRIBUTE_TEMPORARY, nullptr);
+    if (file == INVALID_HANDLE_VALUE)
+        return false;
+    CloseHandle(file);
+    DeleteFileW(probe.c_str());
+    return true;
+}
+
+void handleInstallCompletion(std::unique_ptr<InstallCompletion> completion)
+{
+    installDownloadInProgress = false;
+    if (installThreadHandle)
+    {
+        CloseHandle(installThreadHandle);
+        installThreadHandle = nullptr;
+    }
+    if (!completion->success)
+    {
+        settings.lastUpdateStatus = L"Update installation failed: " + completion->detail;
+        settings.refreshUpdateStatus(false);
+        pluginLogger().write(LogLevel::error, L"Update download failed", completion->detail);
+        MessageBoxW(nppData._nppHandle, completion->detail.c_str(),
+            L"NppHistory Update", MB_OK | MB_ICONERROR);
+        return;
+    }
+    const fs::path pluginDll = moduleFilePath();
+    const fs::path updater = completion->updaterDestination;
+    std::wstring notepadPath(32768, L'\0');
+    const DWORD notepadLength = GetModuleFileNameW(nullptr, notepadPath.data(),
+        static_cast<DWORD>(notepadPath.size()));
+    if (pluginDll.empty() || !fs::is_regular_file(updater) || notepadLength == 0
+        || notepadLength >= notepadPath.size())
+    {
+        const std::wstring detail = L"The verified restart installer is missing from the staging folder. The existing plugin was not changed.";
+        settings.lastUpdateStatus = L"Update installation failed: staged updater missing";
+        settings.refreshUpdateStatus(false);
+        pluginLogger().write(LogLevel::error, L"Update launch failed", detail);
+        MessageBoxW(nppData._nppHandle, detail.c_str(), L"NppHistory Update",
+            MB_OK | MB_ICONERROR);
+        return;
+    }
+    notepadPath.resize(notepadLength);
+    const fs::path result = pluginConfigPath / L"update-result.ini";
+    DeleteFileW(result.c_str());
+    std::wstring parameters = L"--wait-pid " + quoteCommandLineArgument(
+        std::to_wstring(GetCurrentProcessId()))
+        + L" --source " + quoteCommandLineArgument(completion->destination.wstring())
+        + L" --target " + quoteCommandLineArgument(pluginDll.wstring())
+        + L" --restart " + quoteCommandLineArgument(notepadPath)
+        + L" --result " + quoteCommandLineArgument(result.wstring())
+        + L" --version " + quoteCommandLineArgument(completion->release.tag)
+        + L" --sha256 " + quoteCommandLineArgument(completion->release.assetDigest.substr(7));
+    SHELLEXECUTEINFOW execute{sizeof(execute)};
+    execute.fMask = SEE_MASK_NOCLOSEPROCESS;
+    execute.hwnd = nppData._nppHandle;
+    execute.lpVerb = directoryWritable(pluginDll.parent_path()) ? L"open" : L"runas";
+    execute.lpFile = updater.c_str();
+    execute.lpParameters = parameters.c_str();
+    execute.lpDirectory = updater.parent_path().c_str();
+    execute.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&execute))
+    {
+        const DWORD error = GetLastError();
+        const std::wstring detail = error == ERROR_CANCELLED
+            ? L"Administrator approval was cancelled. The existing plugin was not changed."
+            : L"The restart installer could not be launched. Windows error "
+                + std::to_wstring(error) + L".";
+        settings.lastUpdateStatus = L"Update installation cancelled or failed";
+        settings.refreshUpdateStatus(false);
+        pluginLogger().write(LogLevel::error, L"Update launch failed", detail);
+        MessageBoxW(nppData._nppHandle, detail.c_str(), L"NppHistory Update",
+            MB_OK | MB_ICONERROR);
+        return;
+    }
+    if (execute.hProcess)
+        CloseHandle(execute.hProcess);
+    pluginLogger().write(LogLevel::informational, L"Restart installer launched",
+        completion->release.tag);
+    PostMessageW(nppData._nppHandle, WM_CLOSE, 0, 0);
+}
+
 void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
 {
     updateCheckInProgress = false;
@@ -312,6 +509,11 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         pluginLogger().write(LogLevel::warning, L"Update check failure",
             completion->result.detail);
     }
+    if (completion->result.status == UpdateCheckStatus::updateAvailable)
+        availableUpdate = completion->result.release;
+    else if (completion->result.status == UpdateCheckStatus::upToDate)
+        availableUpdate = {};
+    settings.updateInstallAvailable = trustedUpdateAsset(availableUpdate);
     settings.refreshUpdateStatus(false);
     if (!completion->manual && completion->result.status == UpdateCheckStatus::updateAvailable)
     {
@@ -322,18 +524,33 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         settings.lastNotifiedVersion = release.tag;
         if (!settings.save(settingsFile))
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
-        const std::wstring message = L"A newer NppHistory version is available: "
-            + release.tag + L"\n\nInstalled version: " + NPPHISTORY_VERSION_SEMVER_W
-            + L"\n\nOpen the verified GitHub release page?";
-        if (MessageBoxW(nppData._nppHandle, message.c_str(), L"NppHistory Update Available",
-            MB_YESNO | MB_ICONINFORMATION) == IDYES && trustedReleaseUrl(release.url))
+        const bool installable = trustedUpdateAsset(release);
+        const std::wstring content = L"Available version: " + release.tag
+            + L"\nInstalled version: " + NPPHISTORY_VERSION_SEMVER_W
+            + (installable
+                ? L"\n\nNppHistory can download the verified x64 update, restart Notepad++, install it and reopen Notepad++."
+                : L"\n\nThis release can be viewed and installed manually from GitHub.");
+        const TASKDIALOG_BUTTON buttons[] = {
+            {1001, L"Download, restart and install"},
+            {1002, L"View release"},
+            {IDCANCEL, L"Later"}};
+        TASKDIALOGCONFIG dialog{sizeof(dialog)};
+        dialog.hwndParent = nppData._nppHandle;
+        dialog.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
+        dialog.pszWindowTitle = L"NppHistory Update Available";
+        dialog.pszMainIcon = TD_INFORMATION_ICON;
+        dialog.pszMainInstruction = L"A newer NppHistory version is available";
+        dialog.pszContent = content.c_str();
+        dialog.pButtons = installable ? buttons : buttons + 1;
+        dialog.cButtons = installable ? 3U : 2U;
+        dialog.nDefaultButton = installable ? 1001 : 1002;
+        int selected = IDCANCEL;
+        if (SUCCEEDED(TaskDialogIndirect(&dialog, &selected, nullptr, nullptr)))
         {
-            const auto opened = reinterpret_cast<INT_PTR>(ShellExecuteW(nppData._nppHandle,
-                L"open", release.url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
-            if (opened <= 32)
-                MessageBoxW(nppData._nppHandle,
-                    L"Windows could not open the release page. Visit the NppHistory-Plugin repository on GitHub manually.",
-                    L"NppHistory Update Check", MB_OK | MB_ICONWARNING);
+            if (selected == 1001)
+                beginUpdateInstall(release);
+            else if (selected == 1002)
+                openReleasePage(release);
         }
     }
 }
@@ -341,6 +558,14 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
 LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
     UINT_PTR, DWORD_PTR)
 {
+    if (message == installCompleteMessage)
+    {
+        std::unique_ptr<InstallCompletion> completion(
+            reinterpret_cast<InstallCompletion*>(lParam));
+        if (completion && ready)
+            handleInstallCompletion(std::move(completion));
+        return 0;
+    }
     if (message == updateCompleteMessage)
     {
         std::unique_ptr<UpdateCompletion> completion(
@@ -523,7 +748,9 @@ void editSettings()
     if (settings.edit(nppData._nppHandle, moduleInstance))
     {
         const bool openLog = settings.openLogNow;
+        const bool installUpdate = settings.installUpdateNow;
         settings.openLogNow = false;
+        settings.installUpdateNow = false;
         pluginLogger().configure(settings, pluginConfigPath);
         logSettingsChanges(previous, settings);
         if (!settings.save(settingsFile))
@@ -556,6 +783,8 @@ void editSettings()
                 MessageBoxW(nppData._nppHandle, L"The log file could not be created or accessed.",
                     pluginName, MB_OK | MB_ICONERROR);
         }
+        if (installUpdate)
+            beginUpdateInstall(availableUpdate);
     }
 }
 
@@ -676,6 +905,34 @@ bool removeMenuCommand(HMENU menu, UINT command)
     return DeleteMenu(menu, command, MF_BYCOMMAND) != FALSE;
 }
 
+void showPendingUpdateResult()
+{
+    const fs::path result = pluginConfigPath / L"update-result.ini";
+    if (!fs::is_regular_file(result))
+        return;
+    wchar_t status[64]{}, detail[1024]{}, version[128]{};
+    GetPrivateProfileStringW(L"Update", L"Status", L"", status,
+        static_cast<DWORD>(std::size(status)), result.c_str());
+    GetPrivateProfileStringW(L"Update", L"Detail", L"", detail,
+        static_cast<DWORD>(std::size(detail)), result.c_str());
+    GetPrivateProfileStringW(L"Update", L"Version", L"", version,
+        static_cast<DWORD>(std::size(version)), result.c_str());
+    DeleteFileW(result.c_str());
+    if (!status[0])
+        return;
+    const bool success = wcscmp(status, L"success") == 0;
+    const bool installed = success || wcscmp(status, L"installed_restart_failed") == 0;
+    std::wstring message = detail[0] ? detail : (installed
+        ? L"NppHistory was updated successfully." : L"The NppHistory update failed.");
+    if (version[0])
+        message += L"\n\nVersion: " + std::wstring(version);
+    pluginLogger().write(installed ? LogLevel::informational : LogLevel::error,
+        installed ? L"Update installed" : L"Update installation failed", message);
+    MessageBoxW(nppData._nppHandle, message.c_str(),
+        installed ? L"NppHistory Updated" : L"NppHistory Update Failed",
+        MB_OK | (installed ? MB_ICONINFORMATION : MB_ICONERROR));
+}
+
 void initialise()
 {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES
@@ -706,6 +963,7 @@ void initialise()
     DrawMenuBar(nppData._nppHandle);
     ready = true;
     updateShuttingDown = false;
+    showPendingUpdateResult();
 }
 }
 
@@ -866,7 +1124,14 @@ void handleNotification(SCNotification* notification)
             CloseHandle(updateThreadHandle);
             updateThreadHandle = nullptr;
         }
+        if (installThreadHandle)
+        {
+            WaitForSingleObject(installThreadHandle, 35000);
+            CloseHandle(installThreadHandle);
+            installThreadHandle = nullptr;
+        }
         updateCheckInProgress = false;
+        installDownloadInProgress = false;
         if (activeTimerId)
             KillTimer(nullptr, activeTimerId);
         activeTimerId = 0;

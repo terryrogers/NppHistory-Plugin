@@ -21,6 +21,13 @@ struct ReleaseInfo
     std::wstring tag;
     std::wstring url;
     bool prerelease = false;
+    std::wstring assetName;
+    std::wstring assetUrl;
+    std::wstring assetDigest;
+    std::uint64_t assetSize = 0;
+    std::wstring updaterUrl;
+    std::wstring updaterDigest;
+    std::uint64_t updaterSize = 0;
 };
 
 enum class UpdateCheckStatus
@@ -48,6 +55,7 @@ std::optional<ReleaseInfo> selectNewestUpdate(const std::vector<ReleaseInfo>& re
 bool elapsedFrequencyDue(std::uint64_t nowSeconds, std::uint64_t lastSeconds,
     unsigned intervalDays) noexcept;
 bool trustedReleaseUrl(std::wstring_view url) noexcept;
+bool trustedUpdateAsset(const ReleaseInfo& release);
 bool shouldNotifyUpdate(std::wstring_view availableVersion,
     std::wstring_view lastNotifiedVersion, bool manual) noexcept;
 std::wstring updateAccessErrorMessage(unsigned httpStatus, unsigned long systemError);

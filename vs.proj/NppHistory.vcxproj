@@ -48,6 +48,7 @@
     <ClInclude Include="..\src\TextDiff.h" />
     <ClInclude Include="..\src\Utilities.h" />
     <ClInclude Include="..\src\UpdateChecker.h" />
+    <ClInclude Include="..\src\UpdateInstaller.h" />
     <ClInclude Include="..\src\Version.h" />
     <ClInclude Include="..\src\PluginInterface.h" />
     <ClInclude Include="..\src\Notepad_plus_msgs.h" />
@@ -66,6 +67,7 @@
     <ClCompile Include="..\src\TextDiff.cpp" />
     <ClCompile Include="..\src\Utilities.cpp" />
     <ClCompile Include="..\src\UpdateChecker.cpp" />
+    <ClCompile Include="..\src\UpdateInstaller.cpp" />
   </ItemGroup>
   <ItemGroup><ResourceCompile Include="..\src\NppHistory.rc" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

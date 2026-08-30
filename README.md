@@ -39,12 +39,13 @@ NppHistory is an open-source Notepad++ plugin that automatically saves ordinary 
 - Can add icon buttons for Capture, Compare and Restore to the main Notepad++ toolbar.
 - Centres comparison, settings and About windows on Notepad++; the comparison window also fits itself to smaller editor windows so the main tab area remains visible.
 - Includes a native About window showing the plugin icon, linked author, version, architecture, release date and licence. When populated, the embedded ISO release date is displayed using the computer's Windows regional date format.
+- Checks for updates while Notepad++ remains open and can download a verified x64 release, restart Notepad++, install it with rollback protection and reopen the editor.
 
 ## Install the x64 beta
 
 1. Close Notepad++.
 2. Create a folder named `NppHistory` inside the Notepad++ `plugins` folder.
-3. Copy `NppHistory.dll` into that folder, producing `plugins\NppHistory\NppHistory.dll`.
+3. Copy `NppHistory.dll` into that folder, producing `plugins\NppHistory\NppHistory.dll`. The restart installer is downloaded and verified only when it is needed.
 4. Start 64-bit Notepad++ and open **Plugins > NppHistory**.
 
 For a standard machine-wide installation, the destination is normally:
@@ -63,7 +64,7 @@ Open **Plugins > NppHistory > Settings**. Settings are grouped into five tabs:
 - **Auto Save** independently enables automatic saving, with **After editing stops** selected by default at 30 seconds. Optional triggers cover Notepad++ losing focus, timed intervals in minutes, file-tab changes and Notepad++ exit. Autosave can apply to the current file only or all open files. After-edit values below 10 seconds are normalized to 10 seconds.
 - **History** independently enables revision history and selects whether revisions are created before saves, after saves and before restores. It also selects either the default hidden `.npphistory` folder beside each text file or a common custom history root.
 - **Logging** optionally records Error, Warning, Informational or Debug events. The log can use the standard Notepad++ plugin configuration folder or a custom file, can be opened directly in Notepad++, and supports a maximum size, overwrite or archive rollover, and configurable archive retention.
-- **Updates** checks the public NppHistory GitHub Releases feed daily, weekly or monthly, optionally includes prereleases, supports an immediate manual check and displays the latest check status. **Check now** stays on the Updates page, shows `Checking...`, and refreshes the status text without a result dialog. An up-to-date result identifies the latest eligible published release, making it clear that commits and CI artifacts are not update releases. Checks run in the background; automatic update-available notifications can offer to open the official HTTPS release page. NppHistory does not download or replace its DLL.
+- **Updates** checks the public NppHistory GitHub Releases feed daily, weekly or monthly, optionally includes prereleases, supports an immediate manual check and displays the latest check status and next scheduled time. **Check now** stays on the Updates page, shows `Checking...`, and refreshes the status text without a result dialog. Checks continue while Notepad++ remains open and after Windows resumes from sleep. When a compatible release is available, **Restart and install** downloads the exact versioned x64 DLL, verifies its GitHub SHA-256 digest, starts the external updater, closes Notepad++, backs up and replaces the DLL, and reopens Notepad++. Permission, network, verification, replacement and restart failures retain or report the recoverable state.
 
 The settings and internal catalogue are stored through Notepad++'s plugin configuration API. A normal installed copy typically places them beneath:
 
@@ -115,12 +116,13 @@ Open a Visual Studio developer environment and run:
 
 ```powershell
 msbuild .\vs.proj\NppHistory.vcxproj /m /p:Configuration=Release /p:Platform=x64
+msbuild .\vs.proj\NppHistoryUpdater.vcxproj /m /p:Configuration=Release /p:Platform=x64
 msbuild .\vs.proj\NppHistory.Tests.vcxproj /m /p:Configuration=Release /p:Platform=x64
 .\build\tests\NppHistory.Tests.exe
 .\tests\runtime_smoke.ps1
 ```
 
-The runtime smoke test uses an isolated portable copy of an installed 64-bit Notepad++ and verifies a real 10-second autosave, adjacent hidden storage, the internal catalogue, save revisions, saved/unsaved pane states, forced pane capture, pane and main-toolbar controls, a real background GitHub update check, logging output, all five Settings tabs, the About window, and the WinMerge-style comparison viewer including synchronized scrolling, native line numbers, Location Pane rendering, toolbar navigation, file headers and pane status information. The plugin binary is written to `build\x64\Release\NppHistory.dll`.
+The runtime smoke test uses an isolated portable copy of an installed 64-bit Notepad++ and verifies a real 10-second autosave, adjacent hidden storage, the internal catalogue, save revisions, saved/unsaved pane states, forced pane capture, pane and main-toolbar controls, a real background GitHub update check, updater controls, logging output, all five Settings tabs, the About window, and the WinMerge-style comparison viewer including synchronized scrolling, native line numbers, Location Pane rendering, toolbar navigation, file headers and pane status information. The plugin and restart installer are written to `build\x64\Release\NppHistory.dll` and `build\x64\Release\NppHistoryUpdater.exe`.
 
 The comparison workflow was implemented after reviewing WinMerge's open-source location view, merge view, file header, status bar, syntax-color and diff-color implementations. NppHistory now draws its own comparison toolbar icons; the remaining comparison-status artwork is documented in `THIRD_PARTY_NOTICES.md`. NppHistory's comparison and history engines remain independently implemented.
 

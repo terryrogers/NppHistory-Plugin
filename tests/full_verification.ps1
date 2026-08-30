@@ -26,6 +26,7 @@ function Invoke-Build([string]$project, [string]$logName) {
 Push-Location $projectRoot
 try {
     Invoke-Build 'vs.proj\NppHistory.vcxproj' 'plugin-build.log'
+    Invoke-Build 'vs.proj\NppHistoryUpdater.vcxproj' 'updater-build.log'
     Invoke-Build 'vs.proj\NppHistory.Tests.vcxproj' 'tests-build.log'
 
     $coreOutput = & '.\build\tests\NppHistory.Tests.exe' 2>&1
@@ -40,7 +41,12 @@ try {
     $coreFailures = [int]$Matches[2]
     if ($coreFailures -ne 0) { throw "Core tests reported $coreFailures failures." }
 
+    $updaterResult = & '.\tests\updater_smoke.ps1'
+    if (-not $updaterResult.Passed) { throw 'The isolated restart-installer verification failed.' }
+
     $dll = Join-Path $projectRoot 'build\x64\Release\NppHistory.dll'
+    $updater = Join-Path $projectRoot 'build\x64\Release\NppHistoryUpdater.exe'
+    if (-not (Test-Path $updater)) { throw 'The restart installer was not built.' }
     $version = (Get-Item $dll).VersionInfo
     $expectedMetadata = [ordered]@{
         FileDescription = 'NppHistory'
@@ -90,6 +96,8 @@ try {
         LiveNotepadVerification = $runtimeObject.Passed
         AutomaticUpdateCheck = $runtimeObject.AutomaticUpdateCheckPassed
         ManualUpdateCheck = $runtimeObject.ManualUpdateCheckPassed
+        RestartInstaller = $updaterResult.Passed
+        InstallerRollbackProtection = $updaterResult.InvalidDigestRejected -and $updaterResult.ExistingDllPreserved
         UpdateFeedAccessible = $runtimeObject.UpdateFeedAccessible
         RevisionCommentUpdate = $runtimeObject.CommentUpdatePassed
         RevisionCommentUpdateLogged = $runtimeObject.CommentUpdateLogged
@@ -103,6 +111,7 @@ try {
         ProductName = $version.ProductName
         Comments = $version.Comments
         DllSha256 = $hash.Hash
+        UpdaterSha256 = (Get-FileHash $updater -Algorithm SHA256).Hash
         EvidenceDirectory = $outputRoot
         RuntimeEvidenceDirectory = Split-Path $runtimeObject.HistoryPanelScreenshot -Parent
     }

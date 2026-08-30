@@ -1,0 +1,53 @@
+name: Publish NppHistory release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: microsoft/setup-msbuild@v3
+      - name: Build plugin, updater and tests
+        shell: pwsh
+        run: |
+          msbuild .\vs.proj\NppHistory.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
+          msbuild .\vs.proj\NppHistoryUpdater.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
+          msbuild .\vs.proj\NppHistory.Tests.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
+          .\build\tests\NppHistory.Tests.exe
+      - name: Prepare verified release assets
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $version = $tag.TrimStart('v')
+          $versionHeader = Get-Content '.\src\Version.h' -Raw
+          $expectedVersionLine = '#define NPPHISTORY_VERSION_SEMVER_W L"' + $version + '"'
+          if (-not $versionHeader.Contains($expectedVersionLine)) {
+            throw "Tag $tag does not match NPPHISTORY_VERSION_SEMVER_W."
+          }
+          $assetRoot = Join-Path $PWD 'build\release-assets'
+          New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
+          $dllName = "NppHistory-$version-x64.dll"
+          Copy-Item '.\build\x64\Release\NppHistory.dll' (Join-Path $assetRoot $dllName)
+          Copy-Item '.\build\x64\Release\NppHistoryUpdater.exe' (Join-Path $assetRoot 'NppHistoryUpdater.exe')
+          Compress-Archive -Path '.\build\x64\Release\NppHistory.dll' -DestinationPath (Join-Path $assetRoot "NppHistory-$version-x64.zip")
+          Get-ChildItem $assetRoot -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))" } |
+            Set-Content (Join-Path $assetRoot "SHA256SUMS-$version.txt") -Encoding ascii
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $arguments = @('release','create',$tag,'--repo','${{ github.repository }}','--generate-notes','--title',"NppHistory $($tag.TrimStart('v'))")
+          if ($tag.Contains('-')) { $arguments += '--prerelease' }
+          $assets = @(Get-ChildItem '.\build\release-assets\*' | ForEach-Object FullName)
+          $arguments += $assets
+          gh @arguments
