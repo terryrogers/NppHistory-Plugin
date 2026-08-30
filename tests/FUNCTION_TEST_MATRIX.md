@@ -26,13 +26,18 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 |---|---|---|
 | `readNumber` | Indirect through settings dialog/load and minimum normalization | PASS |
 | `readBoolean` | Indirect through every Boolean setting round-trip | PASS |
+| `readUnsigned64` | Indirect through persisted update timestamp/status round-trip | PASS |
 | `ensureUnicodeIni` | Direct observable ANSI migration and Unicode path preservation | PASS |
 | `updateLocationControls` | Live custom/adjacent enablement | PASS |
 | `updateHistoryControls` | Live History master enablement | PASS |
 | `updateAutoSaveControls` | Live Auto Save master/interval enablement | PASS |
 | `updateUpdateControls` | Live automatic-update master/dependent-control enablement | PASS |
-| `showSettingsPage` | Live three-tab selection/rendering | PASS |
+| `updateStatusText` | Live never-checked and completed-check status rendering | PASS |
+| `selectedLogPath` | Live default/custom location selection and direct settings round-trip | PASS |
+| `updateLoggingControls` | Live logging master, location and rollover dependent states | PASS |
+| `showSettingsPage` | Live five-tab selection/rendering | PASS |
 | `browseForHistoryRoot` | Control presence/enablement live; native picker selection not automated | PARTIAL |
+| `browseForLogFile` | Control presence/enablement live; native picker selection not automated | PARTIAL |
 | `settingsProc` | Live initialization, commands, page changes and dependent states | PASS |
 | `Settings::shouldAutoSave` | Direct all five triggers, selected/cleared/master-off | PASS |
 | `Settings::shouldCreateRevision` | Direct all revision paths, selected/cleared/master-off | PASS |
@@ -42,6 +47,21 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `Settings::load` | Direct defaults, all fields, clamping and legacy migration | PASS |
 | `Settings::save` | Direct all fields/frequencies and Unicode persistence | PASS |
 | `Settings::edit` | Live modal creation, centring, icon and content | PASS |
+
+## Logger.cpp / PluginLogger
+
+| Function | Evidence | Status |
+|---|---|---|
+| `timestampNow` | Indirect local timestamp written to log records | PASS |
+| `oneLine` | Direct CR/LF/tab sanitisation in logged detail | PASS |
+| `pluginLogger` | Direct singleton access across tests and live plugin | PASS |
+| `logLevelName` | Direct Error/Warning/Informational/Debug record checks | PASS |
+| `PluginLogger::configure` | Direct disabled/default/custom/threshold/rotation configurations | PASS |
+| `PluginLogger::enabled` | Direct disabled and severity-threshold checks | PASS |
+| `PluginLogger::path` | Direct default and custom path assertions | PASS |
+| `PluginLogger::ensureFile` | Direct parent-directory and empty-log creation | PASS |
+| `PluginLogger::rotateIfNeeded` | Direct maximum-size overwrite/archive/retention behaviour | PASS |
+| `PluginLogger::write` | Direct levels, filtering, sanitisation and live action records | PASS |
 
 ## UpdateChecker.cpp
 
@@ -124,7 +144,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `comparisonHeaderSubclass` | Live revision-header picker | PASS |
 | `create` | Live dock creation, icon and controls | PASS |
 | `show` | Live Plugins menu display | PASS |
-| `refresh` | Live revisions and forced capture refresh | PASS |
+| `refresh` | Live saved/unsaved state, revision refresh, warning and action enablement | PASS |
 | `selectedIndex` | Live selection/action-menu targeting | PASS |
 | `showRevisionActions` | Live right-click popup and four icon commands | PASS |
 | `editSelectedComment` | Store logic direct; modal edit submission not automated | PARTIAL |
@@ -147,7 +167,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `navigateDifference` | Live previous/next navigation | PASS |
 | `showRevisionPicker` | Live picker position and revision count | PASS |
 | `restoreSelected` | Core restore path direct; modal overwrite/reload not automated | PARTIAL |
-| `layout` | Live normal, resized, wrapped and collapsed layouts | PASS |
+| `layout` | Live normal, resized, wrapped, collapsed and conditional unsaved warning layouts | PASS |
 | `configureButtonIcons` | Live all six pane icons | PASS |
 | `dialogProc` | Live pane init, resize, commands and context menu | PASS |
 | `editCommentProc` | Dialog construction/underlying update covered; submit not automated | PARTIAL |
@@ -181,6 +201,8 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `captureNow` | Live forced manual revision | PASS |
 | `compareFromToolbar` | Live main-toolbar comparison | PASS |
 | `restoreFromToolbar` | Command registered; modal completion not automated | PARTIAL |
+| `boolText` | Indirect every Boolean option-change detail | PASS |
+| `logSettingsChanges` | Live informational summary plus Debug previous/new values for every setting | PASS |
 | `editSettings` | Live settings open/apply UI | PASS |
 | `aboutProc` | Live About content/icon/close; external link launch not automated | PARTIAL |
 | `showAbout` | Live centred About window | PASS |

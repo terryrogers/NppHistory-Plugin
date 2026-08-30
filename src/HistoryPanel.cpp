@@ -1,4 +1,5 @@
 #include "HistoryPanel.h"
+#include "Logger.h"
 #include "DockingFeature/Docking.h"
 #include "TextDiff.h"
 #include "Utilities.h"
@@ -211,10 +212,15 @@ void HistoryPanel::show()
 void HistoryPanel::refresh(const std::filesystem::path& file)
 {
     _currentFile = file;
-    _revisions = _store && !file.empty() ? _store->revisionsFor(file) : std::vector<RevisionInfo>{};
+    std::error_code error;
+    _fileSaved = !file.empty() && std::filesystem::is_regular_file(file, error);
+    _revisions = _store && _fileSaved ? _store->revisionsFor(file) : std::vector<RevisionInfo>{};
     if (!_dialog)
         return;
     SetDlgItemTextW(_dialog, IDC_CURRENT_FILE, file.empty() ? L"No file selected" : file.c_str());
+    for (const int control : {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE})
+        EnableWindow(GetDlgItem(_dialog, control), _fileSaved);
+    ShowWindow(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST), _fileSaved ? SW_HIDE : SW_SHOW);
     const HWND list = GetDlgItem(_dialog, IDC_REVISIONS);
     ListView_DeleteAllItems(list);
     for (int index = 0; index < static_cast<int>(_revisions.size()); ++index)
@@ -229,6 +235,7 @@ void HistoryPanel::refresh(const std::filesystem::path& file)
         const std::wstring size = std::to_wstring(revision.size);
         ListView_SetItemText(list, index, 2, const_cast<wchar_t*>(size.c_str()));
     }
+    layout();
 }
 
 int HistoryPanel::selectedIndex() const
@@ -274,6 +281,9 @@ void HistoryPanel::showRevisionActions(int index, POINT anchor)
     DestroyMenu(menu);
     for (const HBITMAP bitmap : bitmaps)
         if (bitmap) DeleteObject(bitmap);
+    if (command)
+        pluginLogger().write(LogLevel::debug, L"Revision action",
+            std::to_wstring(command));
     if (command == ID_REVISION_DELETE) deleteSelected();
     else if (command == ID_REVISION_EDIT) editSelectedComment();
     else if (command == ID_REVISION_COMPARE) compareSelected();
@@ -286,6 +296,7 @@ void HistoryPanel::editSelectedComment()
     if (index < 0 || index >= static_cast<int>(_revisions.size()))
         return;
     EditCommentContext context{_revisions[index].reason};
+    const std::wstring previousComment = context.comment;
     if (DialogBoxParamW(_instance, MAKEINTRESOURCEW(IDD_EDIT_COMMENT),
         _nppData._nppHandle, editCommentProc, reinterpret_cast<LPARAM>(&context)) != IDOK)
         return;
@@ -293,8 +304,14 @@ void HistoryPanel::editSelectedComment()
     {
         MessageBoxW(_dialog, L"The revision comment could not be updated.",
             L"NppHistory", MB_OK | MB_ICONERROR);
+        pluginLogger().write(LogLevel::error, L"Edit revision comment failed",
+            _currentFile.wstring());
         return;
     }
+    pluginLogger().write(LogLevel::informational, L"Revision comment updated",
+        _currentFile.wstring());
+    pluginLogger().write(LogLevel::debug, L"Option change",
+        L"Revision comment: " + previousComment + L" -> " + context.comment);
     refresh(_currentFile);
     if (index < static_cast<int>(_revisions.size()))
         ListView_SetItemState(GetDlgItem(_dialog, IDC_REVISIONS), index,
@@ -317,8 +334,12 @@ void HistoryPanel::deleteSelected()
     {
         MessageBoxW(_dialog, L"The revision could not be deleted completely.",
             L"NppHistory", MB_OK | MB_ICONERROR);
+        pluginLogger().write(LogLevel::error, L"Delete revision failed",
+            _currentFile.wstring());
         return;
     }
+    pluginLogger().write(LogLevel::informational, L"Revision deleted",
+        _currentFile.wstring());
     refresh(_currentFile);
 }
 
@@ -337,7 +358,12 @@ void HistoryPanel::compareSelected()
         _nppData._nppHandle,
         compareProc, reinterpret_cast<LPARAM>(&context));
     if (result == -1)
+    {
         MessageBoxW(_dialog, L"The comparison window could not be opened.", L"NppHistory", MB_OK | MB_ICONERROR);
+        pluginLogger().write(LogLevel::error, L"Compare failed", _currentFile.wstring());
+    }
+    else
+        pluginLogger().write(LogLevel::informational, L"Compare", _currentFile.wstring());
 }
 
 std::wstring HistoryPanel::currentSourceText() const
@@ -898,18 +924,26 @@ void HistoryPanel::restoreSelected()
     {
         MessageBoxW(_dialog, L"The current edits could not be saved, so the restore was cancelled.",
             L"NppHistory", MB_OK | MB_ICONERROR);
+        pluginLogger().write(LogLevel::error, L"Restore failed",
+            L"Current edits could not be saved: " + _currentFile.wstring());
         return;
     }
     if (retainSafetyRevision)
-        _store->captureFile(_currentFile, L"Before restore");
+    {
+        if (_store->captureFile(_currentFile, L"Before restore"))
+            pluginLogger().write(LogLevel::informational, L"Revision created",
+                L"Before restore: " + _currentFile.wstring());
+    }
     if (!_store->restoreRevision(selected, _currentFile))
     {
         MessageBoxW(_dialog, L"The revision could not be restored.", L"NppHistory", MB_OK | MB_ICONERROR);
+        pluginLogger().write(LogLevel::error, L"Restore failed", _currentFile.wstring());
         return;
     }
     SendMessageW(_nppData._nppHandle, NPPM_RELOADFILE, FALSE,
         reinterpret_cast<LPARAM>(_currentFile.c_str()));
     refresh(_currentFile);
+    pluginLogger().write(LogLevel::informational, L"Restore", _currentFile.wstring());
 }
 
 void HistoryPanel::layout()
@@ -963,9 +997,14 @@ void HistoryPanel::layout()
     SetPropW(_dialog, L"NppHistoryResponsiveButtonRows",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(rows.size())));
     const int buttonTop = area.bottom - margin - buttonsHeight;
+    const int warningHeight = _fileSaved ? 0 : 20;
+    const int warningTop = buttonTop - warningHeight;
     const int listTop = 35;
     MoveWindow(GetDlgItem(_dialog, IDC_REVISIONS), margin, listTop, available,
-        (std::max)(0, buttonTop - gap - listTop), TRUE);
+        (std::max)(0, warningTop - gap - listTop), TRUE);
+    if (!_fileSaved)
+        MoveWindow(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST), margin, warningTop,
+            available, warningHeight, TRUE);
     int y = buttonTop;
     for (const auto& row : rows)
     {
@@ -1024,6 +1063,14 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
     if (!panel)
         return FALSE;
     if (message == WM_SIZE) { panel->layout(); return TRUE; }
+    if (message == WM_CTLCOLORSTATIC
+        && GetDlgCtrlID(reinterpret_cast<HWND>(lParam)) == IDC_SAVE_FILE_FIRST)
+    {
+        const HDC dc = reinterpret_cast<HDC>(wParam);
+        SetTextColor(dc, RGB(200, 0, 0));
+        SetBkMode(dc, TRANSPARENT);
+        return reinterpret_cast<INT_PTR>(GetSysColorBrush(COLOR_BTNFACE));
+    }
     if (message == WM_DRAWITEM)
     {
         const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
@@ -1077,7 +1124,15 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
     }
     if (message == WM_COMMAND)
     {
-        if (LOWORD(wParam) == IDC_REFRESH) panel->refresh(panel->_currentFile);
+        wchar_t buttonLabel[64]{};
+        GetDlgItemTextW(dialog, LOWORD(wParam), buttonLabel,
+            static_cast<int>(std::size(buttonLabel)));
+        if (buttonLabel[0]) pluginLogger().write(LogLevel::debug, L"Button click", buttonLabel);
+        if (LOWORD(wParam) == IDC_REFRESH)
+        {
+            panel->refresh(panel->_currentFile);
+            pluginLogger().write(LogLevel::informational, L"Refresh", panel->_currentFile.wstring());
+        }
         if (LOWORD(wParam) == IDC_COMPARE) panel->compareSelected();
         if (LOWORD(wParam) == IDC_RESTORE) panel->restoreSelected();
         if (LOWORD(wParam) == IDC_CAPTURE)
@@ -1202,6 +1257,8 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
         && LOWORD(wParam) <= ID_COMPARE_TOOL_LAST)
     {
         const int image = LOWORD(wParam) - ID_COMPARE_TOOL_FIRST;
+        pluginLogger().write(LogLevel::debug, L"Button click",
+            std::wstring(L"Compare: ") + toolbarHint(image));
         if (image == 1)
         {
             const HWND toolbar = GetDlgItem(dialog, IDC_COMPARE_TOOLBAR);
@@ -1261,10 +1318,19 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
             DestroyMenu(options);
             if (selected >= 5001 && selected <= 5004)
             {
+                bool* option = selected == 5001 ? &context->options.ignoreWhitespace
+                    : selected == 5002 ? &context->options.ignoreBlankLines
+                    : selected == 5003 ? &context->options.ignoreCase
+                    : &context->options.ignoreLineEndings;
+                const bool previous = *option;
                 if (selected == 5001) context->options.ignoreWhitespace = !context->options.ignoreWhitespace;
                 if (selected == 5002) context->options.ignoreBlankLines = !context->options.ignoreBlankLines;
                 if (selected == 5003) context->options.ignoreCase = !context->options.ignoreCase;
                 if (selected == 5004) context->options.ignoreLineEndings = !context->options.ignoreLineEndings;
+                pluginLogger().write(LogLevel::debug, L"Option change",
+                    std::wstring(L"Compare option ") + std::to_wstring(selected)
+                    + L": " + (previous ? L"true" : L"false") + L" -> "
+                    + (*option ? L"true" : L"false"));
                 context->topLine = 0;
                 context->panel->renderComparison(dialog, *context);
             }
@@ -1360,6 +1426,7 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
         || LOWORD(wParam) == IDC_COMPARE_IGNORE_CASE
         || LOWORD(wParam) == IDC_COMPARE_IGNORE_EOL) && HIWORD(wParam) == BN_CLICKED)
     {
+        const CompareOptions previous = context->options;
         context->options.ignoreWhitespace = IsDlgButtonChecked(dialog,
             IDC_COMPARE_IGNORE_WHITESPACE) == BST_CHECKED;
         context->options.ignoreBlankLines = IsDlgButtonChecked(dialog,
@@ -1368,6 +1435,18 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
             IDC_COMPARE_IGNORE_CASE) == BST_CHECKED;
         context->options.ignoreLineEndings = IsDlgButtonChecked(dialog,
             IDC_COMPARE_IGNORE_EOL) == BST_CHECKED;
+        const bool before[] = {previous.ignoreWhitespace, previous.ignoreBlankLines,
+            previous.ignoreCase, previous.ignoreLineEndings};
+        const bool after[] = {context->options.ignoreWhitespace, context->options.ignoreBlankLines,
+            context->options.ignoreCase, context->options.ignoreLineEndings};
+        const wchar_t* names[] = {L"Ignore whitespace", L"Ignore blank lines",
+            L"Ignore case", L"Ignore line endings"};
+        for (int index = 0; index < 4; ++index)
+            if (before[index] != after[index])
+                pluginLogger().write(LogLevel::debug, L"Option change",
+                    std::wstring(L"Compare ") + names[index] + L": "
+                    + (before[index] ? L"true" : L"false") + L" -> "
+                    + (after[index] ? L"true" : L"false"));
         context->topLine = 0;
         context->panel->renderComparison(dialog, *context);
         return TRUE;
@@ -1375,8 +1454,12 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
     if (message == WM_COMMAND && LOWORD(wParam) == IDC_COMPARE_REVISION
         && HIWORD(wParam) == CBN_SELCHANGE)
     {
+        const int previous = context->revisionIndex;
         context->revisionIndex = static_cast<int>(SendDlgItemMessageW(dialog,
             IDC_COMPARE_REVISION, CB_GETCURSEL, 0, 0));
+        pluginLogger().write(LogLevel::debug, L"Option change",
+            L"Compare revision: " + std::to_wstring(previous) + L" -> "
+            + std::to_wstring(context->revisionIndex));
         context->topLine = 0;
         context->panel->renderComparison(dialog, *context);
         return TRUE;

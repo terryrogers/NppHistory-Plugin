@@ -1,9 +1,11 @@
 #include "Settings.h"
+#include "Logger.h"
 #include "resource.h"
 #include "Utilities.h"
 #include "UpdateChecker.h"
 
 #include <algorithm>
+#include <commdlg.h>
 #include <commctrl.h>
 #include <cwchar>
 #include <shlobj.h>
@@ -94,13 +96,68 @@ void updateUpdateControls(HWND dialog)
     EnableWindow(GetDlgItem(dialog, IDC_UPDATE_PRERELEASES), TRUE);
 }
 
+std::wstring updateStatusText(const Settings& settings)
+{
+    if (settings.lastUpdateStatus.empty() && settings.lastUpdateCheck == 0)
+        return L"Status: Never checked.";
+    std::wstring result = L"Status: " + (settings.lastUpdateStatus.empty()
+        ? std::wstring(L"Last check completed.") : settings.lastUpdateStatus);
+    if (settings.lastUpdateCheck != 0)
+    {
+        ULARGE_INTEGER value{};
+        value.QuadPart = (settings.lastUpdateCheck + 11644473600ULL) * 10000000ULL;
+        FILETIME utc{value.LowPart, value.HighPart}, local{};
+        SYSTEMTIME time{};
+        if (FileTimeToLocalFileTime(&utc, &local) && FileTimeToSystemTime(&local, &time))
+        {
+            wchar_t date[128]{}, clock[128]{};
+            GetDateFormatEx(LOCALE_NAME_USER_DEFAULT, DATE_SHORTDATE, &time, nullptr,
+                date, static_cast<int>(std::size(date)), nullptr);
+            GetTimeFormatEx(LOCALE_NAME_USER_DEFAULT, 0, &time, nullptr,
+                clock, static_cast<int>(std::size(clock)));
+            result += L"\r\nLast successful check: " + std::wstring(date) + L" " + clock;
+        }
+    }
+    return result;
+}
+
+std::filesystem::path selectedLogPath(HWND dialog, const Settings& settings)
+{
+    if (IsDlgButtonChecked(dialog, IDC_LOGGING_CUSTOM) != BST_CHECKED)
+        return settings.defaultLogFile;
+    wchar_t path[32768]{};
+    GetDlgItemTextW(dialog, IDC_LOGGING_PATH, path, static_cast<int>(std::size(path)));
+    return path;
+}
+
+void updateLoggingControls(HWND dialog, const Settings& settings)
+{
+    const BOOL enabled = IsDlgButtonChecked(dialog, IDC_LOGGING_ENABLED) == BST_CHECKED;
+    const BOOL custom = enabled
+        && IsDlgButtonChecked(dialog, IDC_LOGGING_CUSTOM) == BST_CHECKED;
+    for (const int control : {IDC_LOGGING_LEVEL_GROUP, IDC_LOGGING_LEVEL_LABEL,
+        IDC_LOGGING_LEVEL, IDC_LOGGING_FILE_GROUP, IDC_LOGGING_DEFAULT,
+        IDC_LOGGING_CUSTOM, IDC_LOGGING_ROTATION_GROUP, IDC_LOGGING_MAX_SIZE_LABEL,
+        IDC_LOGGING_MAX_SIZE, IDC_LOGGING_MAX_SIZE_UNIT, IDC_LOGGING_ROLLOVER_LABEL,
+        IDC_LOGGING_ROLLOVER})
+        EnableWindow(GetDlgItem(dialog, control), enabled);
+    EnableWindow(GetDlgItem(dialog, IDC_LOGGING_PATH), custom);
+    EnableWindow(GetDlgItem(dialog, IDC_LOGGING_BROWSE), custom);
+    EnableWindow(GetDlgItem(dialog, IDC_LOGGING_OPEN), TRUE);
+    const bool archives = enabled && SendDlgItemMessageW(dialog, IDC_LOGGING_ROLLOVER,
+        CB_GETCURSEL, 0, 0) == 1;
+    EnableWindow(GetDlgItem(dialog, IDC_LOGGING_ARCHIVES_LABEL), archives);
+    EnableWindow(GetDlgItem(dialog, IDC_LOGGING_ARCHIVES), archives);
+    const std::filesystem::path effective = selectedLogPath(dialog, settings);
+    SetDlgItemTextW(dialog, IDC_LOGGING_EFFECTIVE_PATH,
+        effective.empty() ? L"No log file selected" : effective.c_str());
+}
+
 void showSettingsPage(HWND dialog, int page)
 {
     const int general[] = {IDC_GENERAL_TOOLBAR_GROUP, IDC_TOOLBAR_CAPTURE,
         IDC_TOOLBAR_COMPARE, IDC_TOOLBAR_RESTORE, IDC_TOOLBAR_DESCRIPTION,
-        IDC_TOOLBAR_RESTART_NOTE, IDC_GENERAL_UPDATE_GROUP, IDC_AUTO_UPDATE,
-        IDC_UPDATE_FREQUENCY_LABEL, IDC_UPDATE_FREQUENCY, IDC_UPDATE_PRERELEASES,
-        IDC_UPDATE_CHECK_NOW};
+        IDC_TOOLBAR_RESTART_NOTE};
     const int autoSave[] = {IDC_ENABLED, IDC_AUTOSAVE_WHEN_GROUP, IDC_AFTER_EDIT,
         IDC_AFTER_EDIT_SECONDS, IDC_AFTER_EDIT_LABEL, IDC_AUTOSAVE_FOCUS_LOSS,
         IDC_AUTOSAVE_INTERVAL, IDC_AUTOSAVE_INTERVAL_MINUTES, IDC_INTERVAL_LABEL,
@@ -110,6 +167,16 @@ void showSettingsPage(HWND dialog, int page)
         IDC_HISTORY_BEFORE_SAVE, IDC_HISTORY_AFTER_SAVE, IDC_HISTORY_BEFORE_RESTORE,
         IDC_HISTORY_GROUP, IDC_HISTORY_ADJACENT, IDC_HISTORY_CUSTOM,
         IDC_HISTORY_PATH, IDC_HISTORY_BROWSE};
+    const int logging[] = {IDC_LOGGING_ENABLED, IDC_LOGGING_LEVEL_GROUP,
+        IDC_LOGGING_LEVEL_LABEL, IDC_LOGGING_LEVEL, IDC_LOGGING_FILE_GROUP,
+        IDC_LOGGING_DEFAULT, IDC_LOGGING_CUSTOM, IDC_LOGGING_PATH,
+        IDC_LOGGING_BROWSE, IDC_LOGGING_OPEN, IDC_LOGGING_EFFECTIVE_PATH,
+        IDC_LOGGING_ROTATION_GROUP, IDC_LOGGING_MAX_SIZE_LABEL, IDC_LOGGING_MAX_SIZE,
+        IDC_LOGGING_MAX_SIZE_UNIT, IDC_LOGGING_ROLLOVER_LABEL, IDC_LOGGING_ROLLOVER,
+        IDC_LOGGING_ARCHIVES_LABEL, IDC_LOGGING_ARCHIVES};
+    const int updates[] = {IDC_GENERAL_UPDATE_GROUP, IDC_AUTO_UPDATE,
+        IDC_UPDATE_FREQUENCY_LABEL, IDC_UPDATE_FREQUENCY, IDC_UPDATE_PRERELEASES,
+        IDC_UPDATE_CHECK_NOW, IDC_UPDATE_STATUS_GROUP, IDC_UPDATE_STATUS};
     const auto setVisibility = [&](const int* controls, std::size_t count, bool visible)
     {
         for (std::size_t index = 0; index < count; ++index)
@@ -118,6 +185,8 @@ void showSettingsPage(HWND dialog, int page)
     setVisibility(general, std::size(general), page == 0);
     setVisibility(autoSave, std::size(autoSave), page == 1);
     setVisibility(history, std::size(history), page == 2);
+    setVisibility(logging, std::size(logging), page == 3);
+    setVisibility(updates, std::size(updates), page == 4);
 }
 
 void browseForHistoryRoot(HWND dialog)
@@ -135,6 +204,21 @@ void browseForHistoryRoot(HWND dialog)
     CoTaskMemFree(item);
 }
 
+void browseForLogFile(HWND dialog)
+{
+    wchar_t path[32768]{};
+    GetDlgItemTextW(dialog, IDC_LOGGING_PATH, path, static_cast<int>(std::size(path)));
+    OPENFILENAMEW options{sizeof(options)};
+    options.hwndOwner = dialog;
+    options.lpstrFilter = L"Log files (*.log)\0*.log\0All files (*.*)\0*.*\0";
+    options.lpstrFile = path;
+    options.nMaxFile = static_cast<DWORD>(std::size(path));
+    options.lpstrDefExt = L"log";
+    options.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
+    if (GetSaveFileNameW(&options))
+        SetDlgItemTextW(dialog, IDC_LOGGING_PATH, path);
+}
+
 INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
 {
     auto* settings = reinterpret_cast<Settings*>(GetWindowLongPtrW(dialog, DWLP_USER));
@@ -148,7 +232,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon));
 
         const HWND tabs = GetDlgItem(dialog, IDC_SETTINGS_TABS);
-        for (const wchar_t* label : {L"General", L"Auto Save", L"History"})
+        for (const wchar_t* label : {L"General", L"Auto Save", L"History", L"Logging", L"Updates"})
         {
             TCITEMW item{};
             item.mask = TCIF_TEXT;
@@ -177,7 +261,27 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         SendMessageW(frequency, CB_SETCURSEL, static_cast<int>(settings->updateFrequency), 0);
         CheckDlgButton(dialog, IDC_UPDATE_PRERELEASES,
             settings->includePrereleaseUpdates ? BST_CHECKED : BST_UNCHECKED);
+        SetDlgItemTextW(dialog, IDC_UPDATE_STATUS, updateStatusText(*settings).c_str());
         updateUpdateControls(dialog);
+
+        CheckDlgButton(dialog, IDC_LOGGING_ENABLED,
+            settings->loggingEnabled ? BST_CHECKED : BST_UNCHECKED);
+        const HWND logLevel = GetDlgItem(dialog, IDC_LOGGING_LEVEL);
+        for (const wchar_t* label : {L"Errors", L"Warnings", L"Informational", L"Debug"})
+            SendMessageW(logLevel, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+        SendMessageW(logLevel, CB_SETCURSEL, static_cast<int>(settings->logLevel), 0);
+        CheckRadioButton(dialog, IDC_LOGGING_DEFAULT, IDC_LOGGING_CUSTOM,
+            settings->logLocationMode == LogLocationMode::pluginConfig
+                ? IDC_LOGGING_DEFAULT : IDC_LOGGING_CUSTOM);
+        SetDlgItemTextW(dialog, IDC_LOGGING_PATH, settings->customLogFile.c_str());
+        SetDlgItemInt(dialog, IDC_LOGGING_MAX_SIZE, settings->logMaximumSizeMb, FALSE);
+        const HWND rollover = GetDlgItem(dialog, IDC_LOGGING_ROLLOVER);
+        for (const wchar_t* label : {L"Overwrite log", L"Start new archive"})
+            SendMessageW(rollover, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
+        SendMessageW(rollover, CB_SETCURSEL,
+            static_cast<int>(settings->logRolloverMode), 0);
+        SetDlgItemInt(dialog, IDC_LOGGING_ARCHIVES, settings->logArchivesToRetain, FALSE);
+        updateLoggingControls(dialog, *settings);
 
         CheckDlgButton(dialog, IDC_ENABLED,
             settings->autoSaveEnabled ? BST_CHECKED : BST_UNCHECKED);
@@ -214,6 +318,13 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         showSettingsPage(dialog, 0);
         centerWindowOnOwner(dialog, GetParent(dialog));
         return TRUE;
+    }
+    if (message == WM_COMMAND && HIWORD(wParam) != EN_CHANGE)
+    {
+        wchar_t label[128]{};
+        GetDlgItemTextW(dialog, LOWORD(wParam), label, static_cast<int>(std::size(label)));
+        pluginLogger().write(LogLevel::debug, L"Settings control",
+            label[0] ? std::wstring(label) : std::to_wstring(LOWORD(wParam)));
     }
     if (message == WM_NOTIFY && reinterpret_cast<NMHDR*>(lParam)->idFrom == IDC_SETTINGS_TABS
         && reinterpret_cast<NMHDR*>(lParam)->code == TCN_SELCHANGE)
@@ -266,6 +377,26 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         SendMessageW(dialog, WM_COMMAND, IDOK, 0);
         return TRUE;
     }
+    if (message == WM_COMMAND && (LOWORD(wParam) == IDC_LOGGING_ENABLED
+        || LOWORD(wParam) == IDC_LOGGING_DEFAULT || LOWORD(wParam) == IDC_LOGGING_CUSTOM
+        || (LOWORD(wParam) == IDC_LOGGING_ROLLOVER && HIWORD(wParam) == CBN_SELCHANGE)
+        || (LOWORD(wParam) == IDC_LOGGING_PATH && HIWORD(wParam) == EN_CHANGE)))
+    {
+        updateLoggingControls(dialog, *settings);
+        return TRUE;
+    }
+    if (message == WM_COMMAND && LOWORD(wParam) == IDC_LOGGING_BROWSE)
+    {
+        browseForLogFile(dialog);
+        updateLoggingControls(dialog, *settings);
+        return TRUE;
+    }
+    if (message == WM_COMMAND && LOWORD(wParam) == IDC_LOGGING_OPEN)
+    {
+        settings->openLogNow = true;
+        SendMessageW(dialog, WM_COMMAND, IDOK, 0);
+        return TRUE;
+    }
     if (message == WM_COMMAND && LOWORD(wParam) == IDC_HISTORY_BROWSE)
     {
         browseForHistoryRoot(dialog);
@@ -283,6 +414,28 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             frequency >= 0 && frequency <= 2 ? frequency : 1);
         settings->includePrereleaseUpdates = IsDlgButtonChecked(dialog,
             IDC_UPDATE_PRERELEASES) == BST_CHECKED;
+
+        settings->loggingEnabled = IsDlgButtonChecked(dialog,
+            IDC_LOGGING_ENABLED) == BST_CHECKED;
+        const LRESULT logLevel = SendDlgItemMessageW(dialog, IDC_LOGGING_LEVEL,
+            CB_GETCURSEL, 0, 0);
+        settings->logLevel = static_cast<LogLevel>(logLevel >= 0 && logLevel <= 3
+            ? logLevel : 2);
+        settings->logLocationMode = IsDlgButtonChecked(dialog,
+            IDC_LOGGING_CUSTOM) == BST_CHECKED
+            ? LogLocationMode::customFile : LogLocationMode::pluginConfig;
+        wchar_t logPath[32768]{};
+        GetDlgItemTextW(dialog, IDC_LOGGING_PATH, logPath,
+            static_cast<int>(std::size(logPath)));
+        settings->customLogFile = logPath;
+        settings->logMaximumSizeMb = (std::min)(1024U,
+            readNumber(dialog, IDC_LOGGING_MAX_SIZE, 1, settings->logMaximumSizeMb));
+        const LRESULT rollover = SendDlgItemMessageW(dialog, IDC_LOGGING_ROLLOVER,
+            CB_GETCURSEL, 0, 0);
+        settings->logRolloverMode = rollover == 0
+            ? LogRolloverMode::overwrite : LogRolloverMode::archive;
+        settings->logArchivesToRetain = (std::min)(100U,
+            readNumber(dialog, IDC_LOGGING_ARCHIVES, 0, settings->logArchivesToRetain));
 
         settings->autoSaveEnabled = IsDlgButtonChecked(dialog, IDC_ENABLED) == BST_CHECKED;
         settings->autoSaveAfterEdit = IsDlgButtonChecked(dialog, IDC_AFTER_EDIT) == BST_CHECKED;
@@ -322,6 +475,16 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             showSettingsPage(dialog, 2);
             MessageBoxW(dialog, L"Choose a folder for custom history storage.", L"NppHistory",
                 MB_OK | MB_ICONWARNING);
+            return TRUE;
+        }
+        if (settings->loggingEnabled
+            && settings->logLocationMode == LogLocationMode::customFile
+            && settings->customLogFile.empty())
+        {
+            TabCtrl_SetCurSel(GetDlgItem(dialog, IDC_SETTINGS_TABS), 3);
+            showSettingsPage(dialog, 3);
+            MessageBoxW(dialog, L"Choose a custom log file, or use the Notepad++ plugin configuration folder.",
+                L"NppHistory", MB_OK | MB_ICONWARNING);
             return TRUE;
         }
         EndDialog(dialog, IDOK);
@@ -418,7 +581,33 @@ void Settings::load(const std::filesystem::path& file)
         static_cast<DWORD>(notified.size()), file.c_str());
     notified.resize(wcslen(notified.c_str()));
     lastNotifiedVersion = std::move(notified);
+    std::wstring updateStatus(1024, L'\0');
+    GetPrivateProfileStringW(L"NppHistory", L"LastUpdateStatus", L"",
+        updateStatus.data(), static_cast<DWORD>(updateStatus.size()), file.c_str());
+    updateStatus.resize(wcslen(updateStatus.c_str()));
+    lastUpdateStatus = std::move(updateStatus);
     checkForUpdatesNow = false;
+    loggingEnabled = readBoolean(file, L"LoggingEnabled", false);
+    const int loadedLogLevel = GetPrivateProfileIntW(L"NppHistory", L"LogLevel", 2,
+        file.c_str());
+    logLevel = static_cast<LogLevel>((std::max)(0, (std::min)(3, loadedLogLevel)));
+    logLocationMode = GetPrivateProfileIntW(L"NppHistory", L"LogLocationMode", 0,
+        file.c_str()) == 1 ? LogLocationMode::customFile : LogLocationMode::pluginConfig;
+    std::wstring logPath(32768, L'\0');
+    GetPrivateProfileStringW(L"NppHistory", L"CustomLogFile", L"", logPath.data(),
+        static_cast<DWORD>(logPath.size()), file.c_str());
+    logPath.resize(wcslen(logPath.c_str()));
+    customLogFile = logPath;
+    const int loadedMaximum = GetPrivateProfileIntW(L"NppHistory", L"LogMaximumSizeMb", 5,
+        file.c_str());
+    logMaximumSizeMb = static_cast<unsigned>((std::max)(1, (std::min)(1024, loadedMaximum)));
+    logRolloverMode = GetPrivateProfileIntW(L"NppHistory", L"LogRolloverMode", 1,
+        file.c_str()) == 0 ? LogRolloverMode::overwrite : LogRolloverMode::archive;
+    const int loadedArchives = GetPrivateProfileIntW(L"NppHistory",
+        L"LogArchivesToRetain", 5, file.c_str());
+    logArchivesToRetain = static_cast<unsigned>((std::max)(0, (std::min)(100, loadedArchives)));
+    defaultLogFile.clear();
+    openLogNow = false;
     historyEnabled = readBoolean(file, L"HistoryEnabled", true);
     historyBeforeSave = readBoolean(file, L"HistoryBeforeSave", true);
     historyAfterSave = readBoolean(file, L"HistoryAfterSave", true);
@@ -458,6 +647,14 @@ bool Settings::save(const std::filesystem::path& file) const
         && write(L"IncludePrereleaseUpdates", includePrereleaseUpdates ? L"1" : L"0")
         && write(L"LastUpdateCheck", std::to_wstring(lastUpdateCheck))
         && write(L"LastNotifiedVersion", lastNotifiedVersion)
+        && write(L"LastUpdateStatus", lastUpdateStatus)
+        && write(L"LoggingEnabled", loggingEnabled ? L"1" : L"0")
+        && write(L"LogLevel", std::to_wstring(static_cast<int>(logLevel)))
+        && write(L"LogLocationMode", logLocationMode == LogLocationMode::customFile ? L"1" : L"0")
+        && write(L"CustomLogFile", customLogFile.wstring())
+        && write(L"LogMaximumSizeMb", std::to_wstring(logMaximumSizeMb))
+        && write(L"LogRolloverMode", logRolloverMode == LogRolloverMode::overwrite ? L"0" : L"1")
+        && write(L"LogArchivesToRetain", std::to_wstring(logArchivesToRetain))
         && write(L"HistoryEnabled", historyEnabled ? L"1" : L"0")
         && write(L"HistoryBeforeSave", historyBeforeSave ? L"1" : L"0")
         && write(L"HistoryAfterSave", historyAfterSave ? L"1" : L"0")
@@ -470,6 +667,7 @@ bool Settings::edit(HWND owner, HINSTANCE instance)
 {
     Settings edited = *this;
     edited.checkForUpdatesNow = false;
+    edited.openLogNow = false;
     if (DialogBoxParamW(instance, MAKEINTRESOURCEW(IDD_SETTINGS), owner, settingsProc,
         reinterpret_cast<LPARAM>(&edited)) != IDOK)
         return false;

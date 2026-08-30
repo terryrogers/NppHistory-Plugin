@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$outputRoot = Join-Path $projectRoot 'build\verification-beta21'
+$outputRoot = Join-Path $projectRoot 'build\verification-beta22'
 [IO.Directory]::CreateDirectory($outputRoot) | Out-Null
 
 $msbuild = 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe'

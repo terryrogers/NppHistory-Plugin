@@ -25,6 +25,14 @@ bool sameSettings(const Settings& left, const Settings& right)
         && left.includePrereleaseUpdates == right.includePrereleaseUpdates
         && left.lastUpdateCheck == right.lastUpdateCheck
         && left.lastNotifiedVersion == right.lastNotifiedVersion
+        && left.lastUpdateStatus == right.lastUpdateStatus
+        && left.loggingEnabled == right.loggingEnabled
+        && left.logLevel == right.logLevel
+        && left.logLocationMode == right.logLocationMode
+        && left.customLogFile == right.customLogFile
+        && left.logMaximumSizeMb == right.logMaximumSizeMb
+        && left.logRolloverMode == right.logRolloverMode
+        && left.logArchivesToRetain == right.logArchivesToRetain
         && left.historyEnabled == right.historyEnabled
         && left.historyBeforeSave == right.historyBeforeSave
         && left.historyAfterSave == right.historyAfterSave
@@ -62,6 +70,14 @@ void runSettingsTests(TestContext& context)
     configured.includePrereleaseUpdates = false;
     configured.lastUpdateCheck = 123456789ULL;
     configured.lastNotifiedVersion = L"v0.2.0-beta.20";
+    configured.lastUpdateStatus = L"Up to date";
+    configured.loggingEnabled = true;
+    configured.logLevel = LogLevel::debug;
+    configured.logLocationMode = LogLocationMode::customFile;
+    configured.customLogFile = directory.path() / L"Logs Ω" / L"NppHistory.log";
+    configured.logMaximumSizeMb = 12;
+    configured.logRolloverMode = LogRolloverMode::overwrite;
+    configured.logArchivesToRetain = 8;
     configured.historyEnabled = false;
     configured.historyBeforeSave = false;
     configured.historyAfterSave = false;
@@ -107,6 +123,22 @@ void runSettingsTests(TestContext& context)
         "LastUpdateCheck round-trips a 64-bit value");
     context.expect(configured.lastNotifiedVersion == roundTrip.lastNotifiedVersion,
         "LastNotifiedVersion round-trips");
+    context.expect(configured.lastUpdateStatus == roundTrip.lastUpdateStatus,
+        "LastUpdateStatus round-trips");
+    context.expect(configured.loggingEnabled == roundTrip.loggingEnabled,
+        "LoggingEnabled round-trips");
+    context.expect(configured.logLevel == roundTrip.logLevel,
+        "LogLevel round-trips");
+    context.expect(configured.logLocationMode == roundTrip.logLocationMode,
+        "LogLocationMode round-trips");
+    context.expect(configured.customLogFile == roundTrip.customLogFile,
+        "CustomLogFile round-trips a Unicode path");
+    context.expect(configured.logMaximumSizeMb == roundTrip.logMaximumSizeMb,
+        "LogMaximumSizeMb round-trips");
+    context.expect(configured.logRolloverMode == roundTrip.logRolloverMode,
+        "LogRolloverMode round-trips");
+    context.expect(configured.logArchivesToRetain == roundTrip.logArchivesToRetain,
+        "LogArchivesToRetain round-trips");
     context.expect(configured.historyEnabled == roundTrip.historyEnabled,
         "HistoryEnabled round-trips");
     context.expect(configured.historyBeforeSave == roundTrip.historyBeforeSave,
@@ -255,6 +287,8 @@ void runSettingsTests(TestContext& context)
     WritePrivateProfileStringW(L"NppHistory", L"AfterEditSeconds", L"0", normalizedPath.c_str());
     WritePrivateProfileStringW(L"NppHistory", L"IntervalMinutes", L"0", normalizedPath.c_str());
     WritePrivateProfileStringW(L"NppHistory", L"UpdateFrequency", L"99", normalizedPath.c_str());
+    WritePrivateProfileStringW(L"NppHistory", L"LogMaximumSizeMb", L"9999", normalizedPath.c_str());
+    WritePrivateProfileStringW(L"NppHistory", L"LogArchivesToRetain", L"-4", normalizedPath.c_str());
     Settings normalized;
     normalized.load(normalizedPath);
     context.expect(normalized.afterEditSeconds == 10,
@@ -263,6 +297,10 @@ void runSettingsTests(TestContext& context)
         "Settings::load enforces the one-minute interval minimum");
     context.expect(normalized.updateFrequency == UpdateFrequency::monthly,
         "Settings::load clamps an out-of-range update frequency");
+    context.expect(normalized.logMaximumSizeMb == 1024,
+        "Settings::load clamps an excessive log size limit");
+    context.expect(normalized.logArchivesToRetain == 0,
+        "Settings::load clamps a negative archive retention count");
 
     const auto legacyPath = directory.path() / L"legacy.ini";
     WritePrivateProfileStringW(L"NppHistory", L"Enabled", L"0", legacyPath.c_str());

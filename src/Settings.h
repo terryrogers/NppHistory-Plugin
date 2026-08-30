@@ -20,6 +20,26 @@ enum class UpdateFrequency
     monthly
 };
 
+enum class LogLevel
+{
+    error,
+    warning,
+    informational,
+    debug
+};
+
+enum class LogLocationMode
+{
+    pluginConfig,
+    customFile
+};
+
+enum class LogRolloverMode
+{
+    overwrite,
+    archive
+};
+
 enum class AutoSaveTrigger
 {
     afterEdit,
@@ -56,7 +76,17 @@ struct Settings
     bool includePrereleaseUpdates = true;
     unsigned long long lastUpdateCheck = 0;
     std::wstring lastNotifiedVersion;
+    std::wstring lastUpdateStatus;
     bool checkForUpdatesNow = false;
+    bool loggingEnabled = false;
+    LogLevel logLevel = LogLevel::informational;
+    LogLocationMode logLocationMode = LogLocationMode::pluginConfig;
+    std::filesystem::path customLogFile;
+    unsigned logMaximumSizeMb = 5;
+    LogRolloverMode logRolloverMode = LogRolloverMode::archive;
+    unsigned logArchivesToRetain = 5;
+    std::filesystem::path defaultLogFile;
+    bool openLogNow = false;
     bool historyEnabled = true;
     bool historyBeforeSave = true;
     bool historyAfterSave = true;

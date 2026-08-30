@@ -23,8 +23,10 @@
     <ClCompile Include="..\tests\test_history_store.cpp" />
     <ClCompile Include="..\tests\test_history_catalog.cpp" />
     <ClCompile Include="..\tests\test_update_checker.cpp" />
+    <ClCompile Include="..\tests\test_logger.cpp" />
     <ClCompile Include="..\src\HistoryCatalog.cpp" />
     <ClCompile Include="..\src\HistoryStore.cpp" />
+    <ClCompile Include="..\src\Logger.cpp" />
     <ClCompile Include="..\src\Settings.cpp" />
     <ClCompile Include="..\src\TextDiff.cpp" />
     <ClCompile Include="..\src\Utilities.cpp" />

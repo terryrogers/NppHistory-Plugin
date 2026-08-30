@@ -1,6 +1,7 @@
 #include "HistoryPanel.h"
 #include "HistoryCatalog.h"
 #include "HistoryStore.h"
+#include "Logger.h"
 #include "PluginInterface.h"
 #include "Settings.h"
 #include "Utilities.h"
@@ -251,10 +252,15 @@ void startUpdateCheck(bool manual)
     request->notifyWindow = nppData._nppHandle;
     request->manual = manual;
     request->includePrereleases = settings.includePrereleaseUpdates;
+    pluginLogger().write(LogLevel::informational,
+        manual ? L"Manual update check started" : L"Automatic update check started",
+        request->includePrereleases ? L"Prereleases included" : L"Stable releases only");
     const uintptr_t thread = _beginthreadex(nullptr, 0, updateThreadProc, request.get(), 0, nullptr);
     if (!thread)
     {
         updateCheckInProgress = false;
+        pluginLogger().write(LogLevel::error, L"Update check could not start",
+            L"The background update-check thread could not be created");
         if (manual)
             MessageBoxW(nppData._nppHandle, L"The update check could not be started.",
                 pluginName, MB_OK | MB_ICONERROR);
@@ -277,7 +283,21 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
     if (successful)
     {
         settings.lastUpdateCheck = currentUnixSeconds();
-        settings.save(settingsFile);
+        settings.lastUpdateStatus = completion->result.status == UpdateCheckStatus::updateAvailable
+            ? L"Update available: " + completion->result.release.tag : L"Up to date";
+        if (!settings.save(settingsFile))
+            pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
+        pluginLogger().write(LogLevel::informational,
+            completion->manual ? L"Manual update check completed" : L"Automatic update check completed",
+            settings.lastUpdateStatus);
+    }
+    else
+    {
+        settings.lastUpdateStatus = L"Last check failed: " + completion->result.detail;
+        if (!settings.save(settingsFile))
+            pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
+        pluginLogger().write(LogLevel::warning, L"Update check failure",
+            completion->result.detail);
     }
     if (completion->result.status == UpdateCheckStatus::updateAvailable)
     {
@@ -286,7 +306,8 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
             completion->manual))
             return;
         settings.lastNotifiedVersion = release.tag;
-        settings.save(settingsFile);
+        if (!settings.save(settingsFile))
+            pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         const std::wstring message = L"A newer NppHistory version is available: "
             + release.tag + L"\n\nInstalled version: " + NPPHISTORY_VERSION_SEMVER_W
             + L"\n\nOpen the verified GitHub release page?";
@@ -364,12 +385,14 @@ void CALLBACK timerProc(HWND, UINT, UINT_PTR, DWORD)
 
 void showHistory()
 {
+    pluginLogger().write(LogLevel::debug, L"Button click", L"Show History");
     historyPanel.refresh(currentPath());
     historyPanel.show();
 }
 
 void captureNow()
 {
+    pluginLogger().write(LogLevel::debug, L"Button click", L"Capture Now");
     if (!settings.shouldCreateRevision(RevisionTrigger::manual))
     {
         MessageBoxW(nppData._nppHandle,
@@ -392,32 +415,94 @@ void captureNow()
         {
             MessageBoxW(nppData._nppHandle, L"The current note could not be saved.",
                 pluginName, MB_OK | MB_ICONERROR);
+            pluginLogger().write(LogLevel::error, L"Capture failed",
+                L"The current note could not be saved: " + path.wstring());
             return;
         }
     }
-    historyStore.captureFile(path, L"Manual capture", true);
+    if (historyStore.captureFile(path, L"Manual capture", true))
+        pluginLogger().write(LogLevel::informational, L"Capture", path.wstring());
+    else
+        pluginLogger().write(LogLevel::error, L"Capture failed", path.wstring());
     refreshPanel();
 }
 
 void compareFromToolbar()
 {
+    pluginLogger().write(LogLevel::debug, L"Button click", L"Compare Selected Revision");
     showHistory();
     historyPanel.compare();
 }
 
 void restoreFromToolbar()
 {
+    pluginLogger().write(LogLevel::debug, L"Button click", L"Restore Selected Revision");
     showHistory();
     historyPanel.restore();
 }
 
+std::wstring boolText(bool value) { return value ? L"true" : L"false"; }
+
+void logSettingsChanges(const Settings& previous, const Settings& current)
+{
+    bool changed = false;
+    const auto change = [&](std::wstring_view name, const std::wstring& before,
+        const std::wstring& after)
+    {
+        if (before == after) return;
+        changed = true;
+        pluginLogger().write(LogLevel::debug, L"Setting change",
+            std::wstring(name) + L": " + before + L" -> " + after);
+    };
+    const auto boolean = [&](std::wstring_view name, bool before, bool after) {
+        change(name, boolText(before), boolText(after));
+    };
+    boolean(L"Toolbar Capture", previous.toolbarCapture, current.toolbarCapture);
+    boolean(L"Toolbar Compare", previous.toolbarCompare, current.toolbarCompare);
+    boolean(L"Toolbar Restore", previous.toolbarRestore, current.toolbarRestore);
+    boolean(L"Auto Save enabled", previous.autoSaveEnabled, current.autoSaveEnabled);
+    boolean(L"After editing stops", previous.autoSaveAfterEdit, current.autoSaveAfterEdit);
+    change(L"After edit seconds", std::to_wstring(previous.afterEditSeconds), std::to_wstring(current.afterEditSeconds));
+    boolean(L"Save on focus loss", previous.autoSaveOnFocusLoss, current.autoSaveOnFocusLoss);
+    boolean(L"Save at intervals", previous.autoSaveAtIntervals, current.autoSaveAtIntervals);
+    change(L"Interval minutes", std::to_wstring(previous.intervalMinutes), std::to_wstring(current.intervalMinutes));
+    boolean(L"Save on tab change", previous.autoSaveOnTabChange, current.autoSaveOnTabChange);
+    boolean(L"Save on exit", previous.autoSaveOnExit, current.autoSaveOnExit);
+    change(L"Auto Save scope", std::to_wstring(static_cast<int>(previous.autoSaveScope)), std::to_wstring(static_cast<int>(current.autoSaveScope)));
+    boolean(L"History enabled", previous.historyEnabled, current.historyEnabled);
+    boolean(L"Revision before save", previous.historyBeforeSave, current.historyBeforeSave);
+    boolean(L"Revision after save", previous.historyAfterSave, current.historyAfterSave);
+    boolean(L"Revision before restore", previous.historyBeforeRestore, current.historyBeforeRestore);
+    change(L"History location", std::to_wstring(static_cast<int>(previous.historyLocationMode)), std::to_wstring(static_cast<int>(current.historyLocationMode)));
+    change(L"Custom history root", previous.customHistoryRoot.wstring(), current.customHistoryRoot.wstring());
+    boolean(L"Logging enabled", previous.loggingEnabled, current.loggingEnabled);
+    change(L"Log level", std::to_wstring(static_cast<int>(previous.logLevel)), std::to_wstring(static_cast<int>(current.logLevel)));
+    change(L"Log location", std::to_wstring(static_cast<int>(previous.logLocationMode)), std::to_wstring(static_cast<int>(current.logLocationMode)));
+    change(L"Custom log file", previous.customLogFile.wstring(), current.customLogFile.wstring());
+    change(L"Log maximum size MB", std::to_wstring(previous.logMaximumSizeMb), std::to_wstring(current.logMaximumSizeMb));
+    change(L"Log rollover", std::to_wstring(static_cast<int>(previous.logRolloverMode)), std::to_wstring(static_cast<int>(current.logRolloverMode)));
+    change(L"Log archives", std::to_wstring(previous.logArchivesToRetain), std::to_wstring(current.logArchivesToRetain));
+    boolean(L"Automatic update checks", previous.autoUpdateEnabled, current.autoUpdateEnabled);
+    change(L"Update frequency", std::to_wstring(static_cast<int>(previous.updateFrequency)), std::to_wstring(static_cast<int>(current.updateFrequency)));
+    boolean(L"Include prereleases", previous.includePrereleaseUpdates, current.includePrereleaseUpdates);
+    if (changed) pluginLogger().write(LogLevel::informational, L"Settings changed");
+}
+
 void editSettings()
 {
+    pluginLogger().write(LogLevel::debug, L"Button click", L"Settings");
+    const Settings previous = settings;
+    settings.defaultLogFile = pluginConfigPath / L"NppHistory.log";
     if (settings.edit(nppData._nppHandle, moduleInstance))
     {
         const bool checkNow = settings.checkForUpdatesNow;
+        const bool openLog = settings.openLogNow;
         settings.checkForUpdatesNow = false;
-        settings.save(settingsFile);
+        settings.openLogNow = false;
+        pluginLogger().configure(settings, pluginConfigPath);
+        logSettingsChanges(previous, settings);
+        if (!settings.save(settingsFile))
+            pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
             settings.customHistoryRoot, pluginConfigPath / L"history");
         reconcileFile(currentBuffer(), currentPath());
@@ -431,6 +516,20 @@ void editSettings()
         }
         if (checkNow)
             startUpdateCheck(true);
+        if (openLog)
+        {
+            if (pluginLogger().ensureFile())
+            {
+                const auto logPath = pluginLogger().path();
+                if (SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0,
+                    reinterpret_cast<LPARAM>(logPath.c_str())) == FALSE)
+                    MessageBoxW(nppData._nppHandle, L"The log file could not be opened in Notepad++.",
+                        pluginName, MB_OK | MB_ICONERROR);
+            }
+            else
+                MessageBoxW(nppData._nppHandle, L"The log file could not be created or accessed.",
+                    pluginName, MB_OK | MB_ICONERROR);
+        }
     }
 }
 
@@ -467,6 +566,7 @@ INT_PTR CALLBACK aboutProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lPar
 
 void showAbout()
 {
+    pluginLogger().write(LogLevel::debug, L"Button click", L"About");
     DialogBoxParamW(moduleInstance, MAKEINTRESOURCEW(IDD_ABOUT), nppData._nppHandle,
         aboutProc, 0);
 }
@@ -491,6 +591,8 @@ void ensureConfigurationLoaded()
     pluginConfigPath = fs::path(config) / pluginName;
     settingsFile = pluginConfigPath / L"NppHistory.ini";
     settings.load(settingsFile);
+    settings.defaultLogFile = pluginConfigPath / L"NppHistory.log";
+    pluginLogger().configure(settings, pluginConfigPath);
     configurationLoaded = true;
 }
 
@@ -656,7 +758,11 @@ void handleNotification(SCNotification* notification)
     {
         const fs::path path = pathForBuffer(bufferId);
         if (settings.shouldCreateRevision(RevisionTrigger::beforeSave) && isSavableFile(path))
-            historyStore.captureFile(path, L"Before save");
+        {
+            if (historyStore.captureFile(path, L"Before save"))
+                pluginLogger().write(LogLevel::informational, L"Revision created",
+                    L"Before save: " + path.wstring());
+        }
     }
     else if (code == NPPN_FILESAVED)
     {
@@ -666,8 +772,13 @@ void handleNotification(SCNotification* notification)
             reconcileFile(bufferId, path, previous->second);
         else
             reconcileFile(bufferId, path);
+        pluginLogger().write(LogLevel::informational, L"File saved", path.wstring());
         if (settings.shouldCreateRevision(RevisionTrigger::afterSave) && !path.empty())
-            historyStore.captureFile(path, L"Saved");
+        {
+            if (historyStore.captureFile(path, L"Saved"))
+                pluginLogger().write(LogLevel::informational, L"Revision created",
+                    L"After save: " + path.wstring());
+        }
         dirtyBuffers.erase(bufferId);
         refreshPanel();
     }

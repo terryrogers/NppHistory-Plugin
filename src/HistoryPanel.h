@@ -80,6 +80,7 @@ private:
     HWND _dialog = nullptr;
     std::filesystem::path _currentFile;
     std::vector<RevisionInfo> _revisions;
+    bool _fileSaved = false;
     PFUNCPLUGINCMD _captureCallback = nullptr;
     PFUNCPLUGINCMD _settingsCallback = nullptr;
     PFUNCPLUGINCMD _aboutCallback = nullptr;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.0-beta.22
+
+- Disabled Capture, Refresh, Compare and Restore for unsaved tabs and added a centered red Save File First message that collapses out of the pane after the first save.
+- Reorganized Settings into General, Auto Save, History, Logging and Updates tabs, moving update configuration and its persistent status onto the Updates page.
+- Added optional Error, Warning, Informational and Debug logging to the default Notepad++ plugin configuration folder or a custom log file.
+- Added configurable maximum log size, overwrite/archive rollover, archive retention and an Open Log command that opens the effective log in Notepad++.
+- Added Informational records for file saves, revision creation/deletion/comment updates, Capture, Refresh, Compare, Restore, settings changes and automatic/manual update checks.
+- Added Warning records for update-check access failures, Error records for failed storage/UI operations and Debug records for plugin form actions and option changes with previous/new values.
+- Added direct logging/rotation/settings tests and live saved/unsaved pane, five-tab Settings, logging-event and update-status verification.
+
 ## 0.2.0-beta.21
 
 - Implemented non-blocking update checks against the public `terryrogers/NppHistory-Plugin` GitHub Releases feed.

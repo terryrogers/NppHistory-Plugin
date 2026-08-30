@@ -54,3 +54,4 @@ void runDiffTests(TestContext& context);
 void runHistoryStoreTests(TestContext& context);
 void runHistoryCatalogTests(TestContext& context);
 void runUpdateCheckerTests(TestContext& context);
+void runLoggerTests(TestContext& context);

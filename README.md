@@ -57,11 +57,13 @@ For a portable installation, use the `plugins` folder beside `notepad++.exe`.
 
 ## Configuration
 
-Open **Plugins > NppHistory > Settings**. Settings are grouped into three tabs:
+Open **Plugins > NppHistory > Settings**. Settings are grouped into five tabs:
 
-- **General** controls optional Capture, Compare and Restore buttons on the main Notepad++ toolbar. Toolbar changes take effect after restarting Notepad++. The Update panel can check the public NppHistory GitHub Releases feed daily, weekly or monthly, optionally include prereleases, or perform an immediate manual check. Checks run in the background and only offer to open the official HTTPS release page; NppHistory does not download or replace its DLL.
+- **General** controls optional Capture, Compare and Restore buttons on the main Notepad++ toolbar. Toolbar changes take effect after restarting Notepad++.
 - **Auto Save** independently enables automatic saving, with **After editing stops** selected by default at 30 seconds. Optional triggers cover Notepad++ losing focus, timed intervals in minutes, file-tab changes and Notepad++ exit. Autosave can apply to the current file only or all open files. After-edit values below 10 seconds are normalized to 10 seconds.
 - **History** independently enables revision history and selects whether revisions are created before saves, after saves and before restores. It also selects either the default hidden `.npphistory` folder beside each text file or a common custom history root.
+- **Logging** optionally records Error, Warning, Informational or Debug events. The log can use the standard Notepad++ plugin configuration folder or a custom file, can be opened directly in Notepad++, and supports a maximum size, overwrite or archive rollover, and configurable archive retention.
+- **Updates** checks the public NppHistory GitHub Releases feed daily, weekly or monthly, optionally includes prereleases, supports an immediate manual check and displays the latest check status. Checks run in the background and only offer to open the official HTTPS release page; NppHistory does not download or replace its DLL.
 
 The settings and internal catalogue are stored through Notepad++'s plugin configuration API. A normal installed copy typically places them beneath:
 
@@ -69,7 +71,9 @@ The settings and internal catalogue are stored through Notepad++'s plugin config
 %APPDATA%\Notepad++\plugins\Config\NppHistory\
 ```
 
-The catalogue is named `catalog.db`. It maps each stable file identity to its current file and history paths. History contents stay in the adjacent hidden folder or selected custom root.
+The catalogue is named `catalog.db`. The default log is `NppHistory.log`. The catalogue maps each stable file identity to its current file and history paths. History contents stay in the adjacent hidden folder or selected custom root.
+
+An unsaved Notepad++ tab has no stable file path, so its History pane shows **Save File First** and disables Capture, Refresh, Compare and Restore. Saving the tab removes the message, expands the revision list into the released space and enables those commands.
 
 When a tracked file moves:
 
@@ -93,7 +97,7 @@ This makes the pre-edit disk version available for rollback and establishes the 
 ## Beta limitations
 
 - This build targets 64-bit Notepad++ on Windows.
-- A new untitled tab must be saved once manually so that it has a file path.
+- A new untitled tab must be saved once manually so that it has a file path; the History pane makes this state explicit and disables file-dependent commands.
 - History retention is unlimited in this beta; automatic pruning is not implemented yet.
 - History is local and is not encrypted by NppHistory.
 - Binary files can be versioned and restored, but the comparison viewer is intended for text.
@@ -101,7 +105,7 @@ This makes the pre-edit disk version available for rollback and establishes the 
 
 ## Verification
 
-The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The current development verification report is `TEST_REPORT-0.2.0-beta.21.md`.
+The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The current development verification report is `TEST_REPORT-0.2.0-beta.22.md`.
 
 ## Build and test
 
@@ -114,7 +118,7 @@ msbuild .\vs.proj\NppHistory.Tests.vcxproj /m /p:Configuration=Release /p:Platfo
 .\tests\runtime_smoke.ps1
 ```
 
-The runtime smoke test uses an isolated portable copy of an installed 64-bit Notepad++ and verifies a real 10-second autosave, adjacent hidden storage, the internal catalogue, save revisions, forced pane capture, pane and main-toolbar controls, a real background GitHub update check, the tabbed settings and About windows, and the WinMerge-style comparison viewer including synchronized scrolling, native line numbers, Location Pane rendering, toolbar navigation, file headers and pane status information. The plugin binary is written to `build\x64\Release\NppHistory.dll`.
+The runtime smoke test uses an isolated portable copy of an installed 64-bit Notepad++ and verifies a real 10-second autosave, adjacent hidden storage, the internal catalogue, save revisions, saved/unsaved pane states, forced pane capture, pane and main-toolbar controls, a real background GitHub update check, logging output, all five Settings tabs, the About window, and the WinMerge-style comparison viewer including synchronized scrolling, native line numbers, Location Pane rendering, toolbar navigation, file headers and pane status information. The plugin binary is written to `build\x64\Release\NppHistory.dll`.
 
 The comparison workflow was implemented after reviewing WinMerge's open-source location view, merge view, file header, status bar, syntax-color and diff-color implementations. The toolbar bitmap is derived from WinMerge's GPL-2.0-or-later artwork; see `THIRD_PARTY_NOTICES.md`. NppHistory's comparison and history engines remain independently implemented.
 

@@ -42,6 +42,12 @@ HistoryEnabled=1
 HistoryBeforeSave=1
 HistoryAfterSave=1
 HistoryBeforeRestore=1
+LoggingEnabled=1
+LogLevel=3
+LogLocationMode=0
+LogMaximumSizeMb=5
+LogRolloverMode=1
+LogArchivesToRetain=5
 "@)
 
 Add-Type @'
@@ -140,6 +146,10 @@ public static class NppHistoryNative {
         var value = new StringBuilder(length + 1);
         SendMessageText(window, 0x000D, (IntPtr)value.Capacity, value);
         return value.ToString();
+    }
+    public static void SetText(IntPtr window, string text) {
+        var value = new StringBuilder(text);
+        SendMessageText(window, 0x000C, IntPtr.Zero, value);
     }
     public static string AllChildText(IntPtr parent) {
         var result = new StringBuilder();
@@ -320,6 +330,11 @@ try {
     }
     $panelButtonWidthsPassed = $panelButtonWidths.Count -eq $panelButtonIds.Count -and
         (@($panelButtonWidths | Select-Object -Unique).Count -eq 1)
+    $savedPaneStatePassed = -not [NppHistoryNative]::IsWindowVisible(
+        [NppHistoryNative]::FindControl($historyPanel, 1104)) -and
+        (1006,1003,1004,1005 | ForEach-Object {
+            [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, $_))
+        } | Where-Object { -not $_ }).Count -eq 0
     $dockIconPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryDockIconReady') -ne [IntPtr]::Zero
     $responsiveButtonsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryResponsiveButtonRows').ToInt64() -ge 1
     $panelButtonIconsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryPanelButtonIconsReady') -ne [IntPtr]::Zero
@@ -540,6 +555,8 @@ try {
     $settingsHistoryPassed = $false
     $settingsHistoryEnablementPassed = $false
     $settingsUpdateEnablementPassed = $false
+    $settingsLoggingPassed = $false
+    $settingsLoggingEnablementPassed = $false
     $manualUpdateCheckPassed = $false
     $manualUpdateAccessError = $false
     $updateDialogText = ''
@@ -547,6 +564,8 @@ try {
     $settingsGeneralScreenshot = Join-Path $testRoot 'settings-general.png'
     $settingsScreenshot = Join-Path $testRoot 'settings-auto-save.png'
     $settingsHistoryScreenshot = Join-Path $testRoot 'settings-history.png'
+    $settingsLoggingScreenshot = Join-Path $testRoot 'settings-logging.png'
+    $settingsUpdatesScreenshot = Join-Path $testRoot 'settings-updates.png'
     if ($settingsMenuCommand -ne 0) {
         [NppHistoryNative]::BeginCommand($process.MainWindowHandle, $settingsMenuCommand, [IntPtr]::Zero)
         $settingsDeadline = [DateTime]::UtcNow.AddSeconds(5)
@@ -566,27 +585,12 @@ try {
             $settingsIconPassed = [NppHistoryNative]::SendMessage($settingsWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero) -ne [IntPtr]::Zero
             $settingsTabs = [NppHistoryNative]::FindControl($settingsWindow, 1070)
             $settingsTabsPassed = $settingsTabs -ne [IntPtr]::Zero -and
-                [NppHistoryNative]::SendMessage($settingsTabs, 0x1304, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -eq 3 -and
+                [NppHistoryNative]::SendMessage($settingsTabs, 0x1304, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -eq 5 -and
                 [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1083))
             $settingsGeneralPassed = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1071)) -eq 'Capture' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1072)) -eq 'Compare' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1073)) -eq 'Restore' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1074)) -eq 'Enable automatic update checks' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1075)) -eq 'Weekly' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1102)) -eq 'Include prerelease versions' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1103)) -eq 'Check now...'
-            $updateMaster = [NppHistoryNative]::FindControl($settingsWindow, 1074)
-            $updateFrequency = [NppHistoryNative]::FindControl($settingsWindow, 1075)
-            $updatePrereleases = [NppHistoryNative]::FindControl($settingsWindow, 1102)
-            $updateCheckNow = [NppHistoryNative]::FindControl($settingsWindow, 1103)
-            $updateChildrenInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
-                [NppHistoryNative]::IsWindowEnabled($updatePrereleases) -and
-                [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
-            [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
-            $updateChildrenEnabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
-                [NppHistoryNative]::IsWindowEnabled($updatePrereleases)
-            [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
-            $settingsUpdateEnablementPassed = $updateChildrenInitiallyDisabled -and $updateChildrenEnabled
+                -not [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1074))
             Add-Type -AssemblyName System.Drawing
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
@@ -669,10 +673,73 @@ try {
             finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
             $bitmap.Save($settingsHistoryScreenshot, [Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
-            $generalTabPoint = [IntPtr](30 -bor (10 -shl 16))
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $generalTabPoint)
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $generalTabPoint)
+            $loggingTabPoint = [IntPtr](205 -bor (10 -shl 16))
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $loggingTabPoint)
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $loggingTabPoint)
             Start-Sleep -Milliseconds 100
+            $loggingMaster = [NppHistoryNative]::FindControl($settingsWindow, 1107)
+            $loggingLevel = [NppHistoryNative]::FindControl($settingsWindow, 1110)
+            $loggingDefault = [NppHistoryNative]::FindControl($settingsWindow, 1112)
+            $loggingCustom = [NppHistoryNative]::FindControl($settingsWindow, 1113)
+            $loggingPath = [NppHistoryNative]::FindControl($settingsWindow, 1114)
+            $loggingBrowse = [NppHistoryNative]::FindControl($settingsWindow, 1115)
+            $loggingOpen = [NppHistoryNative]::FindControl($settingsWindow, 1116)
+            $loggingMax = [NppHistoryNative]::FindControl($settingsWindow, 1120)
+            $loggingRollover = [NppHistoryNative]::FindControl($settingsWindow, 1123)
+            $loggingArchives = [NppHistoryNative]::FindControl($settingsWindow, 1125)
+            $settingsLoggingPassed = [NppHistoryNative]::IsWindowVisible($loggingMaster) -and
+                [NppHistoryNative]::Text($loggingMaster) -eq 'Enable plugin logging' -and
+                [NppHistoryNative]::Text($loggingLevel) -eq 'Debug' -and
+                [NppHistoryNative]::Text($loggingDefault).Contains('plugin configuration folder') -and
+                [NppHistoryNative]::Text($loggingOpen) -eq 'Open Log' -and
+                [NppHistoryNative]::Text($loggingRollover) -eq 'Start new archive'
+            $customInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($loggingPath) -and
+                -not [NppHistoryNative]::IsWindowEnabled($loggingBrowse)
+            [void][NppHistoryNative]::SendMessage($loggingMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $loggingChildrenDisabled = -not [NppHistoryNative]::IsWindowEnabled($loggingLevel) -and
+                -not [NppHistoryNative]::IsWindowEnabled($loggingMax)
+            [void][NppHistoryNative]::SendMessage($loggingMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $settingsLoggingEnablementPassed = $customInitiallyDisabled -and $loggingChildrenDisabled -and
+                [NppHistoryNative]::IsWindowEnabled($loggingLevel) -and
+                [NppHistoryNative]::IsWindowEnabled($loggingArchives)
+            [NppHistoryNative]::SetText($loggingMax, '6')
+            $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
+            $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $deviceContext = $graphics.GetHdc()
+            try { [void][NppHistoryNative]::PrintWindow($settingsWindow, $deviceContext, 2) }
+            finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+            $bitmap.Save($settingsLoggingScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
+            $updatesTabPoint = [IntPtr](270 -bor (10 -shl 16))
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $updatesTabPoint)
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $updatesTabPoint)
+            Start-Sleep -Milliseconds 100
+            $updateMaster = [NppHistoryNative]::FindControl($settingsWindow, 1074)
+            $updateFrequency = [NppHistoryNative]::FindControl($settingsWindow, 1075)
+            $updatePrereleases = [NppHistoryNative]::FindControl($settingsWindow, 1102)
+            $updateCheckNow = [NppHistoryNative]::FindControl($settingsWindow, 1103)
+            $updateStatus = [NppHistoryNative]::FindControl($settingsWindow, 1106)
+            $updateChildrenInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
+                [NppHistoryNative]::IsWindowEnabled($updatePrereleases) -and
+                [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
+            [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $updateChildrenEnabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
+                [NppHistoryNative]::IsWindowEnabled($updatePrereleases)
+            [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $settingsUpdateEnablementPassed = $updateChildrenInitiallyDisabled -and $updateChildrenEnabled -and
+                [NppHistoryNative]::IsWindowVisible($updateStatus) -and
+                [NppHistoryNative]::Text($updateStatus).Contains('Status:')
+            $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
+            $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
+            $graphics = [Drawing.Graphics]::FromImage($bitmap)
+            $deviceContext = $graphics.GetHdc()
+            try { [void][NppHistoryNative]::PrintWindow($settingsWindow, $deviceContext, 2) }
+            finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+            $bitmap.Save($settingsUpdatesScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+            $bitmap.Dispose()
             [void][NppHistoryNative]::SendMessage($settingsWindow, 0x0111, [IntPtr]1103, [NppHistoryNative]::FindControl($settingsWindow, 1103))
         }
     }
@@ -698,7 +765,8 @@ try {
     Start-Sleep -Milliseconds 250
     $savedSettingsText = [IO.File]::ReadAllText((Join-Path $configFolder 'NppHistory.ini'))
     $timestampMatch = [regex]::Match($savedSettingsText, '(?m)^LastUpdateCheck=(\d+)\s*$')
-    $updateTimestampPersisted = $timestampMatch.Success -and [uint64]$timestampMatch.Groups[1].Value -gt 0
+    $updateTimestampPersisted = $timestampMatch.Success -and [uint64]$timestampMatch.Groups[1].Value -gt 0 -and
+        $savedSettingsText.Contains('LastUpdateStatus=Up to date')
 
     $aboutWindow = [IntPtr]::Zero
     $aboutCentered = $false
@@ -723,7 +791,7 @@ try {
             $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
             $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
             $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
-            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 21') -and
+            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 22') -and
                 $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
                 $aboutReleaseDate.Trim() -eq 'Release Date:' -and
                 $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero
@@ -739,8 +807,45 @@ try {
         }
     }
 
+    $newCommand = 41001 # Notepad++ IDM_FILE_NEW
+    if ($newCommand -ne 0) {
+        [void][NppHistoryNative]::SendMessage($process.MainWindowHandle, 0x0111,
+            [IntPtr]$newCommand, [IntPtr]::Zero)
+        Start-Sleep -Milliseconds 500
+    }
+    $unsavedWarning = [NppHistoryNative]::FindControl($historyPanel, 1104)
+    $unsavedPaneStatePassed = $newCommand -ne 0 -and
+        [NppHistoryNative]::IsWindowVisible($unsavedWarning) -and
+        [NppHistoryNative]::Text($unsavedWarning) -eq 'Save File First' -and
+        (1006,1003,1004,1005 | ForEach-Object {
+            [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, $_))
+        } | Where-Object { $_ }).Count -eq 0
+    $unsavedPanelScreenshot = Join-Path $testRoot 'history-panel-unsaved.png'
+    $unsavedRectangle = [NppHistoryNative+RECT]::new()
+    if ([NppHistoryNative]::GetWindowRect($historyPanel, [ref]$unsavedRectangle)) {
+        $bitmap = [Drawing.Bitmap]::new($unsavedRectangle.Right - $unsavedRectangle.Left,
+            $unsavedRectangle.Bottom - $unsavedRectangle.Top)
+        $graphics = [Drawing.Graphics]::FromImage($bitmap)
+        $deviceContext = $graphics.GetHdc()
+        try { [void][NppHistoryNative]::PrintWindow($historyPanel, $deviceContext, 2) }
+        finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
+        $bitmap.Save($unsavedPanelScreenshot, [Drawing.Imaging.ImageFormat]::Png)
+        $bitmap.Dispose()
+    }
+
+    $logPath = Join-Path $configFolder 'NppHistory.log'
+    $logText = if (Test-Path $logPath) { [IO.File]::ReadAllText($logPath) } else { '' }
+    $loggingEventsPassed = $logText.Contains('[INFORMATIONAL] File saved') -and
+        $logText.Contains('[INFORMATIONAL] Revision created') -and
+        $logText.Contains('[INFORMATIONAL] Capture') -and
+        $logText.Contains('[INFORMATIONAL] Compare') -and
+        $logText.Contains('[INFORMATIONAL] Settings changed') -and
+        $logText.Contains('update check started') -and
+        $logText.Contains('update check completed') -and
+        $logText.Contains('[DEBUG] Button click')
+
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -756,6 +861,11 @@ try {
         PanelButtonsPassed = $panelButtonsPassed
         PanelButtonWidthsPassed = $panelButtonWidthsPassed
         PanelButtonWidths = $panelButtonWidths -join ','
+        SavedFilePaneStatePassed = $savedPaneStatePassed
+        UnsavedFilePaneStatePassed = $unsavedPaneStatePassed
+        UnsavedWarningText = [NppHistoryNative]::Text($unsavedWarning)
+        UnsavedWarningVisible = [NppHistoryNative]::IsWindowVisible($unsavedWarning)
+        UnsavedPanelScreenshot = if (Test-Path $unsavedPanelScreenshot) { $unsavedPanelScreenshot } else { '' }
         PanelButtonIconsPassed = $panelButtonIconsPassed
         RevisionActionsPassed = $revisionActionsPassed
         CaptureButtonPassed = $captureButtonPassed
@@ -795,6 +905,10 @@ try {
         SettingsTabsPassed = $settingsTabsPassed
         SettingsGeneralPassed = $settingsGeneralPassed
         SettingsUpdateEnablementPassed = $settingsUpdateEnablementPassed
+        SettingsLoggingPassed = $settingsLoggingPassed
+        SettingsLoggingEnablementPassed = $settingsLoggingEnablementPassed
+        LoggingEventsPassed = $loggingEventsPassed
+        LogPath = $logPath
         ManualUpdateCheckPassed = $manualUpdateCheckPassed
         ManualUpdateAccessError = $manualUpdateAccessError
         UpdateDialogText = $updateDialogText
@@ -806,6 +920,8 @@ try {
         SettingsGeneralScreenshot = if (Test-Path $settingsGeneralScreenshot) { $settingsGeneralScreenshot } else { '' }
         SettingsScreenshot = if (Test-Path $settingsScreenshot) { $settingsScreenshot } else { '' }
         SettingsHistoryScreenshot = if (Test-Path $settingsHistoryScreenshot) { $settingsHistoryScreenshot } else { '' }
+        SettingsLoggingScreenshot = if (Test-Path $settingsLoggingScreenshot) { $settingsLoggingScreenshot } else { '' }
+        SettingsUpdatesScreenshot = if (Test-Path $settingsUpdatesScreenshot) { $settingsUpdatesScreenshot } else { '' }
         AboutCentered = $aboutCentered
         AboutWindowPassed = $aboutWindowPassed
         AboutScreenshot = if (Test-Path $aboutScreenshot) { $aboutScreenshot } else { '' }
