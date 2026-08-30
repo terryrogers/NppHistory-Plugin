@@ -35,6 +35,29 @@ std::vector<std::uint8_t> readAllBytes(const fs::path& path)
     return bytes;
 }
 
+std::wstring formatFileSize(std::uintmax_t bytes)
+{
+    static constexpr const wchar_t* units[] = {L"B", L"KB", L"MB", L"GB", L"TB", L"PB", L"EB"};
+    if (bytes < 1024)
+        return std::to_wstring(bytes) + L" B";
+
+    double value = static_cast<double>(bytes);
+    std::size_t unit = 0;
+    while (value >= 1024.0 && unit + 1 < std::size(units))
+    {
+        value /= 1024.0;
+        ++unit;
+    }
+
+    std::wostringstream output;
+    output << std::fixed << std::setprecision(1) << value;
+    std::wstring formatted = output.str();
+    if (formatted.size() >= 2
+        && formatted.compare(formatted.size() - 2, 2, L".0") == 0)
+        formatted.resize(formatted.size() - 2);
+    return formatted + L" " + units[unit];
+}
+
 bool writeAllBytesAtomic(const fs::path& path, const std::vector<std::uint8_t>& bytes)
 {
     std::error_code error;

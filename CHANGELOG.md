@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Keep Compare and Restore disabled until a revision is selected, while retaining Capture and Refresh for saved files.
+- Renamed the revision-list Bytes column to Size and added human-readable dynamic B, KB, MB, GB, TB, PB and EB units.
+- Added a pale-blue hover background and blue outline to enabled History pane buttons.
+
 ## 0.2.0-beta.25 (release candidate)
 
 - Made revision action commands share one testable command route and added live dialog coverage for comment editing, deletion and restoration.

@@ -20,6 +20,7 @@ std::wstring decodeText(const std::vector<std::uint8_t>& bytes);
 std::string utcTimestampCompact();
 std::wstring localTimestampDisplay(const std::filesystem::file_time_type& value);
 std::wstring localDateDisplay(std::wstring_view isoDate);
+std::wstring formatFileSize(std::uintmax_t bytes);
 void centerWindowOnOwner(HWND window, HWND owner);
 void fitWindowWithinOwner(HWND window, HWND owner, int horizontalMargin, int verticalMargin,
     int minimumWidth, int minimumHeight);

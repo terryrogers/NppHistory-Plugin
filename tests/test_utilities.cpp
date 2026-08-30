@@ -93,6 +93,15 @@ void runUtilityTests(TestContext& context)
     context.expect(localDateDisplay(L"1500-01-01") == L"1500-01-01",
         "localDateDisplay rejects dates outside FILETIME range");
 
+    context.expect(formatFileSize(0) == L"0 B" && formatFileSize(1023) == L"1023 B",
+        "formatFileSize keeps byte values below one kibibyte in bytes");
+    context.expect(formatFileSize(1024) == L"1 KB"
+        && formatFileSize(1536) == L"1.5 KB",
+        "formatFileSize scales and trims kilobyte values");
+    context.expect(formatFileSize(1024ULL * 1024ULL) == L"1 MB"
+        && formatFileSize(5ULL * 1024ULL * 1024ULL * 1024ULL) == L"5 GB",
+        "formatFileSize selects dynamic units for larger revisions");
+
     centerWindowOnOwner(nullptr, nullptr);
     fitWindowWithinOwner(nullptr, nullptr, 0, 0, 0, 0);
     context.expect(true, "window helpers safely ignore null handles");

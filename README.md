@@ -11,7 +11,7 @@ NppHistory is an open-source Notepad++ plugin that automatically saves ordinary 
 - Optional autosave triggers when Notepad++ loses focus, at a configurable minute interval, when the active file tab changes, and when Notepad++ exits.
 - Lets autosave target either the current file or all open files.
 - Enforces a minimum of 10 seconds for the after-edit trigger.
-- Provides a dockable history panel with revision times formatted from the computer's Windows regional settings, editable comment, byte size, a dock-tab icon and responsive, icon-labelled Capture, Refresh, Compare, Restore, Settings and About buttons.
+- Provides a dockable history panel with revision times formatted from the computer's Windows regional settings, editable comment, human-readable dynamic file size, a dock-tab icon and responsive, icon-labelled Capture, Refresh, Compare, Restore, Settings and About buttons with clear hover feedback.
 - Opens an icon-labelled Revision Actions menu by right-clicking a history item, with Delete, Edit, Compare and Restore commands.
 - Stores history in a hidden `.npphistory` folder beside the text file by default.
 - Supports a configurable common history root instead.
@@ -74,7 +74,7 @@ The settings and internal catalogue are stored through Notepad++'s plugin config
 
 The catalogue is named `catalog.db`. The default log is `NppHistory.log`. The catalogue maps each stable file identity to its current file and history paths. History contents stay in the adjacent hidden folder or selected custom root.
 
-An unsaved Notepad++ tab has no stable file path, so its History pane shows **Save File First** and disables Capture, Refresh, Compare and Restore. Saving the tab removes the message, expands the revision list into the released space and enables those commands.
+An unsaved Notepad++ tab has no stable file path, so its History pane shows **Save File First** and disables Capture, Refresh, Compare and Restore. Saving the tab removes the message, expands the revision list into the released space and enables Capture and Refresh. Compare and Restore become available only after selecting a revision.
 
 When a tracked file moves:
 

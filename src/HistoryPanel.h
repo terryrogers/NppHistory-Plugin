@@ -56,8 +56,11 @@ private:
     static INT_PTR CALLBACK dialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam);
     static INT_PTR CALLBACK compareProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam);
     static INT_PTR CALLBACK editCommentProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam);
+    static LRESULT CALLBACK panelButtonSubclass(HWND button, UINT message, WPARAM wParam,
+        LPARAM lParam, UINT_PTR subclassId, DWORD_PTR referenceData);
     void layout();
     void configureButtonIcons();
+    void updateActionButtons();
     void showRevisionActions(int index, POINT anchor);
     void editSelectedComment();
     void deleteSelected();
@@ -81,6 +84,7 @@ private:
     std::filesystem::path _currentFile;
     std::vector<RevisionInfo> _revisions;
     bool _fileSaved = false;
+    HWND _hotButton = nullptr;
     PFUNCPLUGINCMD _captureCallback = nullptr;
     PFUNCPLUGINCMD _settingsCallback = nullptr;
     PFUNCPLUGINCMD _aboutCallback = nullptr;

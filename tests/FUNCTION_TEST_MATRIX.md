@@ -17,6 +17,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `utcTimestampCompact` | Direct format check | PASS |
 | `localTimestampDisplay` | Direct locale-format check | PASS |
 | `localDateDisplay` | Direct valid, empty and invalid-date checks | PASS |
+| `formatFileSize` | Direct byte boundary and dynamic KB, MB and GB unit checks | PASS |
 | `centerWindowOnOwner` | Isolated Win32 positioning | PASS |
 | `fitWindowWithinOwner` | Isolated Win32 sizing/positioning | PASS |
 
@@ -160,6 +161,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `create` | Live dock creation, icon and controls | PASS |
 | `show` | Live Plugins menu display | PASS |
 | `refresh` | Live saved/unsaved state, revision refresh, warning and action enablement | PASS |
+| `updateActionButtons` | Live no-selection and selected-revision Compare/Restore enablement | PASS |
 | `selectedIndex` | Live selection/action-menu targeting | PASS |
 | `showRevisionActions` | Live right-click popup and four icon commands | PASS |
 | `editSelectedComment` | Live dialog submission, metadata update, Informational audit and Debug before/after values | PASS |
@@ -187,6 +189,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `restoreSelected` | Live confirmation, safety-revision preservation, file reload and pre-reload Informational audit | PASS |
 | `layout` | Live normal, resized, wrapped, collapsed and conditional unsaved warning layouts | PASS |
 | `configureButtonIcons` | Live all six pane icons | PASS |
+| `panelButtonSubclass` | Live enabled-button hover entry and leave state | PASS |
 | `dialogProc` | Live pane init, resize, commands and context menu | PASS |
 | `editCommentProc` | Live dialog construction, text replacement and Save submission | PASS |
 | `compareProc` | Live init, resize, toolbar, headers, scroll and close paths | PASS |

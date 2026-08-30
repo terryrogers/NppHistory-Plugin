@@ -12,15 +12,18 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 | Area | Evidence | Status |
 |---|---|---|
-| Core behavioural suite | 304 checks, 0 failures | PASS |
+| Core behavioural suite | 307 checks, 0 failures | PASS |
 | Plugin build | Release x64 | PASS |
 | Restart-installer build | Release x64 | PASS |
 | Core-test build | Release x64 | PASS |
 | Required Notepad++ exports | 6 of 6 | PASS |
 | DLL metadata | Product/file version `0.2.0.25`, expected name and description | PASS |
 | Live Notepad++ workflow | Fresh isolated portable instance under a path containing spaces | PASS |
-| Automatic update scheduling | Real GitHub check, completion logging and next-check countdown | PASS |
-| Manual update check | In-window checking state and correct candidate-newer-than-feed result | PASS |
+| Automatic update scheduling | Completion or access-error logging and next-check countdown | PASS |
+| Manual update check | In-window checking state with success and access-error handling | PASS |
+| History pane selection state | Compare and Restore disabled until a revision is selected | PASS |
+| Revision size display | Dynamic B, KB, MB and GB formatting with direct boundary checks | PASS |
+| History pane button hover | All six buttons register and clear pointer hover state | PASS |
 | Revision capture/comment/delete/restore | Live UI and audit-log evidence | PASS |
 | Comparison interface | Live rendering, navigation, shared scrolling, tooltips and pane behavior | PASS |
 | Settings and About | Five tabs, dependent controls, numeric version and blank candidate release date | PASS |
@@ -29,8 +32,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `2E18337B6990CD40DE570939DACF3AF60F88FC5F1FB06925E314015853FE90F4`
-- Candidate updater SHA-256: `3A6D71FC1ACECE783F4F3EC54B6259511FF4B4D92DB9D354C0CD92227ADF662D`
+- Candidate DLL SHA-256: `BC3DFB38AE6FED6C4C75CDEF2535D23892D121151825500816D8665321B4F030`
+- Candidate updater SHA-256: `4193D5C86707D51A4D34B1009CC7FC0216D0E2F2395C0CB40096DA174DB656FD`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 
@@ -43,9 +46,13 @@ Moving the repository to `C:\Users\terry\Downloads\Projects\Notepad++ History Pl
 
 Both harnesses now exercise paths containing spaces successfully. The production restart-installer launch path already used its tested Windows command-line quoting function.
 
+The first installed UAT pass also exposed that Compare and Restore were enabled for a saved file before a revision was selected. The pane now enables Capture and Refresh for saved files independently, enables Compare and Restore only when a revision is selected, and updates those actions on list selection changes. The same UAT correction renamed Bytes to Size and added dynamic human-readable units. Live regression checks cover both the unselected and selected states.
+
+The access-error live path exposed two over-strict test assumptions: a failed first check has no last-successful timestamp, and a failed check logs a warning rather than a completion record. The live criteria now require the correctly spaced failure status and warning record when the GitHub feed is inaccessible.
+
 ## CI and publication gates
 
-- Normal pushes and pull requests now build the plugin, updater and core tests, run the 304-check suite, run updater replacement/rollback smoke tests and upload both binaries.
+- Normal pushes and pull requests now build the plugin, updater and core tests, run the 307-check suite, run updater replacement/rollback smoke tests and upload both binaries.
 - Tagged releases repeat the core and updater tests.
 - Publication rejects mismatched semantic tags, numeric plugin versions, missing/invalid publication dates and missing version-specific release notes.
 - The manual ZIP is structured as `NppHistory\NppHistory.dll`.

@@ -11,6 +11,9 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 - Expands audit logging for saves, revisions, update checks, comment changes, deletion and restoration.
 - Displays prerelease builds consistently in the numeric Plugins Admin form, such as `0.2.0.25`.
 - Adds CI and release-gate testing for successful updater replacement, backup creation, invalid-digest rejection and preservation of the installed DLL.
+- Keeps Compare and Restore disabled until a history revision is selected.
+- Renames the revision-list Bytes column to Size and displays dynamic human-readable units.
+- Adds a clear pale-blue hover state to the History pane command buttons.
 
 ## Installation from beta 24 or earlier
 

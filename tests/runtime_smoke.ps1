@@ -229,6 +229,11 @@ public static class NppHistoryNative {
         PostMessage(window, 0x0201, (IntPtr)1, point);
         PostMessage(window, 0x0202, IntPtr.Zero, point);
     }
+    public static void MoveCursorToCenter(IntPtr window) {
+        RECT bounds;
+        if (!GetWindowRect(window, out bounds)) return;
+        SetCursorPos((bounds.Left + bounds.Right) / 2, (bounds.Top + bounds.Bottom) / 2);
+    }
     public static void BeginRightClick(IntPtr window, int x, int y) {
         POINT screen = new POINT(); screen.X = x; screen.Y = y;
         ClientToScreen(window, ref screen);
@@ -393,17 +398,34 @@ try {
         (@($panelButtonWidths | Select-Object -Unique).Count -eq 1)
     $savedPaneStatePassed = -not [NppHistoryNative]::IsWindowVisible(
         [NppHistoryNative]::FindControl($historyPanel, 1104)) -and
-        (1006,1003,1004,1005 | ForEach-Object {
-            [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, $_))
-        } | Where-Object { -not $_ }).Count -eq 0
+        [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1006)) -and
+        [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1003)) -and
+        -not [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1004)) -and
+        -not [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1005))
     $dockIconPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryDockIconReady') -ne [IntPtr]::Zero
     $responsiveButtonsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryResponsiveButtonRows').ToInt64() -ge 1
     $panelButtonIconsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryPanelButtonIconsReady') -ne [IntPtr]::Zero
+    $panelButtonHoverRegistrationCount = [NppHistoryNative]::GetProp(
+        $historyPanel, 'NppHistoryPanelButtonHoverReady').ToInt64()
+    $panelButtonHoverReady = $panelButtonHoverRegistrationCount -eq 6
+    $panelHoverButton = [NppHistoryNative]::FindControl($historyPanel, 1006)
+    [NppHistoryNative]::MoveCursorToCenter($panelHoverButton)
+    [void][NppHistoryNative]::SendMessage($panelHoverButton, 0x0200, [IntPtr]::Zero, [IntPtr]0x00050005)
+    $panelButtonHotOnEnter = [NppHistoryNative]::GetProp(
+        $historyPanel, 'NppHistoryPanelHotButton').ToInt64()
+    $panelButtonHoverPassed = $panelButtonHoverReady -and $panelButtonHotOnEnter -eq 1006
+    [void][NppHistoryNative]::SendMessage($panelHoverButton, 0x02A3, [IntPtr]::Zero, [IntPtr]::Zero)
+    $panelButtonHotAfterLeave = [NppHistoryNative]::GetProp(
+        $historyPanel, 'NppHistoryPanelHotButton').ToInt64()
+    $panelButtonHoverPassed = $panelButtonHoverPassed -and $panelButtonHotAfterLeave -eq 0
     [NppHistoryNative]::BeginRightClick($historyList, 10, 35)
     Start-Sleep -Milliseconds 350
     $revisionActionsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryRevisionActionsReady').ToInt64() -eq 5
     [void][NppHistoryNative]::PostMessage($historyPanel, 0x001F, [IntPtr]::Zero, [IntPtr]::Zero)
     Start-Sleep -Milliseconds 100
+    $selectedPaneActionsPassed =
+        [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1004)) -and
+        [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1005))
     $mainToolbarButtonsRegistered = [NppHistoryNative]::GetProp($process.MainWindowHandle, 'NppHistoryToolbarButtonsRegistered').ToInt64() - 1
     $captureButtonPassed = $false
     $captureButton = [NppHistoryNative]::FindControl($historyPanel, 1006)
@@ -867,6 +889,7 @@ try {
             $updateCheckNow = [NppHistoryNative]::FindControl($settingsWindow, 1103)
             $updateStatus = [NppHistoryNative]::FindControl($settingsWindow, 1106)
             $updateInstall = [NppHistoryNative]::FindControl($settingsWindow, 1126)
+            $updateStatusText = [NppHistoryNative]::Text($updateStatus)
             $updateChildrenInitiallyEnabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
                 [NppHistoryNative]::IsWindowEnabled($updatePrereleases) -and
                 [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
@@ -879,10 +902,11 @@ try {
             $settingsUpdateEnablementPassed = $updateChildrenInitiallyEnabled -and
                 $updateChildrenDisabled -and $updateChildrenReenabled -and
                 [NppHistoryNative]::IsWindowVisible($updateStatus) -and
-                [NppHistoryNative]::Text($updateStatus).Contains('Status:') -and
-                [NppHistoryNative]::Text($updateStatus).Contains('Next automatic check:') -and
-                [NppHistoryNative]::Text($updateStatus).Contains("`r`n`r`nLast successful check:") -and
-                [NppHistoryNative]::Text($updateStatus).Contains("`r`n`r`nNext automatic check:") -and
+                $updateStatusText.Contains('Status:') -and
+                $updateStatusText.Contains('Next automatic check:') -and
+                $updateStatusText.Contains("`r`n`r`nNext automatic check:") -and
+                (-not $updateStatusText.Contains('Last successful check:') -or
+                    $updateStatusText.Contains("`r`n`r`nLast successful check:")) -and
                 $updateInstall -eq [IntPtr]::Zero
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
@@ -1009,14 +1033,15 @@ try {
         $logText.Contains('Automatic update check started') -and
         ($logText.Contains('Automatic update check completed') -or
             $logText.Contains('[WARNING] Update check failure')) -and
-        $logText.Contains('update check started') -and
-        $logText.Contains('update check completed') -and
+        $logText.Contains('Manual update check started') -and
+        ($logText.Contains('Manual update check completed') -or
+            $logText.Contains('[WARNING] Update check failure')) -and
         $logText.Contains('[DEBUG] Button click')
     $displayVersionLoggingPassed = -not $updateFeedAccessible -or
         $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1034,11 +1059,16 @@ try {
         PanelButtonWidthsPassed = $panelButtonWidthsPassed
         PanelButtonWidths = $panelButtonWidths -join ','
         SavedFilePaneStatePassed = $savedPaneStatePassed
+        SelectedRevisionPaneActionsPassed = $selectedPaneActionsPassed
         UnsavedFilePaneStatePassed = $unsavedPaneStatePassed
         UnsavedWarningText = [NppHistoryNative]::Text($unsavedWarning)
         UnsavedWarningVisible = [NppHistoryNative]::IsWindowVisible($unsavedWarning)
         UnsavedPanelScreenshot = if (Test-Path $unsavedPanelScreenshot) { $unsavedPanelScreenshot } else { '' }
         PanelButtonIconsPassed = $panelButtonIconsPassed
+        PanelButtonHoverPassed = $panelButtonHoverPassed
+        PanelButtonHoverRegistrationCount = $panelButtonHoverRegistrationCount
+        PanelButtonHotOnEnter = $panelButtonHotOnEnter
+        PanelButtonHotAfterLeave = $panelButtonHotAfterLeave
         RevisionActionsPassed = $revisionActionsPassed
         CaptureButtonPassed = $captureButtonPassed
         CommentUpdatePassed = $commentUpdatePassed

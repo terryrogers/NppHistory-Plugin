@@ -219,8 +219,6 @@ void HistoryPanel::refresh(const std::filesystem::path& file)
     if (!_dialog)
         return;
     SetDlgItemTextW(_dialog, IDC_CURRENT_FILE, file.empty() ? L"No file selected" : file.c_str());
-    for (const int control : {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE})
-        EnableWindow(GetDlgItem(_dialog, control), _fileSaved);
     ShowWindow(GetDlgItem(_dialog, IDC_SAVE_FILE_FIRST), _fileSaved ? SW_HIDE : SW_SHOW);
     const HWND list = GetDlgItem(_dialog, IDC_REVISIONS);
     ListView_DeleteAllItems(list);
@@ -233,15 +231,27 @@ void HistoryPanel::refresh(const std::filesystem::path& file)
         item.pszText = const_cast<wchar_t*>(revision.timestamp.c_str());
         ListView_InsertItem(list, &item);
         ListView_SetItemText(list, index, 1, const_cast<wchar_t*>(revision.reason.c_str()));
-        const std::wstring size = std::to_wstring(revision.size);
+        const std::wstring size = formatFileSize(revision.size);
         ListView_SetItemText(list, index, 2, const_cast<wchar_t*>(size.c_str()));
     }
+    updateActionButtons();
     layout();
 }
 
 int HistoryPanel::selectedIndex() const
 {
     return ListView_GetNextItem(GetDlgItem(_dialog, IDC_REVISIONS), -1, LVNI_SELECTED);
+}
+
+void HistoryPanel::updateActionButtons()
+{
+    if (!_dialog)
+        return;
+    EnableWindow(GetDlgItem(_dialog, IDC_CAPTURE), _fileSaved);
+    EnableWindow(GetDlgItem(_dialog, IDC_REFRESH), _fileSaved);
+    const BOOL revisionSelected = _fileSaved && selectedIndex() >= 0;
+    EnableWindow(GetDlgItem(_dialog, IDC_COMPARE), revisionSelected);
+    EnableWindow(GetDlgItem(_dialog, IDC_RESTORE), revisionSelected);
 }
 
 void HistoryPanel::showRevisionActions(int index, POINT anchor)
@@ -1196,8 +1206,48 @@ void HistoryPanel::configureButtonIcons()
         ImageList_AddIcon(_buttonImages[index], icon);
         SetWindowLongPtrW(button, GWL_STYLE,
             GetWindowLongPtrW(button, GWL_STYLE) | BS_OWNERDRAW);
+        SetWindowSubclass(button, panelButtonSubclass, 1,
+            reinterpret_cast<DWORD_PTR>(this));
     }
     SetPropW(_dialog, L"NppHistoryPanelButtonIconsReady", reinterpret_cast<HANDLE>(2));
+    SetPropW(_dialog, L"NppHistoryPanelButtonHoverReady", reinterpret_cast<HANDLE>(6));
+}
+
+LRESULT CALLBACK HistoryPanel::panelButtonSubclass(HWND button, UINT message, WPARAM wParam,
+    LPARAM lParam, UINT_PTR subclassId, DWORD_PTR referenceData)
+{
+    auto* panel = reinterpret_cast<HistoryPanel*>(referenceData);
+    if (panel && message == WM_MOUSEMOVE && IsWindowEnabled(button))
+    {
+        if (panel->_hotButton != button)
+        {
+            if (panel->_hotButton)
+                InvalidateRect(panel->_hotButton, nullptr, TRUE);
+            panel->_hotButton = button;
+            SetPropW(panel->_dialog, L"NppHistoryPanelHotButton",
+                reinterpret_cast<HANDLE>(static_cast<INT_PTR>(GetDlgCtrlID(button))));
+            InvalidateRect(button, nullptr, TRUE);
+        }
+        TRACKMOUSEEVENT tracking{sizeof(tracking), TME_LEAVE, button, 0};
+        TrackMouseEvent(&tracking);
+    }
+    else if (panel && (message == WM_MOUSELEAVE
+        || (message == WM_ENABLE && wParam == FALSE)))
+    {
+        if (panel->_hotButton == button)
+        {
+            panel->_hotButton = nullptr;
+            RemovePropW(panel->_dialog, L"NppHistoryPanelHotButton");
+            InvalidateRect(button, nullptr, TRUE);
+        }
+    }
+    else if (message == WM_NCDESTROY)
+    {
+        if (panel && panel->_hotButton == button)
+            panel->_hotButton = nullptr;
+        RemoveWindowSubclass(button, panelButtonSubclass, subclassId);
+    }
+    return DefSubclassProc(button, message, wParam, lParam);
 }
 
 INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
@@ -1215,7 +1265,7 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
         LVCOLUMNW column{LVCF_TEXT | LVCF_WIDTH};
         column.cx = 118; column.pszText = const_cast<wchar_t*>(L"Time"); ListView_InsertColumn(list, 0, &column);
         column.cx = 150; column.pszText = const_cast<wchar_t*>(L"Comment"); ListView_InsertColumn(list, 1, &column);
-        column.cx = 72; column.pszText = const_cast<wchar_t*>(L"Bytes"); ListView_InsertColumn(list, 2, &column);
+        column.cx = 72; column.pszText = const_cast<wchar_t*>(L"Size"); ListView_InsertColumn(list, 2, &column);
         panel->configureButtonIcons();
         panel->layout();
         return TRUE;
@@ -1242,10 +1292,26 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
                 continue;
 
             RECT bounds = item->rcItem;
-            FillRect(item->hDC, &bounds, GetSysColorBrush(COLOR_BTNFACE));
-            DrawEdge(item->hDC, &bounds,
-                (item->itemState & ODS_SELECTED) ? EDGE_SUNKEN : EDGE_RAISED,
-                BF_RECT | BF_ADJUST);
+            const bool hot = panel->_hotButton == item->hwndItem
+                && !(item->itemState & ODS_DISABLED);
+            if (hot)
+            {
+                const HBRUSH background = CreateSolidBrush((item->itemState & ODS_SELECTED)
+                    ? RGB(204, 228, 247) : RGB(227, 242, 253));
+                const HBRUSH border = CreateSolidBrush(RGB(0, 120, 215));
+                FillRect(item->hDC, &bounds, background);
+                FrameRect(item->hDC, &bounds, border);
+                DeleteObject(border);
+                DeleteObject(background);
+                InflateRect(&bounds, -1, -1);
+            }
+            else
+            {
+                FillRect(item->hDC, &bounds, GetSysColorBrush(COLOR_BTNFACE));
+                DrawEdge(item->hDC, &bounds,
+                    (item->itemState & ODS_SELECTED) ? EDGE_SUNKEN : EDGE_RAISED,
+                    BF_RECT | BF_ADJUST);
+            }
 
             wchar_t label[64]{};
             GetWindowTextW(item->hwndItem, label, static_cast<int>(std::size(label)));
@@ -1328,6 +1394,12 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
             if (panel->_aboutCallback) panel->_aboutCallback();
         }
         return TRUE;
+    }
+    if (message == WM_NOTIFY && reinterpret_cast<NMHDR*>(lParam)->idFrom == IDC_REVISIONS
+        && reinterpret_cast<NMHDR*>(lParam)->code == LVN_ITEMCHANGED)
+    {
+        panel->updateActionButtons();
+        return FALSE;
     }
     if (message == WM_NOTIFY && reinterpret_cast<NMHDR*>(lParam)->idFrom == IDC_REVISIONS
         && reinterpret_cast<NMHDR*>(lParam)->code == NM_RCLICK)
