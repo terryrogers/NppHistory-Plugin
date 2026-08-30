@@ -5,6 +5,8 @@
 - Clarified successful update checks by displaying the latest eligible published GitHub release, for example `Up to date — latest published version: 0.2.0-beta.20`.
 - Kept the update-available wording concise while removing the leading `v` from displayed GitHub tags.
 - Added direct coverage proving beta 22 selects a published beta 24 when prerelease versions are enabled.
+- Corrected the Windows version resource so Plugins Admin and About consistently display `0.2.0.24` while the GitHub prerelease tag remains `0.2.0-beta.24`.
+- Added the `NppHistory` plugin name, descriptive metadata and the beta 24 release date to the DLL resources used by Plugins Admin and About.
 
 ## 0.2.0-beta.23
 

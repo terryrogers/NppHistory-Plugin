@@ -12,8 +12,9 @@ The Release x64 plugin and direct tests rebuilt with 0 errors and 0 warnings. Th
 | Plugin/test build | Passed, 0 warnings / 0 errors |
 | Required DLL exports | 6 of 6 present |
 | Live Notepad++ verification | Passed |
-| DLL version | 0.2.0-beta.24 |
-| DLL SHA-256 | `1C534ADDCEFE53D12C5BC186CDC025908A9057FCDBBF957744242DCD4ED82167` |
+| Windows/About version | 0.2.0.24 |
+| GitHub prerelease version | 0.2.0-beta.24 |
+| DLL SHA-256 | `D3EF929F9906A9AE6AAC398EA536B9C04F6FA063CF5023A2231A6F788DF062C3` |
 
 ## Published-version status
 
@@ -27,7 +28,7 @@ Direct tests additionally prove that an installed `0.2.0-beta.22` selects a publ
 
 ## Regression verification
 
-The live workflow also passed autosave, before/after-save history, saved and unsaved pane states, responsive buttons, logging, all Settings pages, About metadata, and the complete side-by-side comparison workflow including the beta 23 native icon toolbar.
+The live workflow also passed autosave, before/after-save history, saved and unsaved pane states, responsive buttons, logging, all Settings pages, About metadata, and the complete side-by-side comparison workflow including the beta 23 native icon toolbar. The final verification additionally validates the DLL's Plugins Admin name, description and numeric version metadata.
 
 ## Verification boundaries
 

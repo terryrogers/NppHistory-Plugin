@@ -792,9 +792,10 @@ try {
             $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
             $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
             $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
-            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 24') -and
+            $expectedReleaseDate = ([DateTime]'2026-08-30').ToString('d', [Globalization.CultureInfo]::CurrentCulture)
+            $aboutWindowPassed = $aboutVersion.Contains('0.2.0.24') -and
                 $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
-                $aboutReleaseDate.Trim() -eq 'Release Date:' -and
+                $aboutReleaseDate.Contains($expectedReleaseDate) -and
                 $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero
             Add-Type -AssemblyName System.Drawing
             $bitmap = [Drawing.Bitmap]::new($aboutRectangle.Right - $aboutRectangle.Left, $aboutRectangle.Bottom - $aboutRectangle.Top)

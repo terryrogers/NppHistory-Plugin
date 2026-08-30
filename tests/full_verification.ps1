@@ -41,6 +41,19 @@ try {
     if ($coreFailures -ne 0) { throw "Core tests reported $coreFailures failures." }
 
     $dll = Join-Path $projectRoot 'build\x64\Release\NppHistory.dll'
+    $version = (Get-Item $dll).VersionInfo
+    $expectedMetadata = [ordered]@{
+        FileDescription = 'NppHistory'
+        ProductName = 'NppHistory'
+        FileVersion = '0.2.0.24'
+        ProductVersion = '0.2.0.24'
+        Comments = 'Automatic saving and continuous local revision history for Notepad++.'
+    }
+    foreach ($entry in $expectedMetadata.GetEnumerator()) {
+        if ($version.($entry.Key) -ne $entry.Value) {
+            throw "DLL metadata $($entry.Key) was '$($version.($entry.Key))'; expected '$($entry.Value)'."
+        }
+    }
     $vcRoot = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC'
     if (-not (Test-Path $vcRoot)) {
         $vcRoot = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC'
@@ -68,7 +81,6 @@ try {
         throw 'Live Notepad++ verification failed.'
     }
 
-    $version = (Get-Item $dll).VersionInfo
     $hash = Get-FileHash $dll -Algorithm SHA256
     $summary = [pscustomobject]@{
         Passed = $true
@@ -78,6 +90,9 @@ try {
         LiveNotepadVerification = $runtimeObject.Passed
         FileVersion = $version.FileVersion
         ProductVersion = $version.ProductVersion
+        FileDescription = $version.FileDescription
+        ProductName = $version.ProductName
+        Comments = $version.Comments
         DllSha256 = $hash.Hash
         EvidenceDirectory = $outputRoot
     }
