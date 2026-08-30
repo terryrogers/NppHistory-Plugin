@@ -224,7 +224,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `reconcileFile` | Live active file plus direct catalogue outcomes | PASS |
 | `detectMissingBuffers` | Notification/timer wiring built; disappearing-open-file alert remains manual UAT | PARTIAL |
 | `refreshPanel` | Live list refresh | PASS |
-| `documentTabControls` / `refreshDocumentTabIndicators` | Live labelled AS/H badges in reserved filename-safe tab space, gated by feature enablement and external AutoSave conflict | PASS |
+| `drawDocumentTabIndicators` / `documentTabControls` / `refreshDocumentTabIndicators` | Live supplied 16 px Auto Save/History disabled icons, both embedded resources, 50 px two-icon padding, screenshot evidence, feature gating and external AutoSave conflict | PASS |
 | `saveBuffer` | Live actual after-edit save | PASS |
 | `saveConfiguredScope` | Live current test file and direct scope persistence; multi-file live path not automated | PARTIAL |
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |

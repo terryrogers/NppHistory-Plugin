@@ -27,7 +27,7 @@ The embedded release date is intentionally empty during candidate testing. It wi
 | Revision size display | Dynamic B, KB, MB and GB formatting with direct boundary checks | PASS |
 | History pane button hover | All six buttons register and clear pointer hover state | PASS |
 | Independent exclusions | Multiline wildcard persistence, matching, Auto Save suppression, manual-save allowance and History suppression | PASS |
-| Exclusion indicators | Live labelled AS/H badges in reserved tab space, feature-enable gating and wrapping red pane status | PASS |
+| Exclusion indicators | Supplied Auto Save-disabled and History-disabled icons embedded at 16 px; live two-resource loading, 50 px two-icon padding, screenshot, feature gating and wrapping red pane status | PASS |
 | Excluded-file actions and help | Capture, Refresh, Compare and Restore disabled; all six pane tooltips registered and disabled Refresh tooltip visibly activated | PASS |
 | Settings contextual help | 51 targets registered; disabled interval input selected and tooltip popup visibly activated | PASS |
 | External AutoSave conflict | Direct absent/conventional/recursive discovery, all-trigger suppression, hidden non-conflict notice and installed-plugin UAT | PASS |
@@ -42,8 +42,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `5E4D923AB2022B565A92F7710AF7129F639C6ED7D1023D65FCD3D925E0F1FD7F`
-- Candidate updater SHA-256: `77D93EE300D958CE988B65108BC4FC931EF332B74B81ECCBD0207A66F5FE4546`
+- Candidate DLL SHA-256: `9E5D4AD1E2538E8AD62A4AC13189B5B4066BB3D7922BA93DEF5168829B388CD5`
+- Candidate updater SHA-256: `F3DCB59050998D9487E96A0BA5F6D3122A94C2904A81ED2A631A2178186D5276`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 

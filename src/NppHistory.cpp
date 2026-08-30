@@ -173,6 +173,10 @@ void drawDocumentTabIndicators(HWND tabs, int view)
     const HDC dc = GetDC(tabs);
     if (!dc)
         return;
+    const HICON autoSaveDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
+        MAKEINTRESOURCEW(IDI_AUTOSAVE_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
+    const HICON historyDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
+        MAKEINTRESOURCEW(IDI_HISTORY_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
     const int count = TabCtrl_GetItemCount(tabs);
     for (int index = 0; index < count; ++index)
     {
@@ -184,38 +188,22 @@ void drawDocumentTabIndicators(HWND tabs, int view)
         RECT item{};
         if (!TabCtrl_GetItemRect(tabs, index, &item))
             continue;
-        const auto badge = [&](int x, int width, const wchar_t* label,
-            COLORREF background, COLORREF border) {
-            const int height = 15;
-            const int y = item.top + ((item.bottom - item.top) - height) / 2;
-            const HPEN outline = CreatePen(PS_SOLID, 1, border);
-            const HBRUSH face = CreateSolidBrush(background);
-            const HGDIOBJ previousPen = SelectObject(dc, outline);
-            const HGDIOBJ previousBrush = SelectObject(dc, face);
-            RoundRect(dc, x, y, x + width, y + height, 4, 4);
-            const HGDIOBJ previousFont = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
-            SetBkMode(dc, TRANSPARENT);
-            SetTextColor(dc, RGB(25, 25, 25));
-            RECT labelBounds{x, y, x + width, y + height};
-            DrawTextW(dc, label, -1, &labelBounds,
-                DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-            SelectObject(dc, previousFont);
-            SelectObject(dc, previousBrush);
-            SelectObject(dc, previousPen);
-            DeleteObject(face);
-            DeleteObject(outline);
+        const auto drawIndicator = [&](int x, HICON icon) {
+            if (!icon)
+                return;
+            const int size = 16;
+            const int y = item.top + ((item.bottom - item.top) - size) / 2;
+            DrawIconEx(dc, x, y, icon, size, size, 0, nullptr, DI_NORMAL);
         };
         const bool autoSaveExcluded = settings.autoSaveEnabled
             && !settings.externalAutoSavePluginDetected && settings.isAutoSaveExcluded(path);
         const bool historyExcluded = settings.historyEnabled && settings.isHistoryExcluded(path);
-        // Extra tab padding is reserved before painting. The labelled badges therefore sit
-        // after the filename and before Notepad++'s pin/close glyphs without covering either.
+        // Extra tab padding is reserved before painting. The icons therefore sit after the
+        // filename and before Notepad++'s pin/close glyphs without covering either.
         if (autoSaveExcluded)
-            badge(item.right - (historyExcluded ? 78 : 52), 22, L"AS",
-                RGB(255, 210, 125), RGB(175, 85, 0));
+            drawIndicator(item.right - (historyExcluded ? 70 : 52), autoSaveDisabledIcon);
         if (historyExcluded)
-            badge(item.right - 52, 18, L"H",
-                RGB(195, 225, 255), RGB(25, 85, 155));
+            drawIndicator(item.right - 52, historyDisabledIcon);
     }
     ReleaseDC(tabs, dc);
 }
@@ -242,6 +230,7 @@ void refreshDocumentTabIndicators()
     std::array<HWND, 2> viewTabs{};
     int autoSaveIndicatorCount = 0;
     int historyIndicatorCount = 0;
+    int maximumIndicatorPadding = 6;
     std::vector<bool> used(controls.size(), false);
     for (int view = 0; view < 2; ++view)
     {
@@ -265,31 +254,52 @@ void refreshDocumentTabIndicators()
         SetWindowSubclass(tabs, documentTabSubclass, static_cast<UINT_PTR>(view + 1),
             static_cast<DWORD_PTR>(view));
         const int count = TabCtrl_GetItemCount(tabs);
-        bool hasIndicators = false;
+        int maximumIndicators = 0;
         for (int index = 0; index < count; ++index)
         {
             const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
                 NPPM_GETBUFFERIDFROMPOS, index, view));
             const fs::path path = pathForBuffer(bufferId);
-            if (settings.autoSaveEnabled && !settings.externalAutoSavePluginDetected
-                && settings.isAutoSaveExcluded(path))
+            const bool autoSaveExcluded = settings.autoSaveEnabled
+                && !settings.externalAutoSavePluginDetected
+                && settings.isAutoSaveExcluded(path);
+            const bool historyExcluded = settings.historyEnabled
+                && settings.isHistoryExcluded(path);
+            if (autoSaveExcluded)
             {
                 ++autoSaveIndicatorCount;
-                hasIndicators = true;
             }
-            if (settings.historyEnabled && settings.isHistoryExcluded(path))
+            if (historyExcluded)
             {
                 ++historyIndicatorCount;
-                hasIndicators = true;
             }
+            maximumIndicators = (std::max)(maximumIndicators,
+                static_cast<int>(autoSaveExcluded) + static_cast<int>(historyExcluded));
         }
-        SendMessageW(tabs, TCM_SETPADDING, 0, MAKELPARAM(hasIndicators ? 30 : 6, 3));
+        // Notepad++ paints its pin/close glyphs at the right edge. Reserve enough horizontal
+        // space for the filename, one or two 16 px indicators, their gap, and those glyphs.
+        const int horizontalPadding = maximumIndicators == 2 ? 50
+            : maximumIndicators == 1 ? 34 : 6;
+        maximumIndicatorPadding = (std::max)(maximumIndicatorPadding, horizontalPadding);
+        SendMessageW(tabs, TCM_SETPADDING, 0, MAKELPARAM(horizontalPadding, 3));
+        SetPropW(tabs, L"NppHistoryTabIndicatorPadding",
+            reinterpret_cast<HANDLE>(static_cast<INT_PTR>(horizontalPadding)));
         InvalidateRect(tabs, nullptr, FALSE);
     }
     SetPropW(nppData._nppHandle, L"NppHistoryAutoSaveTabIndicatorCount",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(autoSaveIndicatorCount)));
     SetPropW(nppData._nppHandle, L"NppHistoryHistoryTabIndicatorCount",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(historyIndicatorCount)));
+    SetPropW(nppData._nppHandle, L"NppHistoryTabIndicatorPadding",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(maximumIndicatorPadding)));
+    const HICON autoSaveDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
+        MAKEINTRESOURCEW(IDI_AUTOSAVE_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
+    const HICON historyDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
+        MAKEINTRESOURCEW(IDI_HISTORY_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
+    SetPropW(nppData._nppHandle, L"NppHistoryTabIndicatorIconCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(
+            static_cast<int>(autoSaveDisabledIcon != nullptr)
+            + static_cast<int>(historyDisabledIcon != nullptr))));
 }
 
 HWND currentEditor()

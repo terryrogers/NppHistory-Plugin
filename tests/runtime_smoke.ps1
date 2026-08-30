@@ -1348,8 +1348,13 @@ try {
         $process.MainWindowHandle, 'NppHistoryAutoSaveTabIndicatorCount').ToInt64()
     $historyTabIndicatorCount = [NppHistoryNative]::GetProp(
         $process.MainWindowHandle, 'NppHistoryHistoryTabIndicatorCount').ToInt64()
+    $tabIndicatorPadding = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryTabIndicatorPadding').ToInt64()
+    $tabIndicatorIconCount = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryTabIndicatorIconCount').ToInt64()
     $exclusionTabIndicatorsPassed = $autoSaveTabIndicatorCount -ge 1 -and
-        $historyTabIndicatorCount -ge 1
+        $historyTabIndicatorCount -ge 1 -and $tabIndicatorPadding -eq 50 -and
+        $tabIndicatorIconCount -eq 2
     $exclusionIndicatorsScreenshot = Join-Path $testRoot 'exclusion-indicators.png'
     $exclusionRectangle = [NppHistoryNative+RECT]::new()
     if ([NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$exclusionRectangle)) {
@@ -1608,6 +1613,8 @@ try {
         ExclusionTabIndicatorsPassed = $exclusionTabIndicatorsPassed
         AutoSaveTabIndicatorCount = $autoSaveTabIndicatorCount
         HistoryTabIndicatorCount = $historyTabIndicatorCount
+        TabIndicatorPadding = $tabIndicatorPadding
+        TabIndicatorIconCount = $tabIndicatorIconCount
         ExclusionIndicatorsScreenshot = if (Test-Path $exclusionIndicatorsScreenshot) {
             $exclusionIndicatorsScreenshot
         } else { '' }

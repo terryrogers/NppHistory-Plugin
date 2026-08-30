@@ -13,6 +13,8 @@ IDI_SETTINGS ICON "res\\Settings.ico"
 IDI_ABOUT ICON "res\\About.ico"
 IDI_EDIT ICON "res\\Edit.ico"
 IDI_DELETE ICON "res\\Delete.ico"
+IDI_AUTOSAVE_DISABLED ICON "res\\AutoSaveDisabled.ico"
+IDI_HISTORY_DISABLED ICON "res\\RevisionHistoryDisabled.ico"
 
 1 VERSIONINFO
  FILEVERSION NPPHISTORY_VERSION_FILE

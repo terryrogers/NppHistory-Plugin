@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Replaced the temporary AS/H exclusion badges with the supplied crossed-out Auto Save and Revision History artwork, embedded at tab-native size, and expanded document-tab padding for one or two icons without covering filenames or Notepad++ controls.
 - Replaced opaque numeric Settings debug records with friendly tab/control names and suppressed non-user initialization and focus notifications.
 - Explicitly centred every NppHistory message box on the main Notepad++ window; update prompts, Settings, About, Compare and Edit Comment retain the same main-window centring rule.
 - Fixed restore safety for modified editors so the internal save does not create a misleading `Saved` revision; one forced `Before restore` revision now retains the exact pre-restore content.
@@ -16,7 +17,7 @@
 - Renamed the revision-list Bytes column to Size and added human-readable dynamic B, KB, MB, GB, TB, PB and EB units.
 - Added a pale-blue hover background and blue outline to enabled History pane buttons.
 - Added separate multiline wildcard exclusion lists for automatic saving and revision history, with filename and full-path matching.
-- Added distinct labelled **AS** (Auto Save) and **H** (History) document-tab badges in reserved tab space plus a wrapping red **File Excluded in Settings** pane message; each badge is shown only while its feature is enabled.
+- Added distinct Auto Save-disabled and History-disabled document-tab icons in reserved tab space plus a wrapping red **File Excluded in Settings** pane message; each icon is shown only while its feature is enabled.
 - Excluded History files now disable Capture, Refresh, Compare and Restore, and all six History pane buttons have explanatory tooltips that also work while a button is disabled.
 - Added contextual tooltips to all Settings tabs, checkboxes, radio options, inputs, dropdowns, status fields and action buttons, including controls disabled by another option.
 - Detects an installed `AutoSave.dll`, disables NppHistory's overlapping Auto Save engine, displays an unchecked disabled master control with a red explanation, preserves the configured preference for later restoration and records a warning in the plugin log.
