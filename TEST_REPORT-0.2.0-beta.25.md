@@ -33,6 +33,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 | External AutoSave conflict | Direct absent/conventional/recursive discovery, all-trigger suppression, hidden non-conflict notice and installed-plugin UAT | PASS |
 | Revision capture/comment/delete/restore | Live unsaved-edit restore creates a forced `Before restore` safety revision containing the unsaved text; UI and audit-log evidence | PASS — automated; corrected build awaits repeat manual UAT |
 | Log severity labels | Emitted informational records use `[INFO]`; ERROR, WARNING and DEBUG remain unchanged | PASS |
+| Settings debug records | Friendly tab/control names are emitted for genuine user actions; raw numeric IDs and focus/init noise are rejected | PASS |
+| Popup positioning | Edit Comment, Delete, Restore, Compare, Settings and About are live-verified centrally against the main Notepad++ window; all plugin message boxes use the same explicit centring helper | PASS |
 | Comparison interface | Live rendering, navigation, shared scrolling, tooltips and pane behavior | PASS |
 | Settings and About | Five tabs, dependent controls, numeric version and blank candidate release date | PASS |
 | Restart-installer success | Verified replacement and previous-DLL backup | PASS |
@@ -40,8 +42,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `B70EDCEA06541099A941C736AE71A53AFCD588280BCD316E199A2E49EC1C6CC9`
-- Candidate updater SHA-256: `4255D585DA78590D8C3D4F5C24A651594580AAF5BA7A81144C27A60CFCCF2BB0`
+- Candidate DLL SHA-256: `5E4D923AB2022B565A92F7710AF7129F639C6ED7D1023D65FCD3D925E0F1FD7F`
+- Candidate updater SHA-256: `77D93EE300D958CE988B65108BC4FC931EF332B74B81ECCBD0207A66F5FE4546`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 
@@ -61,6 +63,10 @@ The access-error live path exposed two over-strict test assumptions: a failed fi
 Manual restore-safety UAT exposed that saving modified editor content during Restore triggered the ordinary after-save revision first. Duplicate suppression then prevented the intended `Before restore` revision, leaving only `Saved`. Restore-initiated saves are now distinguished from ordinary saves, their normal after-save capture is suppressed, and one forced safety revision is created with the exact `Before restore` comment. The live test now modifies the editor without saving and verifies both that comment and the unsaved marker inside the stored revision.
 
 Manual menu UAT also exposed that Notepad++ could later discard the initially assigned Plugins-menu bitmaps. Command-state refresh now checks all five live menu entries and reapplies only missing bitmap assignments. The live test inspects the actual five `hbmpItem` handles rather than relying solely on an internal readiness marker.
+
+Manual log review exposed that Settings debug records included raw Windows control IDs and initialization/focus traffic. Settings logging now records only genuine clicks, tab changes and dropdown selections, and maps each event to a stable friendly name. The live test verifies representative tab, checkbox and OK records and rejects any numeric Settings-control record.
+
+A popup-position audit found that assigning the main Notepad++ owner was insufficient to centre standard Windows message boxes. NppHistory now explicitly positions every plugin message box when it activates. The live workflow measures Edit Comment, Delete, Restore, Compare, Settings and About centres against the main Notepad++ window.
 
 ## CI and publication gates
 

@@ -344,7 +344,7 @@ void HistoryPanel::editSelectedComment()
         return;
     if (!_store->updateComment(_revisions[index], context.comment))
     {
-        MessageBoxW(_dialog, L"The revision comment could not be updated.",
+        centeredMessageBox(_nppData._nppHandle, L"The revision comment could not be updated.",
             L"NppHistory", MB_OK | MB_ICONERROR);
         pluginLogger().write(LogLevel::error, L"Edit revision comment failed",
             _currentFile.wstring());
@@ -369,12 +369,12 @@ void HistoryPanel::deleteSelected()
     const std::wstring prompt = L"Delete the revision from " + revision.timestamp
         + L"?\n\nComment: " + revision.reason
         + L"\n\nThis permanently removes this stored revision.";
-    if (MessageBoxW(_dialog, prompt.c_str(), L"Delete Revision",
+    if (centeredMessageBox(_nppData._nppHandle, prompt.c_str(), L"Delete Revision",
         MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
         return;
     if (!_store->deleteRevision(_currentFile, revision))
     {
-        MessageBoxW(_dialog, L"The revision could not be deleted completely.",
+        centeredMessageBox(_nppData._nppHandle, L"The revision could not be deleted completely.",
             L"NppHistory", MB_OK | MB_ICONERROR);
         pluginLogger().write(LogLevel::error, L"Delete revision failed",
             _currentFile.wstring());
@@ -390,7 +390,7 @@ void HistoryPanel::compareSelected()
     int index = selectedIndex();
     if (_revisions.empty())
     {
-        MessageBoxW(_dialog, L"No revisions are available for this file yet.", L"NppHistory", MB_OK | MB_ICONINFORMATION);
+        centeredMessageBox(_nppData._nppHandle, L"No revisions are available for this file yet.", L"NppHistory", MB_OK | MB_ICONINFORMATION);
         return;
     }
     if (index < 0 || index >= static_cast<int>(_revisions.size()))
@@ -401,7 +401,7 @@ void HistoryPanel::compareSelected()
         compareProc, reinterpret_cast<LPARAM>(&context));
     if (result == -1)
     {
-        MessageBoxW(_dialog, L"The comparison window could not be opened.", L"NppHistory", MB_OK | MB_ICONERROR);
+        centeredMessageBox(_nppData._nppHandle, L"The comparison window could not be opened.", L"NppHistory", MB_OK | MB_ICONERROR);
         pluginLogger().write(LogLevel::error, L"Compare failed", _currentFile.wstring());
     }
     else
@@ -1104,7 +1104,7 @@ void HistoryPanel::restoreSelected()
     const int index = selectedIndex();
     if (index < 0 || index >= static_cast<int>(_revisions.size()))
     {
-        MessageBoxW(_dialog, L"Select a revision to restore.", L"NppHistory", MB_OK | MB_ICONINFORMATION);
+        centeredMessageBox(_nppData._nppHandle, L"Select a revision to restore.", L"NppHistory", MB_OK | MB_ICONINFORMATION);
         return;
     }
     const RevisionInfo selected = _revisions[index];
@@ -1114,7 +1114,7 @@ void HistoryPanel::restoreSelected()
     const wchar_t* confirmation = retainSafetyRevision
         ? L"Restore this revision? The current saved file will be retained as a safety revision."
         : L"Restore this revision? History is not configured to create a safety revision first.";
-    if (MessageBoxW(_dialog, confirmation,
+    if (centeredMessageBox(_nppData._nppHandle, confirmation,
         L"NppHistory", MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) != IDYES)
         return;
 
@@ -1129,7 +1129,7 @@ void HistoryPanel::restoreSelected()
     {
         if (_cancelRestoreSaveCallback)
             _cancelRestoreSaveCallback();
-        MessageBoxW(_dialog, L"The current edits could not be saved, so the restore was cancelled.",
+        centeredMessageBox(_nppData._nppHandle, L"The current edits could not be saved, so the restore was cancelled.",
             L"NppHistory", MB_OK | MB_ICONERROR);
         pluginLogger().write(LogLevel::error, L"Restore failed",
             L"Current edits could not be saved: " + _currentFile.wstring());
@@ -1143,7 +1143,7 @@ void HistoryPanel::restoreSelected()
     }
     if (!_store->restoreRevision(selected, _currentFile))
     {
-        MessageBoxW(_dialog, L"The revision could not be restored.", L"NppHistory", MB_OK | MB_ICONERROR);
+        centeredMessageBox(_nppData._nppHandle, L"The revision could not be restored.", L"NppHistory", MB_OK | MB_ICONERROR);
         pluginLogger().write(LogLevel::error, L"Restore failed", _currentFile.wstring());
         return;
     }

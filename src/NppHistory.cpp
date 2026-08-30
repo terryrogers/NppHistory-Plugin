@@ -320,17 +320,17 @@ void showReconcileAlert(const ReconcileResult& result)
     {
         const std::wstring message = L"NppHistory found the previous history folder but could not move it.\n\nPrevious: "
             + result.previousHistoryPath.wstring() + L"\n\nHistory will continue using the previous location until this is resolved.";
-        MessageBoxW(nppData._nppHandle, message.c_str(), pluginName, MB_OK | MB_ICONWARNING);
+        centeredMessageBox(nppData._nppHandle, message.c_str(), pluginName, MB_OK | MB_ICONWARNING);
     }
     else if (result.historyMissing)
     {
         const std::wstring message = L"NppHistory detected that this file moved, but its recorded history folder no longer exists.\n\nExpected location: "
             + result.previousHistoryPath.wstring() + L"\n\nA new history will be started at the current location.";
-        MessageBoxW(nppData._nppHandle, message.c_str(), pluginName, MB_OK | MB_ICONWARNING);
+        centeredMessageBox(nppData._nppHandle, message.c_str(), pluginName, MB_OK | MB_ICONWARNING);
     }
     else if (result.ambiguousMatch)
     {
-        MessageBoxW(nppData._nppHandle,
+        centeredMessageBox(nppData._nppHandle,
             L"NppHistory found more than one missing catalogue entry with identical content, so it could not safely identify the moved file. A new history record was created.",
             pluginName, MB_OK | MB_ICONWARNING);
     }
@@ -367,7 +367,7 @@ void detectMissingBuffers()
                 + path.wstring() + L"\n\nNppHistory has retained its history at:\n\n"
                 + (history.empty() ? L"(no recorded history location)" : history.wstring())
                 + L"\n\nIf the file is saved or reopened at a new location, NppHistory will try to move and reconnect its history automatically.";
-            MessageBoxW(nppData._nppHandle, message.c_str(), pluginName, MB_OK | MB_ICONWARNING);
+            centeredMessageBox(nppData._nppHandle, message.c_str(), pluginName, MB_OK | MB_ICONWARNING);
         }
     }
 }
@@ -487,7 +487,7 @@ void openReleasePage(const ReleaseInfo& release)
     const auto opened = reinterpret_cast<INT_PTR>(ShellExecuteW(nppData._nppHandle,
         L"open", release.url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
     if (opened <= 32)
-        MessageBoxW(nppData._nppHandle,
+        centeredMessageBox(nppData._nppHandle,
             L"Windows could not open the release page. Visit the NppHistory-Plugin repository on GitHub manually.",
             L"NppHistory Update", MB_OK | MB_ICONWARNING);
 }
@@ -515,7 +515,7 @@ void beginUpdateInstall(const ReleaseInfo& release)
 {
     if (!trustedUpdateAsset(release))
     {
-        MessageBoxW(nppData._nppHandle,
+        centeredMessageBox(nppData._nppHandle,
             L"This release does not contain the verified x64 asset required for automatic installation. You can still install it from the release page.",
             L"NppHistory Update", MB_OK | MB_ICONINFORMATION);
         openReleasePage(release);
@@ -524,7 +524,7 @@ void beginUpdateInstall(const ReleaseInfo& release)
     bool expected = false;
     if (!installDownloadInProgress.compare_exchange_strong(expected, true))
     {
-        MessageBoxW(nppData._nppHandle, L"The update is already being downloaded.",
+        centeredMessageBox(nppData._nppHandle, L"The update is already being downloaded.",
             L"NppHistory Update", MB_OK | MB_ICONINFORMATION);
         return;
     }
@@ -550,7 +550,7 @@ void beginUpdateInstall(const ReleaseInfo& release)
         installDownloadInProgress = false;
         settings.lastUpdateStatus = L"Update installation could not start";
         settings.refreshUpdateStatus(false);
-        MessageBoxW(nppData._nppHandle,
+        centeredMessageBox(nppData._nppHandle,
             L"The background update download could not be started.", L"NppHistory Update",
             MB_OK | MB_ICONERROR);
         return;
@@ -585,7 +585,7 @@ void handleInstallCompletion(std::unique_ptr<InstallCompletion> completion)
         settings.lastUpdateStatus = L"Update installation failed: " + completion->detail;
         settings.refreshUpdateStatus(false);
         pluginLogger().write(LogLevel::error, L"Update download failed", completion->detail);
-        MessageBoxW(nppData._nppHandle, completion->detail.c_str(),
+        centeredMessageBox(nppData._nppHandle, completion->detail.c_str(),
             L"NppHistory Update", MB_OK | MB_ICONERROR);
         return;
     }
@@ -601,7 +601,7 @@ void handleInstallCompletion(std::unique_ptr<InstallCompletion> completion)
         settings.lastUpdateStatus = L"Update installation failed: staged updater missing";
         settings.refreshUpdateStatus(false);
         pluginLogger().write(LogLevel::error, L"Update launch failed", detail);
-        MessageBoxW(nppData._nppHandle, detail.c_str(), L"NppHistory Update",
+        centeredMessageBox(nppData._nppHandle, detail.c_str(), L"NppHistory Update",
             MB_OK | MB_ICONERROR);
         return;
     }
@@ -634,7 +634,7 @@ void handleInstallCompletion(std::unique_ptr<InstallCompletion> completion)
         settings.lastUpdateStatus = L"Update installation cancelled or failed";
         settings.refreshUpdateStatus(false);
         pluginLogger().write(LogLevel::error, L"Update launch failed", detail);
-        MessageBoxW(nppData._nppHandle, detail.c_str(), L"NppHistory Update",
+        centeredMessageBox(nppData._nppHandle, detail.c_str(), L"NppHistory Update",
             MB_OK | MB_ICONERROR);
         return;
     }
@@ -706,9 +706,7 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
             {1002, L"View release"},
             {IDCANCEL, L"Later"}};
         TASKDIALOGCONFIG dialog{sizeof(dialog)};
-        const HWND settingsDialog = completion->manual
-            ? settings.activeDialogWindow() : nullptr;
-        dialog.hwndParent = settingsDialog ? settingsDialog : nppData._nppHandle;
+        dialog.hwndParent = nppData._nppHandle;
         dialog.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
         dialog.pszWindowTitle = L"NppHistory Update Available";
         dialog.pszMainIcon = TD_INFORMATION_ICON;
@@ -824,7 +822,7 @@ void captureNow()
     pluginLogger().write(LogLevel::debug, L"Button click", L"Capture");
     if (!settings.shouldCreateRevision(RevisionTrigger::manual))
     {
-        MessageBoxW(nppData._nppHandle,
+        centeredMessageBox(nppData._nppHandle,
             L"Enable revision history in NppHistory Settings before capturing a revision.",
             pluginName, MB_OK | MB_ICONINFORMATION);
         return;
@@ -832,13 +830,13 @@ void captureNow()
     const fs::path path = currentPath();
     if (!isSavableFile(path))
     {
-        MessageBoxW(nppData._nppHandle, L"Save this note to a file before capturing a revision.",
+        centeredMessageBox(nppData._nppHandle, L"Save this note to a file before capturing a revision.",
             pluginName, MB_OK | MB_ICONINFORMATION);
         return;
     }
     if (settings.isHistoryExcluded(path))
     {
-        MessageBoxW(nppData._nppHandle,
+        centeredMessageBox(nppData._nppHandle,
             L"Revision history is disabled for this file by an exclusion pattern.",
             pluginName, MB_OK | MB_ICONINFORMATION);
         return;
@@ -849,7 +847,7 @@ void captureNow()
         if (SendMessageW(nppData._nppHandle, NPPM_SAVEFILE, 0,
             reinterpret_cast<LPARAM>(path.c_str())) == FALSE)
         {
-            MessageBoxW(nppData._nppHandle, L"The current note could not be saved.",
+            centeredMessageBox(nppData._nppHandle, L"The current note could not be saved.",
                 pluginName, MB_OK | MB_ICONERROR);
             pluginLogger().write(LogLevel::error, L"Capture failed",
                 L"The current note could not be saved: " + path.wstring());
@@ -975,11 +973,11 @@ void editSettings()
                 const auto logPath = pluginLogger().path();
                 if (SendMessageW(nppData._nppHandle, NPPM_DOOPEN, 0,
                     reinterpret_cast<LPARAM>(logPath.c_str())) == FALSE)
-                    MessageBoxW(nppData._nppHandle, L"The log file could not be opened in Notepad++.",
+                    centeredMessageBox(nppData._nppHandle, L"The log file could not be opened in Notepad++.",
                         pluginName, MB_OK | MB_ICONERROR);
             }
             else
-                MessageBoxW(nppData._nppHandle, L"The log file could not be created or accessed.",
+                centeredMessageBox(nppData._nppHandle, L"The log file could not be created or accessed.",
                     pluginName, MB_OK | MB_ICONERROR);
         }
         if (installUpdate)
@@ -1282,7 +1280,7 @@ void showPendingUpdateResult()
         message += L"\n\nVersion: " + std::wstring(version);
     pluginLogger().write(installed ? LogLevel::informational : LogLevel::error,
         installed ? L"Update installed" : L"Update installation failed", message);
-    MessageBoxW(nppData._nppHandle, message.c_str(),
+    centeredMessageBox(nppData._nppHandle, message.c_str(),
         installed ? L"NppHistory Updated" : L"NppHistory Update Failed",
         MB_OK | (installed ? MB_ICONINFORMATION : MB_ICONERROR));
 }

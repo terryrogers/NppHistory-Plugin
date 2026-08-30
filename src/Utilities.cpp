@@ -16,6 +16,28 @@ namespace fs = std::filesystem;
 
 namespace npphistory
 {
+namespace
+{
+thread_local HWND messageBoxOwner = nullptr;
+thread_local HHOOK messageBoxCenterHook = nullptr;
+
+LRESULT CALLBACK centerMessageBoxHook(int code, WPARAM wParam, LPARAM lParam)
+{
+    if (code == HCBT_ACTIVATE && messageBoxOwner)
+    {
+        const HWND messageBox = reinterpret_cast<HWND>(wParam);
+        const HWND owner = messageBoxOwner;
+        if (messageBoxCenterHook)
+        {
+            UnhookWindowsHookEx(messageBoxCenterHook);
+            messageBoxCenterHook = nullptr;
+        }
+        centerWindowOnOwner(messageBox, owner);
+    }
+    return CallNextHookEx(messageBoxCenterHook, code, wParam, lParam);
+}
+}
+
 std::vector<std::uint8_t> readAllBytes(const fs::path& path)
 {
     std::ifstream input(path, std::ios::binary);
@@ -417,6 +439,21 @@ void centerWindowOnOwner(HWND window, HWND owner)
     }
     SetWindowPos(window, nullptr, left, top, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+int centeredMessageBox(HWND owner, const wchar_t* text, const wchar_t* caption, UINT type)
+{
+    messageBoxOwner = owner;
+    messageBoxCenterHook = SetWindowsHookExW(WH_CBT, centerMessageBoxHook, nullptr,
+        GetCurrentThreadId());
+    const int result = MessageBoxW(owner, text, caption, type);
+    if (messageBoxCenterHook)
+    {
+        UnhookWindowsHookEx(messageBoxCenterHook);
+        messageBoxCenterHook = nullptr;
+    }
+    messageBoxOwner = nullptr;
+    return result;
 }
 
 void fitWindowWithinOwner(HWND window, HWND owner, int horizontalMargin, int verticalMargin,

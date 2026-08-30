@@ -21,6 +21,8 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 - Labels restore safety revisions explicitly as **Before restore**, including when modified editor content must first be saved, without also creating a misleading **Saved** revision.
 - Uses compact `[INFO]` severity labels for informational log records.
 - Keeps all five Plugins-menu icons attached if Notepad++ refreshes or rebuilds the menu.
+- Records readable Settings debug actions such as `Settings tab | Logging` and `Settings control | Open Log`, without raw numeric control IDs.
+- Centres plugin dialogs and confirmations on the main Notepad++ window.
 
 ## Installation from beta 24 or earlier
 

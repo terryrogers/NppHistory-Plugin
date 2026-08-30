@@ -22,6 +22,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `pathMatchesWildcardList` | Direct filename/full-path, multiline, blank-row and whitespace cases | PASS |
 | `findExternalAutoSavePlugin` | Direct absent, conventional-folder and recursive case-insensitive `AutoSave.dll` discovery | PASS |
 | `centerWindowOnOwner` | Isolated Win32 positioning | PASS |
+| `centeredMessageBox` | Live Delete and Restore confirmation positions relative to the main Notepad++ window | PASS |
 | `fitWindowWithinOwner` | Isolated Win32 sizing/positioning | PASS |
 
 ## Settings.cpp / Settings
@@ -47,7 +48,8 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `showSettingsPage` | Live five-tab selection/rendering | PASS |
 | `browseForHistoryRoot` | Control presence/enablement live; native picker selection not automated | PARTIAL |
 | `browseForLogFile` | Control presence/enablement live; native picker selection not automated | PARTIAL |
-| `settingsProc` | Live initialization, commands, page changes and dependent states | PASS |
+| `settingsCommandName` / `isUserSettingsCommand` | Live friendly tab/control debug records with no numeric control-ID fallback | PASS |
+| `settingsProc` | Live initialization, commands, page changes, dependent states and user-action-only debug logging | PASS |
 | `Settings::shouldAutoSave` | Direct all five triggers, selected/cleared/master-off and external AutoSave-plugin conflict | PASS |
 | `Settings::shouldCreateRevision` | Direct all revision paths, selected/cleared/master-off | PASS |
 | `Settings::isAutoSaveExcluded` | Direct filename wildcard and independent-list cases; live settings/pane/tab state | PASS |
@@ -175,7 +177,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `selectedIndex` | Live selection/action-menu targeting | PASS |
 | `showRevisionActions` | Live right-click popup and four icon commands | PASS |
 | `editSelectedComment` | Live dialog submission, metadata update, INFO audit and Debug before/after values | PASS |
-| `deleteSelected` | Live confirmation, file/metadata removal, list refresh and detailed INFO audit | PASS |
+| `deleteSelected` | Live centred confirmation, file/metadata removal, list refresh and detailed INFO audit | PASS |
 | `compareSelected` | Live comparison launch | PASS |
 | `currentSourceText` | Live source content displayed in comparison | PASS |
 | `renderSide` | Direct diff rows plus live two-pane rendering | PASS |
@@ -196,7 +198,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `updateComparisonStatus` | Live difference counter/status | PASS |
 | `navigateDifference` | Live previous/next navigation | PASS |
 | `showRevisionPicker` | Live picker position and revision count | PASS |
-| `restoreSelected` | Live confirmation, forced `Before restore` safety revision, internal-save suppression, file reload and INFO audit | PASS |
+| `restoreSelected` | Live centred confirmation, forced `Before restore` safety revision, internal-save suppression, file reload and INFO audit | PASS |
 | `layout` | Live normal, resized, wrapped, collapsed and dynamically wrapped status layouts | PASS |
 | `configureButtonIcons` | Live all six pane icons and tooltip registrations | PASS |
 | `updateButtonTooltip` | Live active and visible tooltip over disabled Refresh | PASS |
@@ -260,4 +262,4 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 
 ## Interpretation
 
-Every pure core function has direct or indirect automated evidence. Every plugin entry point and the principal pane/settings/comparison flows have live Notepad++ evidence. The PARTIAL rows identify interaction branches that should not be misrepresented as unit tested: confirmation dialogs, external URL launch, app shutdown/focus/tab lifecycle, missing-open-file alerts, and multi-file/custom-root installed-plugin workflows.
+Every pure core function has direct or indirect automated evidence. Every plugin entry point and the principal pane/settings/comparison flows have live Notepad++ evidence. The PARTIAL rows identify interaction branches that should not be misrepresented as unit tested: native folder/file picker selection, external URL launch, app shutdown/focus/tab lifecycle, missing-open-file alerts, and multi-file/custom-root installed-plugin workflows.

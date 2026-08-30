@@ -366,7 +366,7 @@ bool validateHotkeys(HWND dialog, const Settings& settings, bool showMessage)
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(issue.empty() ? 2 : 1)));
     InvalidateRect(GetDlgItem(dialog, IDC_HOTKEY_STATUS), nullptr, TRUE);
     if (!issue.empty() && showMessage)
-        MessageBoxW(dialog, issue.c_str(), L"NppHistory Hotkey Conflict",
+        centeredMessageBox(GetWindow(dialog, GW_OWNER), issue.c_str(), L"NppHistory Hotkey Conflict",
             MB_OK | MB_ICONWARNING);
     return issue.empty();
 }
@@ -573,7 +573,7 @@ void showSettingsPage(HWND dialog, int page)
 void browseForHistoryRoot(HWND dialog)
 {
     BROWSEINFOW browse{};
-    browse.hwndOwner = dialog;
+    browse.hwndOwner = GetWindow(dialog, GW_OWNER);
     browse.lpszTitle = L"Choose the NppHistory storage folder";
     browse.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
     PIDLIST_ABSOLUTE item = SHBrowseForFolderW(&browse);
@@ -590,7 +590,7 @@ void browseForLogFile(HWND dialog)
     wchar_t path[32768]{};
     GetDlgItemTextW(dialog, IDC_LOGGING_PATH, path, static_cast<int>(std::size(path)));
     OPENFILENAMEW options{sizeof(options)};
-    options.hwndOwner = dialog;
+    options.hwndOwner = GetWindow(dialog, GW_OWNER);
     options.lpstrFilter = L"Log files (*.log)\0*.log\0All files (*.*)\0*.*\0";
     options.lpstrFile = path;
     options.nMaxFile = static_cast<DWORD>(std::size(path));
@@ -598,6 +598,60 @@ void browseForLogFile(HWND dialog)
     options.Flags = OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT;
     if (GetSaveFileNameW(&options))
         SetDlgItemTextW(dialog, IDC_LOGGING_PATH, path);
+}
+
+const wchar_t* settingsCommandName(int id)
+{
+    switch (id)
+    {
+    case IDC_TOOLBAR_CAPTURE: return L"Toolbar: Capture";
+    case IDC_TOOLBAR_COMPARE: return L"Toolbar: Compare";
+    case IDC_TOOLBAR_HISTORY: return L"Toolbar: History";
+    case IDC_HOTKEY_CAPTURE_ENABLED: return L"Hotkey: Capture enabled";
+    case IDC_HOTKEY_COMPARE_ENABLED: return L"Hotkey: Compare enabled";
+    case IDC_HOTKEY_HISTORY_ENABLED: return L"Hotkey: History enabled";
+    case IDC_ENABLED: return L"Auto Save enabled";
+    case IDC_AFTER_EDIT: return L"Auto Save: After editing stops";
+    case IDC_AUTOSAVE_FOCUS_LOSS: return L"Auto Save: Notepad++ loses focus";
+    case IDC_AUTOSAVE_INTERVAL: return L"Auto Save: Timed intervals";
+    case IDC_AUTOSAVE_TAB_CHANGE: return L"Auto Save: File tab changes";
+    case IDC_AUTOSAVE_EXIT: return L"Auto Save: Notepad++ exits";
+    case IDC_AUTOSAVE_CURRENT_FILE: return L"Auto Save scope: Current file";
+    case IDC_AUTOSAVE_ALL_FILES: return L"Auto Save scope: All open files";
+    case IDC_HISTORY_ENABLED: return L"Revision history enabled";
+    case IDC_HISTORY_BEFORE_SAVE: return L"History: Before save";
+    case IDC_HISTORY_AFTER_SAVE: return L"History: After save";
+    case IDC_HISTORY_BEFORE_RESTORE: return L"History: Before restore";
+    case IDC_HISTORY_ADJACENT: return L"History location: Adjacent folder";
+    case IDC_HISTORY_CUSTOM: return L"History location: Common folder";
+    case IDC_HISTORY_BROWSE: return L"Browse history location";
+    case IDC_LOGGING_ENABLED: return L"Plugin logging enabled";
+    case IDC_LOGGING_LEVEL: return L"Logging level";
+    case IDC_LOGGING_DEFAULT: return L"Log location: Plugin configuration folder";
+    case IDC_LOGGING_CUSTOM: return L"Log location: Custom file";
+    case IDC_LOGGING_BROWSE: return L"Browse log location";
+    case IDC_LOGGING_OPEN: return L"Open Log";
+    case IDC_LOGGING_ROLLOVER: return L"Log rollover mode";
+    case IDC_AUTO_UPDATE: return L"Automatic update checks enabled";
+    case IDC_UPDATE_FREQUENCY: return L"Update frequency";
+    case IDC_UPDATE_PRERELEASES: return L"Include prerelease versions";
+    case IDC_UPDATE_CHECK_NOW: return L"Check for updates now";
+    case IDOK: return L"OK";
+    case IDCANCEL: return L"Cancel";
+    default: return nullptr;
+    }
+}
+
+bool isUserSettingsCommand(int id, int notification)
+{
+    if (id == IDOK || id == IDCANCEL)
+        return notification == BN_CLICKED;
+    if (notification == BN_CLICKED)
+        return settingsCommandName(id) != nullptr;
+    if (notification == CBN_SELCHANGE)
+        return id == IDC_LOGGING_LEVEL || id == IDC_LOGGING_ROLLOVER
+            || id == IDC_UPDATE_FREQUENCY;
+    return false;
 }
 
 INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lParam)
@@ -718,17 +772,20 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         updateSettingsTooltip(dialog);
         return TRUE;
     }
-    if (message == WM_COMMAND && HIWORD(wParam) != EN_CHANGE)
+    if (message == WM_COMMAND && isUserSettingsCommand(LOWORD(wParam), HIWORD(wParam)))
     {
-        wchar_t label[128]{};
-        GetDlgItemTextW(dialog, LOWORD(wParam), label, static_cast<int>(std::size(label)));
         pluginLogger().write(LogLevel::debug, L"Settings control",
-            label[0] ? std::wstring(label) : std::to_wstring(LOWORD(wParam)));
+            settingsCommandName(LOWORD(wParam)));
     }
     if (message == WM_NOTIFY && reinterpret_cast<NMHDR*>(lParam)->idFrom == IDC_SETTINGS_TABS
         && reinterpret_cast<NMHDR*>(lParam)->code == TCN_SELCHANGE)
     {
-        showSettingsPage(dialog, TabCtrl_GetCurSel(GetDlgItem(dialog, IDC_SETTINGS_TABS)));
+        const int page = TabCtrl_GetCurSel(GetDlgItem(dialog, IDC_SETTINGS_TABS));
+        showSettingsPage(dialog, page);
+        const wchar_t* pages[] = {L"Toolbar & Hotkeys", L"Auto Save", L"History",
+            L"Logging", L"Updates"};
+        if (page >= 0 && page < static_cast<int>(std::size(pages)))
+            pluginLogger().write(LogLevel::debug, L"Settings tab", pages[page]);
         return TRUE;
     }
     if (message == WM_CTLCOLORSTATIC || message == WM_CTLCOLORBTN)
@@ -922,7 +979,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         {
             TabCtrl_SetCurSel(GetDlgItem(dialog, IDC_SETTINGS_TABS), 2);
             showSettingsPage(dialog, 2);
-            MessageBoxW(dialog, L"Choose a folder for custom history storage.", L"NppHistory",
+            centeredMessageBox(GetWindow(dialog, GW_OWNER), L"Choose a folder for custom history storage.", L"NppHistory",
                 MB_OK | MB_ICONWARNING);
             return TRUE;
         }
@@ -932,7 +989,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         {
             TabCtrl_SetCurSel(GetDlgItem(dialog, IDC_SETTINGS_TABS), 3);
             showSettingsPage(dialog, 3);
-            MessageBoxW(dialog, L"Choose a custom log file, or use the Notepad++ plugin configuration folder.",
+            centeredMessageBox(GetWindow(dialog, GW_OWNER), L"Choose a custom log file, or use the Notepad++ plugin configuration folder.",
                 L"NppHistory", MB_OK | MB_ICONWARNING);
             return TRUE;
         }

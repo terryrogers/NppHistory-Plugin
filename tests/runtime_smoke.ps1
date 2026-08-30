@@ -163,6 +163,17 @@ public static class NppHistoryNative {
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr window, ref POINT point);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
+    public static bool CenteredOn(IntPtr window, IntPtr owner, int tolerance) {
+        RECT windowBounds, ownerBounds;
+        if (!GetWindowRect(window, out windowBounds) || !GetWindowRect(owner, out ownerBounds))
+            return false;
+        int windowCenterX = windowBounds.Left + (windowBounds.Right - windowBounds.Left) / 2;
+        int windowCenterY = windowBounds.Top + (windowBounds.Bottom - windowBounds.Top) / 2;
+        int ownerCenterX = ownerBounds.Left + (ownerBounds.Right - ownerBounds.Left) / 2;
+        int ownerCenterY = ownerBounds.Top + (ownerBounds.Bottom - ownerBounds.Top) / 2;
+        return Math.Abs(windowCenterX - ownerCenterX) <= tolerance
+            && Math.Abs(windowCenterY - ownerCenterY) <= tolerance;
+    }
     public static IntPtr FindDescendant(IntPtr parent, string className) {
         IntPtr result = IntPtr.Zero;
         EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
@@ -850,6 +861,9 @@ try {
     $restoreActionPassed = $false
     $restoreSafetyPassed = $false
     $restoreLogged = $false
+    $editDialogCentered = $false
+    $deleteDialogCentered = $false
+    $restoreDialogCentered = $false
     if ($captureButtonPassed) {
         [NppHistoryNative]::BeginLeftClick($historyList, 10, 35)
         Start-Sleep -Milliseconds 100
@@ -861,6 +875,8 @@ try {
             $editDialog = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'Edit Revision Comment')
         }
         if ($editDialog -ne [IntPtr]::Zero) {
+            $editDialogCentered = [NppHistoryNative]::CenteredOn(
+                $editDialog, $process.MainWindowHandle, 4)
             [NppHistoryNative]::SetText([NppHistoryNative]::FindControl($editDialog, 1100), 'Automated deletion audit')
             [void][NppHistoryNative]::SendMessage($editDialog, 0x0111, [IntPtr]1, [IntPtr]::Zero)
             Start-Sleep -Milliseconds 250
@@ -880,6 +896,8 @@ try {
             $deleteDialog = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'Delete Revision')
         }
         if ($deleteDialog -ne [IntPtr]::Zero) {
+            $deleteDialogCentered = [NppHistoryNative]::CenteredOn(
+                $deleteDialog, $process.MainWindowHandle, 16)
             [void][NppHistoryNative]::SendMessage($deleteDialog, 0x0111, [IntPtr]6, [IntPtr]::Zero) # IDYES
             Start-Sleep -Milliseconds 300
             $afterDeleteCount = [NppHistoryNative]::SendMessage($historyList, 0x1004,
@@ -912,6 +930,8 @@ try {
                 $restoreDialog = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'NppHistory')
             }
             if ($restoreDialog -ne [IntPtr]::Zero) {
+                $restoreDialogCentered = [NppHistoryNative]::CenteredOn(
+                    $restoreDialog, $process.MainWindowHandle, 16)
                 [void][NppHistoryNative]::SendMessage($restoreDialog, 0x0111, [IntPtr]6, [IntPtr]::Zero) # IDYES
                 Start-Sleep -Milliseconds 500
                 $restoredText = [IO.File]::ReadAllText($notePath)
@@ -1009,8 +1029,7 @@ try {
             $settingsIconPassed = [NppHistoryNative]::SendMessage($settingsWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero) -ne [IntPtr]::Zero
             $settingsTabs = [NppHistoryNative]::FindControl($settingsWindow, 1070)
             $settingsTabsPassed = $settingsTabs -ne [IntPtr]::Zero -and
-                [NppHistoryNative]::SendMessage($settingsTabs, 0x1304, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -eq 5 -and
-                [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1083))
+                [NppHistoryNative]::SendMessage($settingsTabs, 0x1304, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -eq 5
             $settingsGeneralPassed = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1071)) -eq 'Capture' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1072)) -eq 'Compare' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1073)) -eq 'History' -and
@@ -1453,11 +1472,18 @@ try {
         ($logText.Contains('Manual update check completed') -or
             $logText.Contains('[WARNING] Update check failure')) -and
         $logText.Contains('[DEBUG] Button click')
+    $settingsControlLoggingPassed = $logText.Contains('[DEBUG] Settings tab | Logging') -and
+        $logText.Contains('[DEBUG] Settings control | Plugin logging enabled') -and
+        $logText.Contains('[DEBUG] Settings control | OK') -and
+        -not ($logText -match '\[DEBUG\] Settings control \| \d+')
+    $popupCenteringPassed = $editDialogCentered -and $deleteDialogCentered -and
+        $restoreDialogCentered -and $comparisonCentered -and $settingsCentered -and
+        $aboutCentered
     $displayVersionLoggingPassed = -not $updateFeedAccessible -or
         $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $pluginMenuIconsPassed -and $hiddenCaptureStatePassed -and $hiddenCompareStatePassed -and $hiddenPaneComparePassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $visibleUnselectedCommandStatePassed -and $selectedPaneActionsPassed -and $visibleSelectedCommandStatePassed -and $unsavedPaneStatePassed -and $unsavedCommandStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $panelButtonTooltipsPassed -and $disabledRefreshTooltipPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsHotkeysPassed -and $settingsHotkeyConflictValidationPassed -and $toolbarHotkeySettingsPersisted -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsTooltipsPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $excludedCommandStatePassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $pluginMenuIconsPassed -and $hiddenCaptureStatePassed -and $hiddenCompareStatePassed -and $hiddenPaneComparePassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $visibleUnselectedCommandStatePassed -and $selectedPaneActionsPassed -and $visibleSelectedCommandStatePassed -and $unsavedPaneStatePassed -and $unsavedCommandStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $panelButtonTooltipsPassed -and $disabledRefreshTooltipPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsHotkeysPassed -and $settingsHotkeyConflictValidationPassed -and $toolbarHotkeySettingsPersisted -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsControlLoggingPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsTooltipsPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $excludedCommandStatePassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed -and $popupCenteringPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1507,6 +1533,10 @@ try {
         RestoreActionPassed = $restoreActionPassed
         RestoreSafetyPassed = $restoreSafetyPassed
         RestoreLogged = $restoreLogged
+        PopupCenteringPassed = $popupCenteringPassed
+        EditCommentCentered = $editDialogCentered
+        DeleteConfirmationCentered = $deleteDialogCentered
+        RestoreConfirmationCentered = $restoreDialogCentered
         MainToolbarButtonsRegistered = $mainToolbarButtonsRegistered
         DockIconPassed = $dockIconPassed
         ResponsiveButtonsPassed = $responsiveButtonsPassed
@@ -1551,6 +1581,7 @@ try {
         SettingsLoggingPassed = $settingsLoggingPassed
         SettingsLoggingEnablementPassed = $settingsLoggingEnablementPassed
         LoggingEventsPassed = $loggingEventsPassed
+        SettingsControlLoggingPassed = $settingsControlLoggingPassed
         DisplayVersionLoggingPassed = $displayVersionLoggingPassed
         LogPath = $logPath
         ManualUpdateCheckPassed = $manualUpdateCheckPassed

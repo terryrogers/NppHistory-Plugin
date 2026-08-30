@@ -25,6 +25,7 @@ bool wildcardMatchCaseInsensitive(std::wstring_view pattern, std::wstring_view v
 bool pathMatchesWildcardList(const std::filesystem::path& path, std::wstring_view patterns);
 std::filesystem::path findExternalAutoSavePlugin(const std::filesystem::path& pluginsRoot);
 void centerWindowOnOwner(HWND window, HWND owner);
+int centeredMessageBox(HWND owner, const wchar_t* text, const wchar_t* caption, UINT type);
 void fitWindowWithinOwner(HWND window, HWND owner, int horizontalMargin, int verticalMargin,
     int minimumWidth, int minimumHeight);
 }

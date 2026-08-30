@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Replaced opaque numeric Settings debug records with friendly tab/control names and suppressed non-user initialization and focus notifications.
+- Explicitly centred every NppHistory message box on the main Notepad++ window; update prompts, Settings, About, Compare and Edit Comment retain the same main-window centring rule.
 - Fixed restore safety for modified editors so the internal save does not create a misleading `Saved` revision; one forced `Before restore` revision now retains the exact pre-restore content.
 - Shortened emitted informational log severity labels from `[INFORMATIONAL]` to `[INFO]`.
 - Made Plugins-menu icons self-healing when Notepad++ rebuilds or refreshes the menu, and strengthened live verification to inspect all five menu bitmap handles.
