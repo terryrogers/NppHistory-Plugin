@@ -80,6 +80,18 @@ void runUpdateCheckerTests(TestContext& context)
         "no update is selected when the installed version is newest");
     context.expect(!selectNewestUpdate(releases, L"not-a-version", true),
         "an invalid installed version fails safely without selecting an update");
+    const auto newestPublished = selectNewestRelease(releases, true);
+    context.expect(newestPublished && newestPublished->tag == L"v1.0.0",
+        "newest-release selection reports the greatest published version independently of the installed version");
+    context.expect(selectNewestRelease(betaOnly, true)->tag == L"v0.2.0-beta.22"
+        && !selectNewestRelease(betaOnly, false),
+        "newest-release selection respects the prerelease channel");
+    const std::vector<ReleaseInfo> publishedBetas{
+        {L"v0.2.0-beta.20", L"https://github.com/terryrogers/NppHistory-Plugin/releases/tag/v0.2.0-beta.20", true},
+        {L"v0.2.0-beta.24", L"https://github.com/terryrogers/NppHistory-Plugin/releases/tag/v0.2.0-beta.24", true}};
+    context.expect(selectNewestUpdate(publishedBetas, L"0.2.0-beta.22", true)->tag
+        == L"v0.2.0-beta.24",
+        "beta 22 detects a published beta 24 when prereleases are included");
 
     context.expect(elapsedFrequencyDue(100, 0, 7), "an update check with no previous timestamp is due");
     context.expect(!elapsedFrequencyDue(604899, 100, 7), "weekly check is not due one second early");

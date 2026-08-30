@@ -63,7 +63,7 @@ Open **Plugins > NppHistory > Settings**. Settings are grouped into five tabs:
 - **Auto Save** independently enables automatic saving, with **After editing stops** selected by default at 30 seconds. Optional triggers cover Notepad++ losing focus, timed intervals in minutes, file-tab changes and Notepad++ exit. Autosave can apply to the current file only or all open files. After-edit values below 10 seconds are normalized to 10 seconds.
 - **History** independently enables revision history and selects whether revisions are created before saves, after saves and before restores. It also selects either the default hidden `.npphistory` folder beside each text file or a common custom history root.
 - **Logging** optionally records Error, Warning, Informational or Debug events. The log can use the standard Notepad++ plugin configuration folder or a custom file, can be opened directly in Notepad++, and supports a maximum size, overwrite or archive rollover, and configurable archive retention.
-- **Updates** checks the public NppHistory GitHub Releases feed daily, weekly or monthly, optionally includes prereleases, supports an immediate manual check and displays the latest check status. **Check now** stays on the Updates page, shows `Checking...`, and refreshes the status text without a result dialog. Checks run in the background; automatic update-available notifications can offer to open the official HTTPS release page. NppHistory does not download or replace its DLL.
+- **Updates** checks the public NppHistory GitHub Releases feed daily, weekly or monthly, optionally includes prereleases, supports an immediate manual check and displays the latest check status. **Check now** stays on the Updates page, shows `Checking...`, and refreshes the status text without a result dialog. An up-to-date result identifies the latest eligible published release, making it clear that commits and CI artifacts are not update releases. Checks run in the background; automatic update-available notifications can offer to open the official HTTPS release page. NppHistory does not download or replace its DLL.
 
 The settings and internal catalogue are stored through Notepad++'s plugin configuration API. A normal installed copy typically places them beneath:
 
@@ -105,7 +105,7 @@ This makes the pre-edit disk version available for rollback and establishes the 
 
 ## Verification
 
-The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The current development verification report is `TEST_REPORT-0.2.0-beta.23.md`.
+The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The current development verification report is `TEST_REPORT-0.2.0-beta.24.md`.
 
 ## Build and test
 

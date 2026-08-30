@@ -71,6 +71,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `parseSemanticVersion` | Direct valid, prerelease, metadata, overflow/format and leading-zero cases | PASS |
 | `compareSemanticVersions` | Direct major/minor/patch, stable/prerelease, numeric/string and sequence precedence | PASS |
 | `parseGitHubReleases` | Direct nested fields, draft, trusted origin, incomplete and malformed responses | PASS |
+| `selectNewestRelease` | Direct stable/prerelease reporting independent of the installed version | PASS |
 | `selectNewestUpdate` | Direct stable/prerelease channels, newest/current and invalid-installed-version cases | PASS |
 | `elapsedFrequencyDue` | Direct first run, pre/exact threshold and clock rollback | PASS |
 | `trustedReleaseUrl` | Direct HTTPS host/owner/repository allow-list cases | PASS |

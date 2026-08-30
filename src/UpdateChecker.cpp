@@ -394,12 +394,9 @@ std::vector<ReleaseInfo> parseGitHubReleases(std::string_view json)
     return releases;
 }
 
-std::optional<ReleaseInfo> selectNewestUpdate(const std::vector<ReleaseInfo>& releases,
-    std::wstring_view currentVersion, bool includePrereleases)
+std::optional<ReleaseInfo> selectNewestRelease(const std::vector<ReleaseInfo>& releases,
+    bool includePrereleases)
 {
-    SemanticVersion current;
-    if (!parseSemanticVersion(currentVersion, current))
-        return std::nullopt;
     std::optional<ReleaseInfo> selected;
     SemanticVersion selectedVersion;
     for (const auto& release : releases)
@@ -407,8 +404,7 @@ std::optional<ReleaseInfo> selectNewestUpdate(const std::vector<ReleaseInfo>& re
         if (release.prerelease && !includePrereleases)
             continue;
         SemanticVersion candidate;
-        if (!parseSemanticVersion(release.tag, candidate)
-            || compareSemanticVersions(candidate, current) <= 0)
+        if (!parseSemanticVersion(release.tag, candidate))
             continue;
         if (!selected || compareSemanticVersions(candidate, selectedVersion) > 0)
         {
@@ -417,6 +413,20 @@ std::optional<ReleaseInfo> selectNewestUpdate(const std::vector<ReleaseInfo>& re
         }
     }
     return selected;
+}
+
+std::optional<ReleaseInfo> selectNewestUpdate(const std::vector<ReleaseInfo>& releases,
+    std::wstring_view currentVersion, bool includePrereleases)
+{
+    SemanticVersion current;
+    if (!parseSemanticVersion(currentVersion, current))
+        return std::nullopt;
+    const auto selected = selectNewestRelease(releases, includePrereleases);
+    if (!selected)
+        return std::nullopt;
+    SemanticVersion selectedVersion;
+    return parseSemanticVersion(selected->tag, selectedVersion)
+        && compareSemanticVersions(selectedVersion, current) > 0 ? selected : std::nullopt;
 }
 
 bool elapsedFrequencyDue(std::uint64_t nowSeconds, std::uint64_t lastSeconds,
@@ -490,6 +500,7 @@ UpdateCheckResult checkGitHubForUpdates(std::wstring_view currentVersion,
             L"GitHub returned no usable NppHistory releases."};
     const auto update = selectNewestUpdate(releases, currentVersion, includePrereleases);
     return update ? UpdateCheckResult{UpdateCheckStatus::updateAvailable, *update, {}}
-        : UpdateCheckResult{UpdateCheckStatus::upToDate, {}, {}};
+        : UpdateCheckResult{UpdateCheckStatus::upToDate,
+            selectNewestRelease(releases, includePrereleases).value_or(ReleaseInfo{}), {}};
 }
 }

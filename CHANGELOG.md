@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.0-beta.24
+
+- Clarified successful update checks by displaying the latest eligible published GitHub release, for example `Up to date — latest published version: 0.2.0-beta.20`.
+- Kept the update-available wording concise while removing the leading `v` from displayed GitHub tags.
+- Added direct coverage proving beta 22 selects a published beta 24 when prerelease versions are enabled.
+
 ## 0.2.0-beta.23
 
 - Changed **Check now** to remain inside Settings, show `Checking...`, and refresh the Updates status text without displaying a result dialog.

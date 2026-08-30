@@ -41,6 +41,8 @@ struct UpdateCheckResult
 bool parseSemanticVersion(std::wstring_view text, SemanticVersion& version);
 int compareSemanticVersions(const SemanticVersion& left, const SemanticVersion& right) noexcept;
 std::vector<ReleaseInfo> parseGitHubReleases(std::string_view json);
+std::optional<ReleaseInfo> selectNewestRelease(const std::vector<ReleaseInfo>& releases,
+    bool includePrereleases);
 std::optional<ReleaseInfo> selectNewestUpdate(const std::vector<ReleaseInfo>& releases,
     std::wstring_view currentVersion, bool includePrereleases);
 bool elapsedFrequencyDue(std::uint64_t nowSeconds, std::uint64_t lastSeconds,

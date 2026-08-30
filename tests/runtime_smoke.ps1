@@ -753,8 +753,9 @@ try {
                 Start-Sleep -Milliseconds 100
             }
             $updateDialogText = [NppHistoryNative]::Text($updateStatus)
+            $expectedUpdateStatus = 'Up to date ' + [char]0x2014 + ' latest published version: 0.2.0-beta.20'
             $manualUpdateCheckPassed = $checkingTextShown -and
-                $updateDialogText.Contains('Up to date') -and
+                $updateDialogText.Contains($expectedUpdateStatus) -and
                 [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
             $manualUpdateAccessError = $updateDialogText.Contains('Last check failed:')
             $updatePopupSuppressed = [NppHistoryNative]::FindTopWindowContaining(
@@ -766,7 +767,7 @@ try {
     $savedSettingsText = [IO.File]::ReadAllText((Join-Path $configFolder 'NppHistory.ini'))
     $timestampMatch = [regex]::Match($savedSettingsText, '(?m)^LastUpdateCheck=(\d+)\s*$')
     $updateTimestampPersisted = $timestampMatch.Success -and [uint64]$timestampMatch.Groups[1].Value -gt 0 -and
-        $savedSettingsText.Contains('LastUpdateStatus=Up to date')
+        $savedSettingsText.Contains('LastUpdateStatus=' + $expectedUpdateStatus)
 
     $aboutWindow = [IntPtr]::Zero
     $aboutCentered = $false
@@ -791,7 +792,7 @@ try {
             $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
             $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
             $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
-            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 23') -and
+            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 24') -and
                 $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
                 $aboutReleaseDate.Trim() -eq 'Release Date:' -and
                 $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero

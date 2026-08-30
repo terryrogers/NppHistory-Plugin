@@ -12,6 +12,7 @@
 #include <array>
 #include <atomic>
 #include <commctrl.h>
+#include <cwctype>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -281,8 +282,14 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
     if (successful)
     {
         settings.lastUpdateCheck = currentUnixSeconds();
+        std::wstring publishedVersion = completion->result.release.tag;
+        if (publishedVersion.size() > 1 && (publishedVersion[0] == L'v'
+            || publishedVersion[0] == L'V') && iswdigit(publishedVersion[1]))
+            publishedVersion.erase(0, 1);
         settings.lastUpdateStatus = completion->result.status == UpdateCheckStatus::updateAvailable
-            ? L"Update available: " + completion->result.release.tag : L"Up to date";
+            ? L"Update available: " + publishedVersion
+            : (publishedVersion.empty() ? L"Up to date"
+                : L"Up to date \u2014 latest published version: " + publishedVersion);
         if (!settings.save(settingsFile))
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         pluginLogger().write(LogLevel::informational,
