@@ -745,6 +745,9 @@ try {
     $settingsTabsPassed = $false
     $settingsGeneralPassed = $false
     $settingsAutoSavePassed = $false
+    $autoSaveConflictNoticeHidden = $false
+    $autoSaveConflictNoticeText = ''
+    $autoSaveConflictNoticeVisible = $false
     $settingsAutoSaveEnablementPassed = $false
     $settingsHistoryPassed = $false
     $settingsHistoryEnablementPassed = $false
@@ -800,6 +803,12 @@ try {
             [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $autoTabPoint)
             [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $autoTabPoint)
             Start-Sleep -Milliseconds 150
+            $autoSaveConflictNotice = [NppHistoryNative]::FindControl($settingsWindow, 1133)
+            $autoSaveConflictNoticeText = [NppHistoryNative]::Text($autoSaveConflictNotice)
+            $autoSaveConflictNoticeVisible = [NppHistoryNative]::IsWindowVisible($autoSaveConflictNotice)
+            $autoSaveConflictNoticeHidden = $autoSaveConflictNotice -ne [IntPtr]::Zero -and
+                $autoSaveConflictNoticeText -eq 'Disabled because AutoSave.dll is installed.' -and
+                -not $autoSaveConflictNoticeVisible
             $settingsAutoSavePassed = [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1085)) -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1010)) -eq 'Enable automatic saving' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1076)) -eq 'Notepad++ loses focus' -and
@@ -1123,7 +1132,7 @@ try {
         $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1211,6 +1220,9 @@ try {
         UpdateDialogText = $updateDialogText
         UpdateTimestampPersisted = $updateTimestampPersisted
         SettingsAutoSavePassed = $settingsAutoSavePassed
+        AutoSaveConflictNoticeHidden = $autoSaveConflictNoticeHidden
+        AutoSaveConflictNoticeText = $autoSaveConflictNoticeText
+        AutoSaveConflictNoticeVisible = $autoSaveConflictNoticeVisible
         SettingsAutoSaveEnablementPassed = $settingsAutoSaveEnablementPassed
         SettingsHistoryPassed = $settingsHistoryPassed
         SettingsHistoryEnablementPassed = $settingsHistoryEnablementPassed

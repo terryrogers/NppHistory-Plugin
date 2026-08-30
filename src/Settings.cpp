@@ -115,7 +115,10 @@ void updateHistoryControls(HWND dialog)
 
 void updateAutoSaveControls(HWND dialog)
 {
-    const BOOL enabled = IsDlgButtonChecked(dialog, IDC_ENABLED) == BST_CHECKED;
+    const BOOL available = !activeSettings || !activeSettings->externalAutoSavePluginDetected;
+    const BOOL enabled = available
+        && IsDlgButtonChecked(dialog, IDC_ENABLED) == BST_CHECKED;
+    EnableWindow(GetDlgItem(dialog, IDC_ENABLED), available);
     EnableWindow(GetDlgItem(dialog, IDC_AFTER_EDIT), enabled);
     const BOOL afterEdit = enabled && IsDlgButtonChecked(dialog, IDC_AFTER_EDIT) == BST_CHECKED;
     EnableWindow(GetDlgItem(dialog, IDC_AFTER_EDIT_SECONDS), afterEdit);
@@ -254,7 +257,7 @@ void showSettingsPage(HWND dialog, int page)
         IDC_AUTOSAVE_TAB_CHANGE, IDC_AUTOSAVE_EXIT, IDC_AUTOSAVE_WHAT_GROUP,
         IDC_AUTOSAVE_CURRENT_FILE, IDC_AUTOSAVE_ALL_FILES,
         IDC_AUTOSAVE_EXCLUSIONS_GROUP, IDC_AUTOSAVE_EXCLUSIONS,
-        IDC_AUTOSAVE_EXCLUSIONS_NOTE};
+        IDC_AUTOSAVE_EXCLUSIONS_NOTE, IDC_AUTOSAVE_CONFLICT_NOTICE};
     const int history[] = {IDC_HISTORY_ENABLED, IDC_HISTORY_CREATE_GROUP,
         IDC_HISTORY_BEFORE_SAVE, IDC_HISTORY_AFTER_SAVE, IDC_HISTORY_BEFORE_RESTORE,
         IDC_HISTORY_GROUP, IDC_HISTORY_ADJACENT, IDC_HISTORY_CUSTOM,
@@ -277,6 +280,9 @@ void showSettingsPage(HWND dialog, int page)
     };
     setVisibility(general, std::size(general), page == 0);
     setVisibility(autoSave, std::size(autoSave), page == 1);
+    ShowWindow(GetDlgItem(dialog, IDC_AUTOSAVE_CONFLICT_NOTICE),
+        page == 1 && activeSettings && activeSettings->externalAutoSavePluginDetected
+            ? SW_SHOW : SW_HIDE);
     setVisibility(history, std::size(history), page == 2);
     setVisibility(logging, std::size(logging), page == 3);
     setVisibility(updates, std::size(updates), page == 4);
@@ -436,6 +442,13 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         const HDC dc = reinterpret_cast<HDC>(wParam);
         const HWND control = reinterpret_cast<HWND>(lParam);
         const int id = GetDlgCtrlID(control);
+        if (id == IDC_AUTOSAVE_CONFLICT_NOTICE)
+        {
+            SetTextColor(dc, RGB(200, 0, 0));
+            SetBkMode(dc, TRANSPARENT);
+            return reinterpret_cast<INT_PTR>(GetPropW(dialog,
+                L"NppHistorySettingsPageBrush"));
+        }
         if (id != IDOK && id != IDCANCEL)
         {
             const COLORREF pageColour = static_cast<COLORREF>(
@@ -610,7 +623,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
 
 bool Settings::shouldAutoSave(AutoSaveTrigger trigger) const noexcept
 {
-    if (!autoSaveEnabled)
+    if (!autoSaveEnabled || externalAutoSavePluginDetected)
         return false;
     switch (trigger)
     {

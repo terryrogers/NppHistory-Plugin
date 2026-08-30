@@ -74,6 +74,7 @@ BEGIN
     LTEXT "Toolbar changes apply after restarting Notepad++.", IDC_TOOLBAR_RESTART_NOTE, 28, 91, 310, 12
 
     CONTROL "Enable automatic saving", IDC_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 37, 235, 13
+    LTEXT "Disabled because AutoSave.dll is installed.", IDC_AUTOSAVE_CONFLICT_NOTICE, 178, 37, 172, 13, SS_RIGHT
     GROUPBOX "Auto Save when:", IDC_AUTOSAVE_WHEN_GROUP, 18, 55, 334, 115
     CONTROL "After editing stops", IDC_AFTER_EDIT, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 74, 118, 13
     EDITTEXT IDC_AFTER_EDIT_SECONDS, 150, 71, 38, 15, ES_NUMBER | WS_TABSTOP | WS_BORDER

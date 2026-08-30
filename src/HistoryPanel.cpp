@@ -220,8 +220,9 @@ void HistoryPanel::refresh(const std::filesystem::path& file)
         return;
     SetDlgItemTextW(_dialog, IDC_CURRENT_FILE, file.empty() ? L"No file selected" : file.c_str());
     const bool autoSaveExcluded = _fileSaved && _settings
+        && _settings->autoSaveEnabled && !_settings->externalAutoSavePluginDetected
         && _settings->isAutoSaveExcluded(file);
-    const bool historyExcluded = _fileSaved && _settings
+    const bool historyExcluded = _fileSaved && _settings && _settings->historyEnabled
         && _settings->isHistoryExcluded(file);
     std::wstring status;
     if (!_fileSaved)

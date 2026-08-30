@@ -20,6 +20,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `formatFileSize` | Direct byte boundary and dynamic KB, MB and GB unit checks | PASS |
 | `wildcardMatchCaseInsensitive` | Direct anchored, case-insensitive star and question-mark cases | PASS |
 | `pathMatchesWildcardList` | Direct filename/full-path, multiline, blank-row and whitespace cases | PASS |
+| `findExternalAutoSavePlugin` | Direct absent, conventional-folder and recursive case-insensitive `AutoSave.dll` discovery | PASS |
 | `centerWindowOnOwner` | Isolated Win32 positioning | PASS |
 | `fitWindowWithinOwner` | Isolated Win32 sizing/positioning | PASS |
 
@@ -42,7 +43,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `browseForHistoryRoot` | Control presence/enablement live; native picker selection not automated | PARTIAL |
 | `browseForLogFile` | Control presence/enablement live; native picker selection not automated | PARTIAL |
 | `settingsProc` | Live initialization, commands, page changes and dependent states | PASS |
-| `Settings::shouldAutoSave` | Direct all five triggers, selected/cleared/master-off | PASS |
+| `Settings::shouldAutoSave` | Direct all five triggers, selected/cleared/master-off and external AutoSave-plugin conflict | PASS |
 | `Settings::shouldCreateRevision` | Direct all revision paths, selected/cleared/master-off | PASS |
 | `Settings::isAutoSaveExcluded` | Direct filename wildcard and independent-list cases; live settings/pane/tab state | PASS |
 | `Settings::isHistoryExcluded` | Direct filename wildcard and independent-list cases; live settings/pane/tab state | PASS |
@@ -215,7 +216,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `reconcileFile` | Live active file plus direct catalogue outcomes | PASS |
 | `detectMissingBuffers` | Notification/timer wiring built; disappearing-open-file alert remains manual UAT | PARTIAL |
 | `refreshPanel` | Live list refresh | PASS |
-| `documentTabControls` / `refreshDocumentTabIndicators` | Live orange/blue indicators for independently excluded files | PASS |
+| `documentTabControls` / `refreshDocumentTabIndicators` | Live crossed-out Auto Save/History badges for independently excluded files, gated by feature enablement and external AutoSave conflict | PASS |
 | `saveBuffer` | Live actual after-edit save | PASS |
 | `saveConfiguredScope` | Live current test file and direct scope persistence; multi-file live path not automated | PARTIAL |
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |

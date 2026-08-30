@@ -6,7 +6,8 @@
 - Renamed the revision-list Bytes column to Size and added human-readable dynamic B, KB, MB, GB, TB, PB and EB units.
 - Added a pale-blue hover background and blue outline to enabled History pane buttons.
 - Added separate multiline wildcard exclusion lists for automatic saving and revision history, with filename and full-path matching.
-- Added compact orange/blue document-tab indicators and a red History pane status message for excluded files.
+- Added distinct crossed-out Auto Save (floppy disk) and History (clock) document-tab badges plus a red History pane status message for excluded files; each badge is shown only while its feature is enabled.
+- Detects an installed `AutoSave.dll`, disables NppHistory's overlapping Auto Save engine, displays a red explanation on the Auto Save settings page and records a warning in the plugin log.
 
 ## 0.2.0-beta.25 (release candidate)
 

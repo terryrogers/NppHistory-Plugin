@@ -158,8 +158,6 @@ void drawDocumentTabIndicators(HWND tabs, int view)
     const HDC dc = GetDC(tabs);
     if (!dc)
         return;
-    const HPEN pen = CreatePen(PS_SOLID, 1, RGB(80, 80, 80));
-    const HGDIOBJ previousPen = SelectObject(dc, pen);
     const int count = TabCtrl_GetItemCount(tabs);
     for (int index = 0; index < count; ++index)
     {
@@ -171,21 +169,58 @@ void drawDocumentTabIndicators(HWND tabs, int view)
         RECT item{};
         if (!TabCtrl_GetItemRect(tabs, index, &item))
             continue;
-        const auto dot = [&](int offset, COLORREF color) {
-            const HBRUSH brush = CreateSolidBrush(color);
-            const HGDIOBJ previousBrush = SelectObject(dc, brush);
-            Ellipse(dc, item.left + offset, item.top + 2,
-                item.left + offset + 7, item.top + 9);
-            SelectObject(dc, previousBrush);
-            DeleteObject(brush);
+        const auto redSlash = [&](int x, int y) {
+            const HPEN slash = CreatePen(PS_SOLID, 2, RGB(210, 35, 35));
+            const HGDIOBJ previous = SelectObject(dc, slash);
+            MoveToEx(dc, x + 1, y + 13, nullptr);
+            LineTo(dc, x + 13, y + 1);
+            SelectObject(dc, previous);
+            DeleteObject(slash);
         };
-        if (settings.isAutoSaveExcluded(path))
-            dot(2, RGB(230, 135, 20));
-        if (settings.isHistoryExcluded(path))
-            dot(11, RGB(45, 120, 210));
+        const auto autoSaveIcon = [&](int x) {
+            const int y = item.top + 2;
+            const HPEN outline = CreatePen(PS_SOLID, 1, RGB(125, 75, 10));
+            const HBRUSH body = CreateSolidBrush(RGB(245, 165, 45));
+            const HGDIOBJ previousPen = SelectObject(dc, outline);
+            const HGDIOBJ previousBrush = SelectObject(dc, body);
+            Rectangle(dc, x, y, x + 14, y + 14);
+            const HBRUSH detail = CreateSolidBrush(RGB(255, 248, 225));
+            SelectObject(dc, detail);
+            Rectangle(dc, x + 3, y + 1, x + 11, y + 5);
+            Rectangle(dc, x + 3, y + 8, x + 11, y + 13);
+            SelectObject(dc, previousBrush);
+            SelectObject(dc, previousPen);
+            DeleteObject(detail);
+            DeleteObject(body);
+            DeleteObject(outline);
+            redSlash(x, y);
+        };
+        const auto historyIcon = [&](int x) {
+            const int y = item.top + 2;
+            const HPEN outline = CreatePen(PS_SOLID, 1, RGB(25, 85, 155));
+            const HBRUSH face = CreateSolidBrush(RGB(205, 230, 255));
+            const HGDIOBJ previousPen = SelectObject(dc, outline);
+            const HGDIOBJ previousBrush = SelectObject(dc, face);
+            Ellipse(dc, x, y, x + 14, y + 14);
+            MoveToEx(dc, x + 7, y + 3, nullptr);
+            LineTo(dc, x + 7, y + 7);
+            LineTo(dc, x + 11, y + 8);
+            SelectObject(dc, previousBrush);
+            SelectObject(dc, previousPen);
+            DeleteObject(face);
+            DeleteObject(outline);
+            redSlash(x, y);
+        };
+        const bool autoSaveExcluded = settings.autoSaveEnabled
+            && !settings.externalAutoSavePluginDetected && settings.isAutoSaveExcluded(path);
+        const bool historyExcluded = settings.historyEnabled && settings.isHistoryExcluded(path);
+        // Keep the badges clear of Notepad++'s document icon, filename, pin and close glyphs.
+        // When both are visible they read left-to-right as Auto Save, then History.
+        if (autoSaveExcluded)
+            autoSaveIcon(item.right - (historyExcluded ? 66 : 50));
+        if (historyExcluded)
+            historyIcon(item.right - 50);
     }
-    SelectObject(dc, previousPen);
-    DeleteObject(pen);
     ReleaseDC(tabs, dc);
 }
 
@@ -239,9 +274,10 @@ void refreshDocumentTabIndicators()
             const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
                 NPPM_GETBUFFERIDFROMPOS, index, view));
             const fs::path path = pathForBuffer(bufferId);
-            if (settings.isAutoSaveExcluded(path))
+            if (settings.autoSaveEnabled && !settings.externalAutoSavePluginDetected
+                && settings.isAutoSaveExcluded(path))
                 ++autoSaveIndicatorCount;
-            if (settings.isHistoryExcluded(path))
+            if (settings.historyEnabled && settings.isHistoryExcluded(path))
                 ++historyIndicatorCount;
         }
         InvalidateRect(tabs, nullptr, FALSE);
@@ -356,7 +392,8 @@ void saveBuffer(UINT_PTR bufferId)
 
 void saveConfiguredScope(UINT_PTR preferredBuffer = 0)
 {
-    if (!settings.autoSaveEnabled || dirtyBuffers.empty())
+    if (!settings.autoSaveEnabled || settings.externalAutoSavePluginDetected
+        || dirtyBuffers.empty())
         return;
     if (settings.autoSaveScope == AutoSaveScope::allOpenFiles)
     {
@@ -989,8 +1026,23 @@ void ensureConfigurationLoaded()
     pluginConfigPath = fs::path(config) / pluginName;
     settingsFile = pluginConfigPath / L"NppHistory.ini";
     settings.load(settingsFile);
+    std::array<wchar_t, 32768> modulePath{};
+    const DWORD modulePathLength = GetModuleFileNameW(moduleInstance, modulePath.data(),
+        static_cast<DWORD>(modulePath.size()));
+    if (modulePathLength > 0 && modulePathLength < modulePath.size())
+    {
+        const fs::path pluginsRoot = fs::path(modulePath.data()).parent_path().parent_path();
+        settings.externalAutoSavePluginPath = findExternalAutoSavePlugin(pluginsRoot);
+    }
+    settings.externalAutoSavePluginDetected = !settings.externalAutoSavePluginPath.empty()
+        || GetModuleHandleW(L"AutoSave.dll") != nullptr;
     settings.defaultLogFile = pluginConfigPath / L"NppHistory.log";
     pluginLogger().configure(settings, pluginConfigPath);
+    if (settings.externalAutoSavePluginDetected)
+        pluginLogger().write(LogLevel::warning, L"NppHistory Auto Save disabled",
+            settings.externalAutoSavePluginPath.empty() ? L"AutoSave.dll is loaded."
+                : L"AutoSave.dll is installed at "
+                    + settings.externalAutoSavePluginPath.wstring());
     configurationLoaded = true;
 }
 

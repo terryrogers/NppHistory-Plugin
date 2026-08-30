@@ -71,6 +71,8 @@ struct Settings
     bool autoSaveOnExit = false;
     AutoSaveScope autoSaveScope = AutoSaveScope::allOpenFiles;
     std::wstring autoSaveExclusions;
+    bool externalAutoSavePluginDetected = false;
+    std::filesystem::path externalAutoSavePluginPath;
     bool toolbarCapture = false;
     bool toolbarCompare = false;
     bool toolbarRestore = false;

@@ -124,6 +124,20 @@ void runUtilityTests(TestContext& context)
     context.expect(!pathMatchesWildcardList(L"C:\\Notes\\NppHistory.log", L""),
         "an empty wildcard list excludes no files");
 
+    const fs::path pluginRoot = directory.path() / L"plugins";
+    context.expect(findExternalAutoSavePlugin(pluginRoot).empty(),
+        "AutoSave conflict detection reports no plugin in an empty plugin root");
+    const fs::path autoSaveDll = pluginRoot / L"AutoSave" / L"AutoSave.dll";
+    context.expect(writeAllBytesAtomic(autoSaveDll, {'M', 'Z'}),
+        "AutoSave conflict test creates a conventional plugin entry");
+    context.expect(findExternalAutoSavePlugin(pluginRoot) == autoSaveDll,
+        "AutoSave conflict detection finds the conventional AutoSave.dll layout");
+    fs::remove(autoSaveDll);
+    const fs::path renamedFolderDll = pluginRoot / L"Legacy Auto Save" / L"AUTOSAVE.DLL";
+    context.expect(writeAllBytesAtomic(renamedFolderDll, {'M', 'Z'})
+        && findExternalAutoSavePlugin(pluginRoot) == renamedFolderDll,
+        "AutoSave conflict detection is recursive and case-insensitive");
+
     centerWindowOnOwner(nullptr, nullptr);
     fitWindowWithinOwner(nullptr, nullptr, 0, 0, 0, 0);
     context.expect(true, "window helpers safely ignore null handles");

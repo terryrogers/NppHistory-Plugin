@@ -130,6 +130,35 @@ bool pathMatchesWildcardList(const fs::path& path, std::wstring_view patterns)
     return false;
 }
 
+fs::path findExternalAutoSavePlugin(const fs::path& pluginsRoot)
+{
+    if (pluginsRoot.empty())
+        return {};
+    std::error_code error;
+    for (const fs::path& candidate : {pluginsRoot / L"AutoSave" / L"AutoSave.dll",
+        pluginsRoot / L"AutoSave.dll"})
+    {
+        if (fs::is_regular_file(candidate, error))
+            return candidate;
+        error.clear();
+    }
+    fs::recursive_directory_iterator iterator(pluginsRoot,
+        fs::directory_options::skip_permission_denied, error), end;
+    while (!error && iterator != end)
+    {
+        if (iterator->is_regular_file(error))
+        {
+            std::wstring name = iterator->path().filename().wstring();
+            CharLowerBuffW(name.data(), static_cast<DWORD>(name.size()));
+            if (name == L"autosave.dll")
+                return iterator->path();
+        }
+        error.clear();
+        iterator.increment(error);
+    }
+    return {};
+}
+
 bool writeAllBytesAtomic(const fs::path& path, const std::vector<std::uint8_t>& bytes)
 {
     std::error_code error;

@@ -252,6 +252,13 @@ void runSettingsTests(TestContext& context)
         AutoSaveTrigger::timedInterval, AutoSaveTrigger::tabChange, AutoSaveTrigger::exit})
         context.expect(!policy.shouldAutoSave(trigger),
             "the Auto Save master switch overrides every trigger");
+    policy.autoSaveEnabled = true;
+    policy.externalAutoSavePluginDetected = true;
+    for (const auto trigger : {AutoSaveTrigger::afterEdit, AutoSaveTrigger::focusLoss,
+        AutoSaveTrigger::timedInterval, AutoSaveTrigger::tabChange, AutoSaveTrigger::exit})
+        context.expect(!policy.shouldAutoSave(trigger),
+            "an installed AutoSave plugin disables every NppHistory Auto Save trigger");
+    policy.externalAutoSavePluginDetected = false;
 
     policy.historyEnabled = true;
     policy.historyBeforeSave = true;
