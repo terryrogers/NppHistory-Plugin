@@ -19,7 +19,9 @@ public:
     bool create(HINSTANCE instance, const NppData& nppData, HistoryStore& store,
         const Settings& settings,
         int commandId, PFUNCPLUGINCMD captureCallback, PFUNCPLUGINCMD settingsCallback,
-        PFUNCPLUGINCMD aboutCallback, PFUNCPLUGINCMD stateChangedCallback);
+        PFUNCPLUGINCMD aboutCallback, PFUNCPLUGINCMD stateChangedCallback,
+        PFUNCPLUGINCMD prepareRestoreSaveCallback,
+        PFUNCPLUGINCMD cancelRestoreSaveCallback);
     void show();
     void refresh(const std::filesystem::path& file);
     void compare() { compareSelected(); }
@@ -101,6 +103,8 @@ private:
     PFUNCPLUGINCMD _settingsCallback = nullptr;
     PFUNCPLUGINCMD _aboutCallback = nullptr;
     PFUNCPLUGINCMD _stateChangedCallback = nullptr;
+    PFUNCPLUGINCMD _prepareRestoreSaveCallback = nullptr;
+    PFUNCPLUGINCMD _cancelRestoreSaveCallback = nullptr;
     std::array<HIMAGELIST, 6> _buttonImages{};
 };
 }

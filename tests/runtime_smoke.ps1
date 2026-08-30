@@ -121,6 +121,12 @@ using System.Threading;
 public static class NppHistoryNative {
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] public struct MENUITEMINFO {
+        public uint cbSize, fMask, fType, fState, wID;
+        public IntPtr hSubMenu, hbmpChecked, hbmpUnchecked, dwItemData, dwTypeData;
+        public uint cch;
+        public IntPtr hbmpItem;
+    }
     private delegate bool EnumProc(IntPtr window, IntPtr state);
     [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr state);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr state);
@@ -147,6 +153,8 @@ public static class NppHistoryNative {
     [DllImport("user32.dll")] private static extern int GetMenuItemCount(IntPtr menu);
     [DllImport("user32.dll")] private static extern uint GetMenuItemID(IntPtr menu, int position);
     [DllImport("user32.dll")] private static extern uint GetMenuState(IntPtr menu, uint item, uint flags);
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern bool GetMenuItemInfo(
+        IntPtr menu, uint item, bool byPosition, ref MENUITEMINFO information);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] private static extern int GetMenuString(IntPtr menu, uint item, StringBuilder text, int length, uint flags);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string title);
     [DllImport("user32.dll")] private static extern int GetDlgCtrlID(IntPtr window);
@@ -351,6 +359,20 @@ public static class NppHistoryNative {
         }
         return result.ToString();
     }
+    public static int PluginMenuBitmapCount(IntPtr window, string plugin) {
+        IntPtr menu = FindNamedSubMenu(GetMenu(window), plugin);
+        if (menu == IntPtr.Zero) return 0;
+        int result = 0;
+        int count = GetMenuItemCount(menu);
+        for (int index = 0; index < count; ++index) {
+            MENUITEMINFO information = new MENUITEMINFO();
+            information.cbSize = (uint)Marshal.SizeOf(typeof(MENUITEMINFO));
+            information.fMask = 0x00000080; // MIIM_BITMAP
+            if (GetMenuItemInfo(menu, (uint)index, true, ref information)
+                && information.hbmpItem != IntPtr.Zero) ++result;
+        }
+        return result;
+    }
     private static IntPtr FindMenuContainingCommand(IntPtr menu, int command) {
         int count = GetMenuItemCount(menu);
         for (int index = 0; index < count; ++index) {
@@ -521,8 +543,11 @@ try {
         $captureMenuCommand -ne 0 -and $compareMenuCommand -ne 0 -and
         $historyMenuCommand -ne 0 -and $settingsMenuCommand -ne 0 -and
         $aboutMenuCommand -ne 0
-    $pluginMenuIconsPassed = [NppHistoryNative]::GetProp(
-        $process.MainWindowHandle, 'NppHistoryPluginMenuIconsReady').ToInt64() -eq 6
+    $pluginMenuBitmapCount = [NppHistoryNative]::PluginMenuBitmapCount(
+        $process.MainWindowHandle, 'NppHistory')
+    $pluginMenuIconsPassed = $pluginMenuBitmapCount -eq 5 -and
+        [NppHistoryNative]::GetProp(
+            $process.MainWindowHandle, 'NppHistoryPluginMenuIconsReady').ToInt64() -eq 6
     $hiddenCaptureStatePassed = [NppHistoryNative]::MenuCommandEnabled(
         $process.MainWindowHandle, $captureMenuCommand) -and
         [NppHistoryNative]::ToolbarCommandEnabled($process.MainWindowHandle, $captureMenuCommand)
@@ -866,6 +891,17 @@ try {
         }
 
         if ($revisionDeletionPassed) {
+            $restoreSafetyMarker = 'unsaved restore safety marker'
+            [void][NppHistoryNative]::SendMessage($editor, 2318,
+                [IntPtr]::Zero, [IntPtr]::Zero) # SCI_DOCUMENTEND
+            [void][NppHistoryNative]::SendMessage($editor, 2329,
+                [IntPtr]::Zero, [IntPtr]::Zero) # SCI_NEWLINE
+            foreach ($character in $restoreSafetyMarker.ToCharArray()) {
+                [void][NppHistoryNative]::SendMessage($editor, 0x0102,
+                    [IntPtr][int]$character, [IntPtr]::Zero)
+            }
+            $restoreEditorWasModified = [NppHistoryNative]::SendMessage(
+                $editor, 2159, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -ne 0
             [NppHistoryNative]::BeginLeftClick($historyList, 10, 55)
             Start-Sleep -Milliseconds 100
             [NppHistoryNative]::BeginCommand($historyPanel, 4104, [IntPtr]::Zero)
@@ -886,7 +922,16 @@ try {
                 $remainingMetadata = (Get-ChildItem $pathMarker.DirectoryName -Filter *.meta | ForEach-Object {
                     [IO.File]::ReadAllText($_.FullName)
                 }) -join "`n"
-                $restoreSafetyPassed = $remainingMetadata.Contains('reason=Saved')
+                $beforeRestoreMetadata = Get-ChildItem $pathMarker.DirectoryName -Filter *.meta |
+                    Where-Object { [IO.File]::ReadAllText($_.FullName).Contains('reason=Before restore') } |
+                    Select-Object -First 1
+                $beforeRestoreRevision = if ($beforeRestoreMetadata) {
+                    [IO.Path]::ChangeExtension($beforeRestoreMetadata.FullName, '.rev')
+                } else { '' }
+                $restoreSafetyPassed = $restoreEditorWasModified -and
+                    $remainingMetadata.Contains('reason=Before restore') -and
+                    (Test-Path -LiteralPath $beforeRestoreRevision) -and
+                    [IO.File]::ReadAllText($beforeRestoreRevision).Contains($restoreSafetyMarker)
 
                 # Notepad++ notices the intentionally external restore write and can
                 # show its own reload prompt. Resolve it before opening another modal
@@ -908,10 +953,10 @@ try {
 
         $actionLogPath = Join-Path $configFolder 'NppHistory.log'
         $actionLogText = if (Test-Path $actionLogPath) { [IO.File]::ReadAllText($actionLogPath) } else { '' }
-        $commentUpdateLogged = $actionLogText.Contains('[INFORMATIONAL] Revision comment updated')
-        $revisionDeletionLogged = $actionLogText.Contains('[INFORMATIONAL] Revision deleted') -and
+        $commentUpdateLogged = $actionLogText.Contains('[INFO] Revision comment updated')
+        $revisionDeletionLogged = $actionLogText.Contains('[INFO] Revision deleted') -and
             $actionLogText.Contains('Automated deletion audit')
-        $restoreLogged = $actionLogText.Contains('[INFORMATIONAL] Restore')
+        $restoreLogged = $actionLogText.Contains('[INFO] Restore')
     }
 
     $settingsWindow = [IntPtr]::Zero
@@ -1394,11 +1439,11 @@ try {
 
     $logPath = Join-Path $configFolder 'NppHistory.log'
     $logText = if (Test-Path $logPath) { [IO.File]::ReadAllText($logPath) } else { '' }
-    $loggingEventsPassed = $logText.Contains('[INFORMATIONAL] File saved') -and
-        $logText.Contains('[INFORMATIONAL] Revision created') -and
-        $logText.Contains('[INFORMATIONAL] Capture') -and
-        $logText.Contains('[INFORMATIONAL] Compare') -and
-        $logText.Contains('[INFORMATIONAL] Settings changed') -and
+    $loggingEventsPassed = $logText.Contains('[INFO] File saved') -and
+        $logText.Contains('[INFO] Revision created') -and
+        $logText.Contains('[INFO] Capture') -and
+        $logText.Contains('[INFO] Compare') -and
+        $logText.Contains('[INFO] Settings changed') -and
         $commentUpdateLogged -and $revisionDeletionLogged -and $restoreLogged -and
         ($SkipAutomaticUpdateWait.IsPresent -or
             ($logText.Contains('Automatic update check started') -and
@@ -1427,6 +1472,7 @@ try {
         HistoryPanelScreenshot = if (Test-Path $historyPanelScreenshot) { $historyPanelScreenshot } else { '' }
         PluginMenuPassed = $pluginMenuPassed
         PluginMenuIconsPassed = $pluginMenuIconsPassed
+        PluginMenuBitmapCount = $pluginMenuBitmapCount
         PluginMenuLabels = $pluginMenuLabels
         HiddenCaptureCommandStatePassed = $hiddenCaptureStatePassed
         HiddenCompareCommandStatePassed = $hiddenCompareStatePassed

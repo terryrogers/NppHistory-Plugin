@@ -43,7 +43,7 @@ const wchar_t* logLevelName(LogLevel level) noexcept
     {
     case LogLevel::error: return L"ERROR";
     case LogLevel::warning: return L"WARNING";
-    case LogLevel::informational: return L"INFORMATIONAL";
+    case LogLevel::informational: return L"INFO";
     case LogLevel::debug: return L"DEBUG";
     }
     return L"UNKNOWN";

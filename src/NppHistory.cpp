@@ -58,6 +58,7 @@ std::unordered_map<UINT_PTR, fs::path> lastKnownPaths;
 std::unordered_map<UINT_PTR, fs::path> pendingRenamePaths;
 std::unordered_map<UINT_PTR, ULONGLONG> missingSince;
 std::unordered_set<UINT_PTR> missingAlertsShown;
+std::unordered_set<UINT_PTR> restoreSaveBuffers;
 bool ready = false;
 bool configurationLoaded = false;
 UINT_PTR activeTimerId = 0;
@@ -73,6 +74,17 @@ std::atomic_bool installDownloadInProgress = false;
 HANDLE installThreadHandle = nullptr;
 ReleaseInfo availableUpdate;
 void syncCommandStates();
+UINT_PTR currentBuffer();
+
+void prepareRestoreSave()
+{
+    restoreSaveBuffers.insert(currentBuffer());
+}
+
+void cancelRestoreSave()
+{
+    restoreSaveBuffers.erase(currentBuffer());
+}
 
 struct UpdateRequest
 {
@@ -1138,6 +1150,7 @@ void configurePluginMenuIcons()
     const int indices[] = {captureIndex, compareIndex, historyIndex, settingsIndex, aboutIndex};
     const int resources[] = {IDI_CAPTURE, IDI_COMPARE, IDI_NPPHISTORY, IDI_SETTINGS, IDI_ABOUT};
     int configured = 0;
+    bool changed = false;
     for (int index = 0; index < static_cast<int>(std::size(indices)); ++index)
     {
         const int command = menuItems[indices[index]]._cmdID;
@@ -1145,18 +1158,31 @@ void configurePluginMenuIcons()
             findContainingMenu);
         if (!menu)
             continue;
-        pluginMenuBitmaps[index] = createPluginMenuBitmap(resources[index]);
+        if (!pluginMenuBitmaps[index])
+            pluginMenuBitmaps[index] = createPluginMenuBitmap(resources[index]);
         if (!pluginMenuBitmaps[index])
             continue;
-        MENUITEMINFOW item{sizeof(item)};
-        item.fMask = MIIM_BITMAP;
-        item.hbmpItem = pluginMenuBitmaps[index];
-        if (SetMenuItemInfoW(menu, command, FALSE, &item))
+        MENUITEMINFOW current{sizeof(current)};
+        current.fMask = MIIM_BITMAP;
+        GetMenuItemInfoW(menu, command, FALSE, &current);
+        if (current.hbmpItem != pluginMenuBitmaps[index])
+        {
+            MENUITEMINFOW item{sizeof(item)};
+            item.fMask = MIIM_BITMAP;
+            item.hbmpItem = pluginMenuBitmaps[index];
+            if (SetMenuItemInfoW(menu, command, FALSE, &item))
+                changed = true;
+        }
+        current = MENUITEMINFOW{sizeof(current)};
+        current.fMask = MIIM_BITMAP;
+        if (GetMenuItemInfoW(menu, command, FALSE, &current)
+            && current.hbmpItem == pluginMenuBitmaps[index])
             ++configured;
     }
     SetPropW(nppData._nppHandle, L"NppHistoryPluginMenuIconsReady",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(configured + 1)));
-    DrawMenuBar(nppData._nppHandle);
+    if (changed)
+        DrawMenuBar(nppData._nppHandle);
 }
 
 void setCommandEnabled(int index, bool enabled)
@@ -1200,6 +1226,7 @@ void syncCommandStates()
     setCommandEnabled(captureIndex, captureEnabled);
     setCommandEnabled(compareIndex, compareEnabled);
     setCommandEnabled(historyIndex, true);
+    configurePluginMenuIcons();
     SetPropW(nppData._nppHandle, L"NppHistoryCaptureCommandEnabled",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(captureEnabled ? 2 : 1)));
     SetPropW(nppData._nppHandle, L"NppHistoryCompareCommandEnabled",
@@ -1275,7 +1302,7 @@ void initialise()
         menuItems[compareIndex]._cmdID, menuItems[historyIndex]._cmdID};
     historyPanel.create(moduleInstance, nppData, historyStore, settings,
         menuItems[historyIndex]._cmdID, captureNow, editSettings, showAbout,
-        syncCommandStates);
+        syncCommandStates, prepareRestoreSave, cancelRestoreSave);
     historyPanel.refresh(currentPath());
     SendMessageW(nppData._nppHandle, NPPM_ADDSCNMODIFIEDFLAGS, 0,
         SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT);
@@ -1397,13 +1424,15 @@ void handleNotification(SCNotification* notification)
     else if (code == NPPN_FILESAVED)
     {
         const fs::path path = pathForBuffer(bufferId);
+        const bool restoreInitiatedSave = restoreSaveBuffers.erase(bufferId) > 0;
         const auto previous = lastKnownPaths.find(bufferId);
         if (previous != lastKnownPaths.end() && normalizePath(previous->second) != normalizePath(path))
             reconcileFile(bufferId, path, previous->second);
         else
             reconcileFile(bufferId, path);
         pluginLogger().write(LogLevel::informational, L"File saved", path.wstring());
-        if (settings.shouldCreateRevision(RevisionTrigger::afterSave) && !path.empty()
+        if (!restoreInitiatedSave
+            && settings.shouldCreateRevision(RevisionTrigger::afterSave) && !path.empty()
             && !settings.isHistoryExcluded(path))
         {
             if (historyStore.captureFile(path, L"Saved"))
@@ -1455,6 +1484,7 @@ void handleNotification(SCNotification* notification)
     else if (code == NPPN_FILECLOSED)
     {
         dirtyBuffers.erase(bufferId);
+        restoreSaveBuffers.erase(bufferId);
         lastKnownPaths.erase(bufferId);
         pendingRenamePaths.erase(bufferId);
         missingSince.erase(bufferId);
@@ -1492,6 +1522,7 @@ void handleNotification(SCNotification* notification)
             if (bitmap) DeleteObject(bitmap);
             bitmap = nullptr;
         }
+        restoreSaveBuffers.clear();
         ready = false;
     }
 }

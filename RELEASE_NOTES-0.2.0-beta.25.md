@@ -18,6 +18,9 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 - Disables all file-history actions for excluded History files and adds explanatory hover tooltips to every History pane button, including disabled buttons.
 - Adds contextual hover help to every actionable Settings control, including disabled inputs.
 - Detects the separate Notepad++ AutoSave plugin and disables NppHistory Auto Save with a red settings notice, preventing competing automatic-saving engines.
+- Labels restore safety revisions explicitly as **Before restore**, including when modified editor content must first be saved, without also creating a misleading **Saved** revision.
+- Uses compact `[INFO]` severity labels for informational log records.
+- Keeps all five Plugins-menu icons attached if Notepad++ refreshes or rebuilds the menu.
 
 ## Installation from beta 24 or earlier
 

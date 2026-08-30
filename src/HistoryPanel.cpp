@@ -181,7 +181,9 @@ LRESULT CALLBACK comparisonHeaderSubclass(HWND window, UINT message, WPARAM wPar
 bool HistoryPanel::create(HINSTANCE instance, const NppData& nppData, HistoryStore& store,
     const Settings& settings,
     int commandId, PFUNCPLUGINCMD captureCallback, PFUNCPLUGINCMD settingsCallback,
-    PFUNCPLUGINCMD aboutCallback, PFUNCPLUGINCMD stateChangedCallback)
+    PFUNCPLUGINCMD aboutCallback, PFUNCPLUGINCMD stateChangedCallback,
+    PFUNCPLUGINCMD prepareRestoreSaveCallback,
+    PFUNCPLUGINCMD cancelRestoreSaveCallback)
 {
     LoadLibraryW(L"Msftedit.dll");
     _instance = instance;
@@ -192,6 +194,8 @@ bool HistoryPanel::create(HINSTANCE instance, const NppData& nppData, HistorySto
     _settingsCallback = settingsCallback;
     _aboutCallback = aboutCallback;
     _stateChangedCallback = stateChangedCallback;
+    _prepareRestoreSaveCallback = prepareRestoreSaveCallback;
+    _cancelRestoreSaveCallback = cancelRestoreSaveCallback;
     _dialog = CreateDialogParamW(instance, MAKEINTRESOURCEW(IDD_HISTORY_PANEL), nppData._nppHandle,
         dialogProc, reinterpret_cast<LPARAM>(this));
     if (!_dialog)
@@ -1117,10 +1121,14 @@ void HistoryPanel::restoreSelected()
     int view = 0;
     SendMessageW(_nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, reinterpret_cast<LPARAM>(&view));
     const HWND editor = view == 1 ? _nppData._scintillaSecondHandle : _nppData._scintillaMainHandle;
-    if (SendMessageW(editor, SCI_GETMODIFY, 0, 0) != 0
-        && SendMessageW(_nppData._nppHandle, NPPM_SAVEFILE, 0,
-            reinterpret_cast<LPARAM>(_currentFile.c_str())) == FALSE)
+    const bool currentEditsModified = SendMessageW(editor, SCI_GETMODIFY, 0, 0) != 0;
+    if (currentEditsModified && _prepareRestoreSaveCallback)
+        _prepareRestoreSaveCallback();
+    if (currentEditsModified && SendMessageW(_nppData._nppHandle, NPPM_SAVEFILE, 0,
+        reinterpret_cast<LPARAM>(_currentFile.c_str())) == FALSE)
     {
+        if (_cancelRestoreSaveCallback)
+            _cancelRestoreSaveCallback();
         MessageBoxW(_dialog, L"The current edits could not be saved, so the restore was cancelled.",
             L"NppHistory", MB_OK | MB_ICONERROR);
         pluginLogger().write(LogLevel::error, L"Restore failed",
@@ -1129,7 +1137,7 @@ void HistoryPanel::restoreSelected()
     }
     if (retainSafetyRevision)
     {
-        if (_store->captureFile(_currentFile, L"Before restore"))
+        if (_store->captureFile(_currentFile, L"Before restore", true))
             pluginLogger().write(LogLevel::informational, L"Revision created",
                 L"Before restore: " + _currentFile.wstring());
     }

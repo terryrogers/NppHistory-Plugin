@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fixed restore safety for modified editors so the internal save does not create a misleading `Saved` revision; one forced `Before restore` revision now retains the exact pre-restore content.
+- Shortened emitted informational log severity labels from `[INFORMATIONAL]` to `[INFO]`.
+- Made Plugins-menu icons self-healing when Notepad++ rebuilds or refreshes the menu, and strengthened live verification to inspect all five menu bitmap handles.
 - Changed **Plugins > NppHistory** to exactly Capture, Compare, History, Settings and About, and changed the optional main toolbar to Capture, Compare and History.
 - Made main-toolbar and Plugins-menu command availability mirror the active file, exclusions, revision availability and History-pane selection state; Refresh and Restore remain pane-only actions with the same state rules.
 - Made Compare use the newest saved revision automatically when the History pane is closed, while requiring an explicit revision selection when the pane is open.

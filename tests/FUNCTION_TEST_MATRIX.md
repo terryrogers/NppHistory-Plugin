@@ -70,7 +70,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `timestampNow` | Indirect local timestamp written to log records | PASS |
 | `oneLine` | Direct CR/LF/tab sanitisation in logged detail | PASS |
 | `pluginLogger` | Direct singleton access across tests and live plugin | PASS |
-| `logLevelName` | Direct Error/Warning/Informational/Debug record checks | PASS |
+| `logLevelName` | Direct ERROR/WARNING/INFO/DEBUG record checks | PASS |
 | `PluginLogger::configure` | Direct disabled/default/custom/threshold/overwrite/archive configurations | PASS |
 | `PluginLogger::enabled` | Direct informational/debug/disabled severity-threshold checks | PASS |
 | `PluginLogger::path` | Direct default and custom path assertions | PASS |
@@ -174,8 +174,8 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `updateActionButtons` | Live no-selection and selected-revision Compare/Restore enablement | PASS |
 | `selectedIndex` | Live selection/action-menu targeting | PASS |
 | `showRevisionActions` | Live right-click popup and four icon commands | PASS |
-| `editSelectedComment` | Live dialog submission, metadata update, Informational audit and Debug before/after values | PASS |
-| `deleteSelected` | Live confirmation, file/metadata removal, list refresh and detailed Informational audit | PASS |
+| `editSelectedComment` | Live dialog submission, metadata update, INFO audit and Debug before/after values | PASS |
+| `deleteSelected` | Live confirmation, file/metadata removal, list refresh and detailed INFO audit | PASS |
 | `compareSelected` | Live comparison launch | PASS |
 | `currentSourceText` | Live source content displayed in comparison | PASS |
 | `renderSide` | Direct diff rows plus live two-pane rendering | PASS |
@@ -196,7 +196,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `updateComparisonStatus` | Live difference counter/status | PASS |
 | `navigateDifference` | Live previous/next navigation | PASS |
 | `showRevisionPicker` | Live picker position and revision count | PASS |
-| `restoreSelected` | Live confirmation, safety-revision preservation, file reload and pre-reload Informational audit | PASS |
+| `restoreSelected` | Live confirmation, forced `Before restore` safety revision, internal-save suppression, file reload and INFO audit | PASS |
 | `layout` | Live normal, resized, wrapped, collapsed and dynamically wrapped status layouts | PASS |
 | `configureButtonIcons` | Live all six pane icons and tooltip registrations | PASS |
 | `updateButtonTooltip` | Live active and visible tooltip over disabled Refresh | PASS |

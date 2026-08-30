@@ -18,7 +18,7 @@ void runLoggerTests(TestContext& context)
     logger.configure(settings, directory.path());
     context.expect(std::wstring(logLevelName(LogLevel::error)) == L"ERROR"
         && std::wstring(logLevelName(LogLevel::warning)) == L"WARNING"
-        && std::wstring(logLevelName(LogLevel::informational)) == L"INFORMATIONAL"
+        && std::wstring(logLevelName(LogLevel::informational)) == L"INFO"
         && std::wstring(logLevelName(LogLevel::debug)) == L"DEBUG",
         "logLevelName labels every configured severity");
     context.expect(logger.enabled(LogLevel::error) && logger.enabled(LogLevel::warning)
@@ -32,9 +32,9 @@ void runLoggerTests(TestContext& context)
         L"note.txt | 2026-08-30T01:02:03Z | Manual capture");
     logger.write(LogLevel::debug, L"Hidden debug event");
     const auto firstText = decodeText(readAllBytes(logger.path()));
-    context.expect(firstText.find(L"[INFORMATIONAL] Capture | note.txt") != std::wstring::npos,
+    context.expect(firstText.find(L"[INFO] Capture | note.txt") != std::wstring::npos,
         "PluginLogger writes informational actions and detail");
-    context.expect(firstText.find(L"[INFORMATIONAL] Revision deleted | note.txt | 2026-08-30T01:02:03Z | Manual capture")
+    context.expect(firstText.find(L"[INFO] Revision deleted | note.txt | 2026-08-30T01:02:03Z | Manual capture")
         != std::wstring::npos, "PluginLogger records revision deletion audit detail");
     context.expect(firstText.find(L"Hidden debug event") == std::wstring::npos,
         "PluginLogger filters events below the configured verbosity");
