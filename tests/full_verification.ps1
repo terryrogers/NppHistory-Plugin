@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$outputRoot = Join-Path $projectRoot 'build\verification-post-beta24'
+$outputRoot = Join-Path $projectRoot 'build\verification-beta25-rc'
 [IO.Directory]::CreateDirectory($outputRoot) | Out-Null
 
 $msbuild = 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe'
@@ -48,11 +48,16 @@ try {
     $updater = Join-Path $projectRoot 'build\x64\Release\NppHistoryUpdater.exe'
     if (-not (Test-Path $updater)) { throw 'The restart installer was not built.' }
     $version = (Get-Item $dll).VersionInfo
+    $versionHeader = [IO.File]::ReadAllText((Join-Path $projectRoot 'src\Version.h'))
+    $displayVersionMatch = [regex]::Match($versionHeader,
+        '#define NPPHISTORY_VERSION_TEXT "([^"]+)"')
+    if (-not $displayVersionMatch.Success) { throw 'Display version was not found in Version.h.' }
+    $expectedDisplayVersion = $displayVersionMatch.Groups[1].Value
     $expectedMetadata = [ordered]@{
         FileDescription = 'NppHistory'
         ProductName = 'NppHistory'
-        FileVersion = '0.2.0.24'
-        ProductVersion = '0.2.0.24'
+        FileVersion = $expectedDisplayVersion
+        ProductVersion = $expectedDisplayVersion
         Comments = 'Automatic saving and continuous local revision history for Notepad++.'
     }
     foreach ($entry in $expectedMetadata.GetEnumerator()) {

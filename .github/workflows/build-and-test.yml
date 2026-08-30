@@ -34,6 +34,15 @@ jobs:
       - name: Run core tests
         run: .\build\tests\NppHistory.Tests.exe
 
+      - name: Run restart installer smoke tests
+        shell: pwsh
+        run: |
+          $result = & .\tests\updater_smoke.ps1
+          $result | Format-List
+          if (-not $result.Passed) {
+            throw 'Restart installer smoke tests failed.'
+          }
+
       - name: Upload plugin package files
         uses: actions/upload-artifact@v7
         with:

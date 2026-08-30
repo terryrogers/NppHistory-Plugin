@@ -53,6 +53,22 @@ LogArchivesToRetain=5
 $updateFeedAccessible = $false
 $expectedPublishedVersion = ''
 $expectedUpdateStatus = ''
+$versionHeader = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\src\Version.h'))
+$displayVersionMatch = [regex]::Match($versionHeader, 'NPPHISTORY_VERSION_TEXT\s+"([^"]+)"')
+$releaseDateMatch = [regex]::Match($versionHeader, 'NPPHISTORY_RELEASE_DATE\s+"([^"]*)"')
+if (-not $displayVersionMatch.Success -or -not $releaseDateMatch.Success) {
+    throw 'Version.h display metadata could not be parsed.'
+}
+$expectedInstalledDisplayVersion = $displayVersionMatch.Groups[1].Value
+$embeddedReleaseDate = $releaseDateMatch.Groups[1].Value
+function Convert-NppComparableVersion([string]$value) {
+    $match = [regex]::Match($value.TrimStart('v','V'),
+        '^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$')
+    if (-not $match.Success) { return $null }
+    $prerelease = if ($match.Groups[4].Success) { [int]$match.Groups[4].Value } else { 65535 }
+    return [version]::new([int]$match.Groups[1].Value, [int]$match.Groups[2].Value,
+        [int]$match.Groups[3].Value, $prerelease)
+}
 try {
     $releaseFeed = Invoke-RestMethod -Uri 'https://api.github.com/repos/terryrogers/NppHistory-Plugin/releases?per_page=20' `
         -Headers @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'NppHistory-Live-Test' } `
@@ -61,11 +77,13 @@ try {
     if ($latestEligible.Count -gt 0) {
         $expectedPublishedVersion = ([string]$latestEligible[0].tag_name).TrimStart('v','V')
         $expectedDisplayedVersion = $expectedPublishedVersion -replace '-beta\.', '.'
-        $versionHeader = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\src\Version.h'))
         $installedMatch = [regex]::Match($versionHeader, 'NPPHISTORY_VERSION_SEMVER_W\s+L"([^"]+)"')
         if ($installedMatch.Success) {
             $installedVersion = $installedMatch.Groups[1].Value
-            $expectedUpdateStatus = if ($expectedPublishedVersion -eq $installedVersion) {
+            $publishedComparable = Convert-NppComparableVersion $expectedPublishedVersion
+            $installedComparable = Convert-NppComparableVersion $installedVersion
+            $expectedUpdateStatus = if ($publishedComparable -and $installedComparable -and
+                $publishedComparable -le $installedComparable) {
                 'Up to date ' + [char]0x2014 + ' latest published version: ' + $expectedDisplayedVersion
             } else {
                 'Update available: ' + $expectedDisplayedVersion
@@ -277,7 +295,8 @@ public static class NppHistoryNative {
 }
 '@
 
-$process = Start-Process -FilePath (Join-Path $testRoot 'notepad++.exe') -ArgumentList '-multiInst','-nosession',$notePath -PassThru -WindowStyle Hidden
+$notepadArguments = '-multiInst -nosession "' + $notePath.Replace('"', '\"') + '"'
+$process = Start-Process -FilePath (Join-Path $testRoot 'notepad++.exe') -ArgumentList $notepadArguments -PassThru -WindowStyle Hidden
 try {
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
     $editor = [IntPtr]::Zero
@@ -929,10 +948,17 @@ try {
             $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
             $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
             $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
-            $expectedReleaseDate = ([DateTime]'2026-08-30').ToString('d', [Globalization.CultureInfo]::CurrentCulture)
-            $aboutWindowPassed = $aboutVersion.Contains('0.2.0.24') -and
+            $expectedReleaseDate = if ($embeddedReleaseDate) {
+                ([DateTime]$embeddedReleaseDate).ToString('d', [Globalization.CultureInfo]::CurrentCulture)
+            } else { '' }
+            $releaseDatePassed = if ($expectedReleaseDate) {
+                $aboutReleaseDate.Contains($expectedReleaseDate)
+            } else {
+                $aboutReleaseDate.Trim() -eq 'Release Date:'
+            }
+            $aboutWindowPassed = $aboutVersion.Contains($expectedInstalledDisplayVersion) -and
                 $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
-                $aboutReleaseDate.Contains($expectedReleaseDate) -and
+                $releaseDatePassed -and
                 $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero
             Add-Type -AssemblyName System.Drawing
             $bitmap = [Drawing.Bitmap]::new($aboutRectangle.Right - $aboutRectangle.Left, $aboutRectangle.Bottom - $aboutRectangle.Top)

@@ -15,8 +15,8 @@ IDI_EDIT ICON "res\\Edit.ico"
 IDI_DELETE ICON "res\\Delete.ico"
 
 1 VERSIONINFO
- FILEVERSION 0,2,0,24
- PRODUCTVERSION 0,2,0,24
+ FILEVERSION NPPHISTORY_VERSION_FILE
+ PRODUCTVERSION NPPHISTORY_VERSION_FILE
  FILEFLAGSMASK 0x3fL
  FILEOS 0x40004L
  FILETYPE 0x2L
@@ -28,12 +28,12 @@ BEGIN
             VALUE "CompanyName", "NppHistory contributors\0"
             VALUE "Comments", "Automatic saving and continuous local revision history for Notepad++.\0"
             VALUE "FileDescription", "NppHistory\0"
-            VALUE "FileVersion", "0.2.0.24\0"
+            VALUE "FileVersion", NPPHISTORY_VERSION_TEXT "\0"
             VALUE "InternalName", "NppHistory\0"
             VALUE "LegalCopyright", "GPL-3.0\0"
             VALUE "OriginalFilename", "NppHistory.dll\0"
             VALUE "ProductName", "NppHistory\0"
-            VALUE "ProductVersion", "0.2.0.24\0"
+            VALUE "ProductVersion", NPPHISTORY_VERSION_TEXT "\0"
             VALUE "ReleaseDate", NPPHISTORY_RELEASE_DATE "\0"
         END
     END

@@ -10,12 +10,13 @@ $successRoot = Join-Path $testRoot 'success'
 $failureRoot = Join-Path $testRoot 'failure'
 
 function Invoke-TestUpdater([string]$folder, [string]$expectedHash) {
-    $arguments = @('--wait-pid','4294967294',
-        '--source',(Join-Path $folder 'NppHistory.pending.dll'),
-        '--target',(Join-Path $folder 'NppHistory.dll'),
-        '--restart',([IO.Path]::GetFullPath($UpdaterExe)),
-        '--result',(Join-Path $folder 'result.ini'),
-        '--version','v-updater-test','--sha256',$expectedHash)
+    $quoted = { param([string]$value) '"' + $value.Replace('"', '\"') + '"' }
+    $arguments = '--wait-pid 4294967294' +
+        ' --source ' + (& $quoted (Join-Path $folder 'NppHistory.pending.dll')) +
+        ' --target ' + (& $quoted (Join-Path $folder 'NppHistory.dll')) +
+        ' --restart ' + (& $quoted ([IO.Path]::GetFullPath($UpdaterExe)) ) +
+        ' --result ' + (& $quoted (Join-Path $folder 'result.ini')) +
+        ' --version v-updater-test --sha256 ' + $expectedHash
     Start-Process -FilePath $UpdaterExe -ArgumentList $arguments -Wait -PassThru
 }
 

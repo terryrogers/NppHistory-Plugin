@@ -21,6 +21,9 @@ jobs:
           msbuild .\vs.proj\NppHistoryUpdater.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
           msbuild .\vs.proj\NppHistory.Tests.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64
           .\build\tests\NppHistory.Tests.exe
+          $updaterResult = & .\tests\updater_smoke.ps1
+          $updaterResult | Format-List
+          if (-not $updaterResult.Passed) { throw 'Restart installer smoke tests failed.' }
       - name: Prepare verified release assets
         shell: pwsh
         run: |
@@ -31,12 +34,37 @@ jobs:
           if (-not $versionHeader.Contains($expectedVersionLine)) {
             throw "Tag $tag does not match NPPHISTORY_VERSION_SEMVER_W."
           }
+          if ($version -notmatch '^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$') {
+            throw "Tag $tag does not use the supported stable or beta version format."
+          }
+          $displayVersion = if ($Matches[4]) {
+            "$($Matches[1]).$($Matches[2]).$($Matches[3]).$($Matches[4])"
+          } else {
+            "$($Matches[1]).$($Matches[2]).$($Matches[3])"
+          }
+          $expectedDisplayLine = '#define NPPHISTORY_VERSION_TEXT "' + $displayVersion + '"'
+          if (-not $versionHeader.Contains($expectedDisplayLine)) {
+            throw "Tag $tag does not match the numeric plugin version $displayVersion."
+          }
+          $releaseDateMatch = [regex]::Match($versionHeader, '#define NPPHISTORY_RELEASE_DATE "(\d{4}-\d{2}-\d{2})"')
+          if (-not $releaseDateMatch.Success) {
+            throw 'The publication release date is missing or is not ISO formatted.'
+          }
+          [void][DateTime]::ParseExact($releaseDateMatch.Groups[1].Value, 'yyyy-MM-dd',
+            [Globalization.CultureInfo]::InvariantCulture)
+          $notesFile = ".\RELEASE_NOTES-$version.md"
+          if (-not (Test-Path -LiteralPath $notesFile)) {
+            throw "Release notes are missing: $notesFile"
+          }
           $assetRoot = Join-Path $PWD 'build\release-assets'
           New-Item -ItemType Directory -Path $assetRoot -Force | Out-Null
           $dllName = "NppHistory-$version-x64.dll"
           Copy-Item '.\build\x64\Release\NppHistory.dll' (Join-Path $assetRoot $dllName)
           Copy-Item '.\build\x64\Release\NppHistoryUpdater.exe' (Join-Path $assetRoot 'NppHistoryUpdater.exe')
-          Compress-Archive -Path '.\build\x64\Release\NppHistory.dll' -DestinationPath (Join-Path $assetRoot "NppHistory-$version-x64.zip")
+          $packagePlugin = Join-Path $assetRoot 'manual-package\NppHistory'
+          New-Item -ItemType Directory -Path $packagePlugin -Force | Out-Null
+          Copy-Item '.\build\x64\Release\NppHistory.dll' (Join-Path $packagePlugin 'NppHistory.dll')
+          Compress-Archive -Path $packagePlugin -DestinationPath (Join-Path $assetRoot "NppHistory-$version-x64.zip")
           Get-ChildItem $assetRoot -File | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash.ToLowerInvariant())  $([IO.Path]::GetFileName($_.Path))" } |
             Set-Content (Join-Path $assetRoot "SHA256SUMS-$version.txt") -Encoding ascii
@@ -46,8 +74,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $tag = '${{ github.ref_name }}'
-          $arguments = @('release','create',$tag,'--repo','${{ github.repository }}','--generate-notes','--title',"NppHistory $($tag.TrimStart('v'))")
+          $version = $tag.TrimStart('v')
+          $notesFile = ".\RELEASE_NOTES-$version.md"
+          $arguments = @('release','create',$tag,'--repo','${{ github.repository }}','--notes-file',$notesFile,'--title',"NppHistory $version")
           if ($tag.Contains('-')) { $arguments += '--prerelease' }
-          $assets = @(Get-ChildItem '.\build\release-assets\*' | ForEach-Object FullName)
+          $assets = @(Get-ChildItem '.\build\release-assets\*' -File | ForEach-Object FullName)
           $arguments += $assets
           gh @arguments

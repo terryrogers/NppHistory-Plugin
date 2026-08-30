@@ -2,10 +2,19 @@
 
 ## Unreleased
 
+## 0.2.0-beta.25 (release candidate)
+
 - Made revision action commands share one testable command route and added live dialog coverage for comment editing, deletion and restoration.
 - Added detailed Informational audit records for revision deletion and restoration, with the restore record written before Notepad++ reloads the editor.
 - Expanded update-result and access-error tests, logging-level and rollover tests, and automatic/manual live update verification.
 - Made each live verification run use a fresh isolated directory and replaced the stale beta-20 update expectation with the current public Releases feed.
+- Added automatic update scheduling while Notepad++ remains open, resume-from-sleep handling, retry backoff, and a live next-check countdown without checking merely because Settings opens or gains focus.
+- Added a verified external restart installer with SHA-256 validation, protected replacement, previous-DLL backup, failure reporting, optional UAC elevation and automatic Notepad++ relaunch.
+- Added install choices to automatic and manual update-available prompts while keeping up-to-date and access-error checks on the Updates page.
+- Added the release workflow assets required for future automatic updates: a versioned raw x64 DLL, updater executable, manual ZIP and SHA-256 manifest.
+- Removed the redundant standalone install button, spaced the three status lines and standardized user-facing beta versions as the numeric plugin form such as `0.2.0.25`.
+- Added restart-installer replacement and rollback smoke testing to normal CI and release publication gates.
+- Strengthened release validation so the tag, numeric plugin version, publication date and release-notes file must agree.
 
 ## 0.2.0-beta.24
 
