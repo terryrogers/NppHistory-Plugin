@@ -46,6 +46,7 @@ struct UpdateCheckResult
 };
 
 bool parseSemanticVersion(std::wstring_view text, SemanticVersion& version);
+std::wstring displayVersion(std::wstring_view text);
 int compareSemanticVersions(const SemanticVersion& left, const SemanticVersion& right) noexcept;
 std::vector<ReleaseInfo> parseGitHubReleases(std::string_view json);
 std::optional<ReleaseInfo> selectNewestRelease(const std::vector<ReleaseInfo>& releases,

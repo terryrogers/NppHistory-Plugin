@@ -60,14 +60,15 @@ try {
     $latestEligible = @($releaseFeed | Where-Object { -not $_.draft } | Select-Object -First 1)
     if ($latestEligible.Count -gt 0) {
         $expectedPublishedVersion = ([string]$latestEligible[0].tag_name).TrimStart('v','V')
+        $expectedDisplayedVersion = $expectedPublishedVersion -replace '-beta\.', '.'
         $versionHeader = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\src\Version.h'))
         $installedMatch = [regex]::Match($versionHeader, 'NPPHISTORY_VERSION_SEMVER_W\s+L"([^"]+)"')
         if ($installedMatch.Success) {
             $installedVersion = $installedMatch.Groups[1].Value
             $expectedUpdateStatus = if ($expectedPublishedVersion -eq $installedVersion) {
-                'Up to date ' + [char]0x2014 + ' latest published version: ' + $expectedPublishedVersion
+                'Up to date ' + [char]0x2014 + ' latest published version: ' + $expectedDisplayedVersion
             } else {
-                'Update available: ' + $expectedPublishedVersion
+                'Update available: ' + $expectedDisplayedVersion
             }
             $updateFeedAccessible = $true
         }
@@ -861,9 +862,9 @@ try {
                 [NppHistoryNative]::IsWindowVisible($updateStatus) -and
                 [NppHistoryNative]::Text($updateStatus).Contains('Status:') -and
                 [NppHistoryNative]::Text($updateStatus).Contains('Next automatic check:') -and
-                [NppHistoryNative]::IsWindowVisible($updateInstall) -and
-                [NppHistoryNative]::Text($updateInstall) -eq 'Restart and install...' -and
-                -not [NppHistoryNative]::IsWindowEnabled($updateInstall)
+                [NppHistoryNative]::Text($updateStatus).Contains("`r`n`r`nLast successful check:") -and
+                [NppHistoryNative]::Text($updateStatus).Contains("`r`n`r`nNext automatic check:") -and
+                $updateInstall -eq [IntPtr]::Zero
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
             $bitmap = [Drawing.Bitmap]::new($settingsCaptureRectangle.Right - $settingsCaptureRectangle.Left, $settingsCaptureRectangle.Bottom - $settingsCaptureRectangle.Top)
@@ -985,9 +986,11 @@ try {
         $logText.Contains('update check started') -and
         $logText.Contains('update check completed') -and
         $logText.Contains('[DEBUG] Button click')
+    $displayVersionLoggingPassed = -not $updateFeedAccessible -or
+        $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1060,6 +1063,7 @@ try {
         SettingsLoggingPassed = $settingsLoggingPassed
         SettingsLoggingEnablementPassed = $settingsLoggingEnablementPassed
         LoggingEventsPassed = $loggingEventsPassed
+        DisplayVersionLoggingPassed = $displayVersionLoggingPassed
         LogPath = $logPath
         ManualUpdateCheckPassed = $manualUpdateCheckPassed
         UpdateFeedAccessible = $updateFeedAccessible

@@ -15,6 +15,11 @@ void runUpdateCheckerTests(TestContext& context)
     context.expect(parseSemanticVersion(L"0.2.0-beta.21+build.7", version)
         && version.prerelease.size() == 2 && version.prerelease[0] == L"beta"
         && version.prerelease[1] == L"21", "semantic version parser accepts prerelease/build metadata");
+    context.expect(displayVersion(L"v0.2.0-beta.24") == L"0.2.0.24",
+        "beta release identifiers use the numeric plugin version for display");
+    context.expect(displayVersion(L"v1.2.3") == L"1.2.3"
+        && displayVersion(L"1.2.3-rc.1") == L"1.2.3-rc.1",
+        "stable and non-beta display versions retain their meaningful identifiers");
     for (const auto invalid : {L"", L"1.2", L"1.2.3.4", L"01.2.3", L"1.02.3",
         L"1.2.03", L"1.2.3-", L"1.2.3-beta..1", L"1.2.3-01", L"1.2.x",
         L"18446744073709551616.0.0", L"1.0.0+", L"1.0.0+bad?",

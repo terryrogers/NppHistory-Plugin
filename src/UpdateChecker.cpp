@@ -435,6 +435,37 @@ bool parseSemanticVersion(std::wstring_view text, SemanticVersion& version)
     return !version.prerelease.empty();
 }
 
+std::wstring displayVersion(std::wstring_view text)
+{
+    SemanticVersion version;
+    if (!parseSemanticVersion(text, version))
+    {
+        if (!text.empty() && (text.front() == L'v' || text.front() == L'V'))
+            text.remove_prefix(1);
+        return std::wstring(text);
+    }
+    std::wstring result = std::to_wstring(version.major) + L"."
+        + std::to_wstring(version.minor) + L"." + std::to_wstring(version.patch);
+    if (version.prerelease.size() == 2 && version.prerelease[0] == L"beta")
+    {
+        const auto& build = version.prerelease[1];
+        if (!build.empty() && std::all_of(build.begin(), build.end(),
+            [](wchar_t character) { return iswdigit(character) != 0; }))
+            return result + L"." + build;
+    }
+    if (!version.prerelease.empty())
+    {
+        result += L"-";
+        for (std::size_t index = 0; index < version.prerelease.size(); ++index)
+        {
+            if (index != 0)
+                result += L".";
+            result += version.prerelease[index];
+        }
+    }
+    return result;
+}
+
 int compareSemanticVersions(const SemanticVersion& left, const SemanticVersion& right) noexcept
 {
     const auto compareNumber = [](std::uint64_t a, std::uint64_t b) { return a < b ? -1 : a > b ? 1 : 0; };

@@ -72,6 +72,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | Function | Evidence | Status |
 |---|---|---|
 | `parseSemanticVersion` | Direct valid, prerelease, metadata, overflow/format and leading-zero cases | PASS |
+| `displayVersion` | Direct beta-to-numeric plugin display conversion plus stable and non-beta preservation | PASS |
 | `compareSemanticVersions` | Direct major/minor/patch, stable/prerelease, numeric/string and sequence precedence | PASS |
 | `parseGitHubReleases` | Direct nested fields/assets, draft, trusted origin, incomplete and malformed responses | PASS |
 | `selectNewestRelease` | Direct stable/prerelease reporting independent of the installed version | PASS |

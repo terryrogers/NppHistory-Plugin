@@ -369,9 +369,10 @@ void beginUpdateInstall(const ReleaseInfo& release)
         / L"NppHistory.pending.dll";
     request->updaterDestination = request->destination.parent_path()
         / L"NppHistoryUpdater.pending.exe";
-    settings.lastUpdateStatus = L"Downloading and verifying " + release.tag + L"...";
+    const std::wstring shownVersion = displayVersion(release.tag);
+    settings.lastUpdateStatus = L"Downloading and verifying " + shownVersion + L"...";
     settings.refreshUpdateStatus(false);
-    pluginLogger().write(LogLevel::informational, L"Update download started", release.tag);
+    pluginLogger().write(LogLevel::informational, L"Update download started", shownVersion);
     const uintptr_t thread = _beginthreadex(nullptr, 0, installThreadProc, request.get(), 0, nullptr);
     if (!thread)
     {
@@ -442,7 +443,7 @@ void handleInstallCompletion(std::unique_ptr<InstallCompletion> completion)
         + L" --target " + quoteCommandLineArgument(pluginDll.wstring())
         + L" --restart " + quoteCommandLineArgument(notepadPath)
         + L" --result " + quoteCommandLineArgument(result.wstring())
-        + L" --version " + quoteCommandLineArgument(completion->release.tag)
+        + L" --version " + quoteCommandLineArgument(displayVersion(completion->release.tag))
         + L" --sha256 " + quoteCommandLineArgument(completion->release.assetDigest.substr(7));
     SHELLEXECUTEINFOW execute{sizeof(execute)};
     execute.fMask = SEE_MASK_NOCLOSEPROCESS;
@@ -469,7 +470,7 @@ void handleInstallCompletion(std::unique_ptr<InstallCompletion> completion)
     if (execute.hProcess)
         CloseHandle(execute.hProcess);
     pluginLogger().write(LogLevel::informational, L"Restart installer launched",
-        completion->release.tag);
+        displayVersion(completion->release.tag));
     PostMessageW(nppData._nppHandle, WM_CLOSE, 0, 0);
 }
 
@@ -486,10 +487,7 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
     if (successful)
     {
         settings.recordUpdateSuccess(currentUnixSeconds());
-        std::wstring publishedVersion = completion->result.release.tag;
-        if (publishedVersion.size() > 1 && (publishedVersion[0] == L'v'
-            || publishedVersion[0] == L'V') && iswdigit(publishedVersion[1]))
-            publishedVersion.erase(0, 1);
+        const std::wstring publishedVersion = displayVersion(completion->result.release.tag);
         settings.lastUpdateStatus = completion->result.status == UpdateCheckStatus::updateAvailable
             ? L"Update available: " + publishedVersion
             : (publishedVersion.empty() ? L"Up to date"
@@ -513,7 +511,6 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         availableUpdate = completion->result.release;
     else if (completion->result.status == UpdateCheckStatus::upToDate)
         availableUpdate = {};
-    settings.updateInstallAvailable = trustedUpdateAsset(availableUpdate);
     settings.refreshUpdateStatus(false);
     if (completion->result.status == UpdateCheckStatus::updateAvailable)
     {
@@ -528,8 +525,8 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
                 pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         }
         const bool installable = trustedUpdateAsset(release);
-        const std::wstring content = L"Available version: " + release.tag
-            + L"\nInstalled version: " + NPPHISTORY_VERSION_SEMVER_W
+        const std::wstring content = L"Available version: " + displayVersion(release.tag)
+            + L"\nInstalled version: " + NPPHISTORY_VERSION_TEXT_W
             + (installable
                 ? L"\n\nNppHistory can download the verified x64 update, restart Notepad++, install it and reopen Notepad++."
                 : L"\n\nThis release can be viewed and installed manually from GitHub.");

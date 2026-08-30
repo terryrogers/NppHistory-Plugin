@@ -97,8 +97,6 @@ void updateUpdateControls(HWND dialog)
     EnableWindow(GetDlgItem(dialog, IDC_UPDATE_FREQUENCY_LABEL), enabled);
     EnableWindow(GetDlgItem(dialog, IDC_UPDATE_FREQUENCY), enabled);
     EnableWindow(GetDlgItem(dialog, IDC_UPDATE_PRERELEASES), TRUE);
-    EnableWindow(GetDlgItem(dialog, IDC_UPDATE_INSTALL),
-        activeSettings && activeSettings->updateInstallAvailable);
 }
 
 std::wstring updateStatusText(const Settings& settings)
@@ -128,16 +126,16 @@ std::wstring updateStatusText(const Settings& settings)
     {
         const std::wstring display = localTime(settings.lastUpdateCheck);
         if (!display.empty())
-            result += L"\r\nLast successful check: " + display;
+            result += L"\r\n\r\nLast successful check: " + display;
     }
     if (!settings.autoUpdateEnabled)
-        result += L"\r\nAutomatic checks are disabled.";
+        result += L"\r\n\r\nAutomatic checks are disabled.";
     else
     {
         const unsigned long long now = currentUnixSeconds();
         const unsigned long long next = settings.nextUpdateCheckTime(now);
         if (next <= now)
-            result += L"\r\nNext automatic check: Due now.";
+            result += L"\r\n\r\nNext automatic check: Due now.";
         else
         {
             const unsigned long long remaining = next - now;
@@ -165,7 +163,7 @@ std::wstring updateStatusText(const Settings& settings)
             else
                 duration = unit((remaining + 59) / 60, L"minute", L"minutes");
             const std::wstring display = localTime(next);
-            result += L"\r\nNext automatic check: "
+            result += L"\r\n\r\nNext automatic check: "
                 + (display.empty() ? std::wstring() : display + L" ")
                 + L"(in " + duration + L")";
         }
@@ -228,8 +226,7 @@ void showSettingsPage(HWND dialog, int page)
         IDC_LOGGING_ARCHIVES_LABEL, IDC_LOGGING_ARCHIVES};
     const int updates[] = {IDC_GENERAL_UPDATE_GROUP, IDC_AUTO_UPDATE,
         IDC_UPDATE_FREQUENCY_LABEL, IDC_UPDATE_FREQUENCY, IDC_UPDATE_PRERELEASES,
-        IDC_UPDATE_CHECK_NOW, IDC_UPDATE_STATUS_GROUP, IDC_UPDATE_STATUS,
-        IDC_UPDATE_INSTALL};
+        IDC_UPDATE_CHECK_NOW, IDC_UPDATE_STATUS_GROUP, IDC_UPDATE_STATUS};
     const auto setVisibility = [&](const int* controls, std::size_t count, bool visible)
     {
         for (std::size_t index = 0; index < count; ++index)
@@ -438,12 +435,6 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             IDC_UPDATE_PRERELEASES) == BST_CHECKED;
         PostMessageW(GetWindow(dialog, GW_OWNER), settingsCheckUpdateMessage,
             includePrereleases ? TRUE : FALSE, 0);
-        return TRUE;
-    }
-    if (message == WM_COMMAND && LOWORD(wParam) == IDC_UPDATE_INSTALL)
-    {
-        settings->installUpdateNow = true;
-        SendMessageW(dialog, WM_COMMAND, IDOK, 0);
         return TRUE;
     }
     if (message == WM_COMMAND && (LOWORD(wParam) == IDC_LOGGING_ENABLED
@@ -795,13 +786,10 @@ void Settings::refreshUpdateStatus(bool checking) const
         activeSettings->updateFailureCount = updateFailureCount;
         activeSettings->lastUpdateStatus = lastUpdateStatus;
         activeSettings->lastNotifiedVersion = lastNotifiedVersion;
-        activeSettings->updateInstallAvailable = updateInstallAvailable;
     }
     SetDlgItemTextW(activeSettingsDialog, IDC_UPDATE_STATUS,
         checking ? L"Status: Checking..." : updateStatusText(*this).c_str());
     EnableWindow(GetDlgItem(activeSettingsDialog, IDC_UPDATE_CHECK_NOW), !checking);
-    EnableWindow(GetDlgItem(activeSettingsDialog, IDC_UPDATE_INSTALL),
-        !checking && updateInstallAvailable);
 }
 
 HWND Settings::activeDialogWindow() const noexcept
