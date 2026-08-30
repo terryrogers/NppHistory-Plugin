@@ -233,14 +233,12 @@ unsigned __stdcall updateThreadProc(void* parameter)
     return 0;
 }
 
-void startUpdateCheck(bool manual)
+void startUpdateCheck(bool manual, std::optional<bool> includePrereleases = std::nullopt)
 {
     bool expected = false;
     if (!updateCheckInProgress.compare_exchange_strong(expected, true))
     {
-        if (manual)
-            MessageBoxW(nppData._nppHandle, L"An update check is already in progress.",
-                pluginName, MB_OK | MB_ICONINFORMATION);
+        settings.refreshUpdateStatus(true);
         return;
     }
     if (updateThreadHandle)
@@ -251,7 +249,7 @@ void startUpdateCheck(bool manual)
     auto request = std::make_unique<UpdateRequest>();
     request->notifyWindow = nppData._nppHandle;
     request->manual = manual;
-    request->includePrereleases = settings.includePrereleaseUpdates;
+    request->includePrereleases = includePrereleases.value_or(settings.includePrereleaseUpdates);
     pluginLogger().write(LogLevel::informational,
         manual ? L"Manual update check started" : L"Automatic update check started",
         request->includePrereleases ? L"Prereleases included" : L"Stable releases only");
@@ -261,9 +259,9 @@ void startUpdateCheck(bool manual)
         updateCheckInProgress = false;
         pluginLogger().write(LogLevel::error, L"Update check could not start",
             L"The background update-check thread could not be created");
-        if (manual)
-            MessageBoxW(nppData._nppHandle, L"The update check could not be started.",
-                pluginName, MB_OK | MB_ICONERROR);
+        settings.lastUpdateStatus = L"Last check failed: update check could not be started";
+        settings.save(settingsFile);
+        settings.refreshUpdateStatus(false);
         return;
     }
     request.release();
@@ -299,7 +297,8 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         pluginLogger().write(LogLevel::warning, L"Update check failure",
             completion->result.detail);
     }
-    if (completion->result.status == UpdateCheckStatus::updateAvailable)
+    settings.refreshUpdateStatus(false);
+    if (!completion->manual && completion->result.status == UpdateCheckStatus::updateAvailable)
     {
         const auto& release = completion->result.release;
         if (!shouldNotifyUpdate(release.tag, settings.lastNotifiedVersion,
@@ -322,18 +321,6 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
                     L"NppHistory Update Check", MB_OK | MB_ICONWARNING);
         }
     }
-    else if (completion->manual && completion->result.status == UpdateCheckStatus::upToDate)
-    {
-        MessageBoxW(nppData._nppHandle, L"This is the newest NppHistory version available for the selected update channel.",
-            L"NppHistory Update Check", MB_OK | MB_ICONINFORMATION);
-    }
-    else if (completion->manual)
-    {
-        const std::wstring message = L"NppHistory could not complete the update check.\n\n"
-            + completion->result.detail + L"\n\nNo files were downloaded or changed.";
-        MessageBoxW(nppData._nppHandle, message.c_str(), L"NppHistory Update Check",
-            MB_OK | MB_ICONWARNING);
-    }
 }
 
 LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
@@ -345,6 +332,11 @@ LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LP
             reinterpret_cast<UpdateCompletion*>(lParam));
         if (completion && ready)
             handleUpdateCompletion(std::move(completion));
+        return 0;
+    }
+    if (message == settingsCheckUpdateMessage)
+    {
+        startUpdateCheck(true, wParam != FALSE);
         return 0;
     }
     if (message == WM_ACTIVATEAPP && wParam == FALSE && ready
@@ -495,9 +487,7 @@ void editSettings()
     settings.defaultLogFile = pluginConfigPath / L"NppHistory.log";
     if (settings.edit(nppData._nppHandle, moduleInstance))
     {
-        const bool checkNow = settings.checkForUpdatesNow;
         const bool openLog = settings.openLogNow;
-        settings.checkForUpdatesNow = false;
         settings.openLogNow = false;
         pluginLogger().configure(settings, pluginConfigPath);
         logSettingsChanges(previous, settings);
@@ -514,8 +504,6 @@ void editSettings()
             (void)bufferId;
             state.lastEditTick = now;
         }
-        if (checkNow)
-            startUpdateCheck(true);
         if (openLog)
         {
             if (pluginLogger().ensureFile())

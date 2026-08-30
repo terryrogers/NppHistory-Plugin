@@ -396,6 +396,9 @@ try {
         [NppHistoryNative]::SendMessage($revisionSelector, 0x0146, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
     } else { 0 }
     $toolbarButtonCount = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::SendMessage($comparisonToolbar, 0x0418, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() } else { 0 }
+    $comparisonIconCount = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::GetProp($comparisonToolbar, 'NppHistoryComparisonImageCount').ToInt64() } else { 0 }
+    $comparisonIconSize = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::GetProp($comparisonToolbar, 'NppHistoryComparisonImageSize').ToInt64() } else { 0 }
+    $comparisonIconsPassed = $comparisonIconCount -eq 12 -and $comparisonIconSize -eq 24
     $toolbarTooltip = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::SendMessage($comparisonToolbar, 0x0423, [IntPtr]::Zero, [IntPtr]::Zero) } else { [IntPtr]::Zero } # TB_GETTOOLTIPS
     $hoverTooltip = if ($comparisonToolbar -ne [IntPtr]::Zero) { [NppHistoryNative]::GetProp($comparisonToolbar, 'NppHistoryHoverTooltip') } else { [IntPtr]::Zero }
     $tooltipToolCount = if ($toolbarTooltip -ne [IntPtr]::Zero) { [NppHistoryNative]::SendMessage($toolbarTooltip, 0x040D, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() } else { 0 } # TTM_GETTOOLCOUNT
@@ -455,23 +458,23 @@ try {
     $comparisonOptionsPassed = $false
     if ($comparisonOpened) {
         $beforeNavigation = [NppHistoryNative]::Describe($differenceStatus)
-        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3006, $comparisonToolbar)
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3001, $comparisonToolbar)
         Start-Sleep -Milliseconds 100
         $afterNavigation = [NppHistoryNative]::Describe($differenceStatus)
         $differenceNavigationPassed = $beforeNavigation.Contains('Difference 1 of') -and $afterNavigation.Contains('Difference 2 of')
-        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3012, $comparisonToolbar) # last difference
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3005, $comparisonToolbar) # last difference
         $selectedBeforeCurrent = [NppHistoryNative]::Describe($differenceStatus)
         [void][NppHistoryNative]::SendMessage($compareWindow, 0x0115, [IntPtr]6, $centreScrollbar) # SB_TOP
-        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3011, $comparisonToolbar) # current difference
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3004, $comparisonToolbar) # current difference
         Start-Sleep -Milliseconds 100
         $currentDifferenceTop = [NppHistoryNative]::SendMessage($leftComparison, 2152, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
         $selectedAfterCurrent = [NppHistoryNative]::Describe($differenceStatus)
         $tooltipToolCountAfterCurrent = if ([NppHistoryNative]::GetProp($comparisonToolbar, 'NppHistoryHoverTooltip') -ne [IntPtr]::Zero) { 1 } else { 0 }
         $locationVisibleAfterCurrent = [NppHistoryNative]::IsWindowVisible($locationPane)
         $currentDifferencePassed = $currentDifferenceTop -gt 0 -and $selectedAfterCurrent -eq $selectedBeforeCurrent -and $locationVisibleAfterCurrent -and $tooltipToolCountAfterCurrent -ge 1
-        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3020, $comparisonToolbar) # first revision
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3006, $comparisonToolbar) # first revision
         $firstRevision = [NppHistoryNative]::SendMessage($revisionSelector, 0x0147, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() # CB_GETCURSEL
-        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3023, $comparisonToolbar) # last revision
+        [void][NppHistoryNative]::SendMessage($compareWindow, 0x0111, [IntPtr]3009, $comparisonToolbar) # last revision
         $lastRevision = [NppHistoryNative]::SendMessage($revisionSelector, 0x0147, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
         $revisionToolbarNavigationPassed = $firstRevision -eq 0 -and $lastRevision -eq 1
         [void][NppHistoryNative]::SendMessage($ignoreWhitespace, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) # BM_CLICK
@@ -559,6 +562,7 @@ try {
     $settingsLoggingEnablementPassed = $false
     $manualUpdateCheckPassed = $false
     $manualUpdateAccessError = $false
+    $updatePopupSuppressed = $false
     $updateDialogText = ''
     $updateTimestampPersisted = $false
     $settingsGeneralScreenshot = Join-Path $testRoot 'settings-general.png'
@@ -741,26 +745,22 @@ try {
             $bitmap.Save($settingsUpdatesScreenshot, [Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
             [void][NppHistoryNative]::SendMessage($settingsWindow, 0x0111, [IntPtr]1103, [NppHistoryNative]::FindControl($settingsWindow, 1103))
+            $checkingTextShown = [NppHistoryNative]::Text($updateStatus).Contains('Checking...') -and
+                -not [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
+            $updateDeadline = [DateTime]::UtcNow.AddSeconds(20)
+            while ([DateTime]::UtcNow -lt $updateDeadline -and
+                [NppHistoryNative]::Text($updateStatus).Contains('Checking...')) {
+                Start-Sleep -Milliseconds 100
+            }
+            $updateDialogText = [NppHistoryNative]::Text($updateStatus)
+            $manualUpdateCheckPassed = $checkingTextShown -and
+                $updateDialogText.Contains('Up to date') -and
+                [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
+            $manualUpdateAccessError = $updateDialogText.Contains('Last check failed:')
+            $updatePopupSuppressed = [NppHistoryNative]::FindTopWindowContaining(
+                [uint32]$process.Id, 'NppHistory Update Check') -eq [IntPtr]::Zero
+            [void][NppHistoryNative]::SendMessage($settingsWindow, 0x0111, [IntPtr]1, [IntPtr]::Zero)
         }
-    }
-    $updateWindow = [IntPtr]::Zero
-    $updateDeadline = [DateTime]::UtcNow.AddSeconds(15)
-    while ([DateTime]::UtcNow -lt $updateDeadline -and $updateWindow -eq [IntPtr]::Zero) {
-        Start-Sleep -Milliseconds 100
-        $updateWindow = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'NppHistory Update Check')
-    }
-    if ($updateWindow -ne [IntPtr]::Zero) {
-        $updateText = ''
-        $updateTextDeadline = [DateTime]::UtcNow.AddSeconds(2)
-        while ([DateTime]::UtcNow -lt $updateTextDeadline -and [string]::IsNullOrWhiteSpace($updateText)) {
-            Start-Sleep -Milliseconds 50
-            $updateText = [NppHistoryNative]::AllChildText($updateWindow)
-        }
-        $updateDialogText = $updateText
-        $manualUpdateCheckPassed = $updateText.Contains('newest NppHistory version')
-        $manualUpdateAccessError = $updateText.Contains('could not complete') -and
-            $updateText.Contains('No files were downloaded or changed')
-        [void][NppHistoryNative]::PostMessage($updateWindow, 0x0111, [IntPtr]1, [IntPtr]::Zero)
     }
     Start-Sleep -Milliseconds 250
     $savedSettingsText = [IO.File]::ReadAllText((Join-Path $configFolder 'NppHistory.ini'))
@@ -791,7 +791,7 @@ try {
             $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
             $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
             $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
-            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 22') -and
+            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 23') -and
                 $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
                 $aboutReleaseDate.Trim() -eq 'Release Date:' -and
                 $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero
@@ -845,7 +845,7 @@ try {
         $logText.Contains('[DEBUG] Button click')
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -879,6 +879,8 @@ try {
         ComparisonCenterDelta = $comparisonCenterDelta
         WinMergeFramePresent = $winMergeFramePresent
         ToolbarButtonCount = $toolbarButtonCount
+        ComparisonIconsPassed = $comparisonIconsPassed
+        ComparisonIconSize = "$comparisonIconSize x $comparisonIconSize"
         ToolbarTooltipCount = $tooltipToolCount
         ToolbarTooltipTextPassed = $tooltipTextPassed
         ToolbarTooltipHoverPassed = $tooltipHoverPassed
@@ -910,6 +912,7 @@ try {
         LoggingEventsPassed = $loggingEventsPassed
         LogPath = $logPath
         ManualUpdateCheckPassed = $manualUpdateCheckPassed
+        UpdatePopupSuppressed = $updatePopupSuppressed
         ManualUpdateAccessError = $manualUpdateAccessError
         UpdateDialogText = $updateDialogText
         UpdateTimestampPersisted = $updateTimestampPersisted

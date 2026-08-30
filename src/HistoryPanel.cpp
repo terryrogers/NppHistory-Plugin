@@ -9,6 +9,7 @@
 #include <windowsx.h>
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <iomanip>
 #include <sstream>
@@ -506,14 +507,188 @@ void configureScintilla(HWND editor, HWND source, int lineNumberWidth)
     SendMessageW(editor, SCI_SETREADONLY, TRUE, 0);
 }
 
-bool configureWinMergeToolbar(HWND toolbar, HINSTANCE instance, HIMAGELIST& images)
+enum class CompareToolbarIcon
+{
+    chooseRevision,
+    nextDifference,
+    previousDifference,
+    firstDifference,
+    currentDifference,
+    lastDifference,
+    firstRevision,
+    previousRevision,
+    nextRevision,
+    lastRevision,
+    options,
+    refresh,
+    count
+};
+
+void drawArrow(HDC dc, int centreX, int centreY, int dx, int dy, COLORREF colour)
+{
+    const HPEN pen = CreatePen(PS_SOLID, 3, colour);
+    const HBRUSH brush = CreateSolidBrush(colour);
+    const auto previousPen = SelectObject(dc, pen);
+    const auto previousBrush = SelectObject(dc, brush);
+    MoveToEx(dc, centreX - dx * 5, centreY - dy * 5, nullptr);
+    LineTo(dc, centreX + dx * 4, centreY + dy * 4);
+    POINT head[] = {
+        {centreX + dx * 7, centreY + dy * 7},
+        {centreX + dx * 2 - dy * 4, centreY + dy * 2 - dx * 4},
+        {centreX + dx * 2 + dy * 4, centreY + dy * 2 + dx * 4}};
+    Polygon(dc, head, static_cast<int>(std::size(head)));
+    SelectObject(dc, previousBrush);
+    SelectObject(dc, previousPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+void drawDocument(HDC dc, int left, int top, COLORREF outline)
+{
+    const HPEN pen = CreatePen(PS_SOLID, 2, outline);
+    const HBRUSH brush = CreateSolidBrush(RGB(255, 255, 255));
+    const auto previousPen = SelectObject(dc, pen);
+    const auto previousBrush = SelectObject(dc, brush);
+    Rectangle(dc, left, top, left + 11, top + 15);
+    MoveToEx(dc, left + 3, top + 5, nullptr); LineTo(dc, left + 8, top + 5);
+    MoveToEx(dc, left + 3, top + 9, nullptr); LineTo(dc, left + 8, top + 9);
+    SelectObject(dc, previousBrush);
+    SelectObject(dc, previousPen);
+    DeleteObject(brush);
+    DeleteObject(pen);
+}
+
+HBITMAP createCompareToolbarBitmap(CompareToolbarIcon icon)
+{
+    constexpr int size = 24;
+    const COLORREF mask = RGB(255, 0, 255);
+    const COLORREF blue = RGB(32, 112, 181);
+    const COLORREF darkBlue = RGB(22, 75, 126);
+    const COLORREF orange = RGB(238, 142, 28);
+    const COLORREF green = RGB(36, 158, 91);
+    const COLORREF grey = RGB(135, 145, 155);
+    const HDC screen = GetDC(nullptr);
+    const HDC dc = CreateCompatibleDC(screen);
+    const HBITMAP bitmap = CreateCompatibleBitmap(screen, size, size);
+    ReleaseDC(nullptr, screen);
+    const auto previousBitmap = SelectObject(dc, bitmap);
+    RECT area{0, 0, size, size};
+    const HBRUSH background = CreateSolidBrush(mask);
+    FillRect(dc, &area, background);
+    DeleteObject(background);
+
+    const auto drawDifference = [&](int row)
+    {
+        const HPEN linePen = CreatePen(PS_SOLID, 2, grey);
+        const auto oldPen = SelectObject(dc, linePen);
+        for (int y : {5, 10, 15, 20})
+        {
+            MoveToEx(dc, 5, y, nullptr);
+            LineTo(dc, 19, y);
+        }
+        SelectObject(dc, oldPen);
+        DeleteObject(linePen);
+        const HBRUSH change = CreateSolidBrush(green);
+        RECT marker{4, row - 2, 20, row + 2};
+        FillRect(dc, &marker, change);
+        DeleteObject(change);
+    };
+
+    switch (icon)
+    {
+    case CompareToolbarIcon::chooseRevision:
+    {
+        drawDocument(dc, 2, 3, blue);
+        drawDocument(dc, 11, 6, orange);
+        const HBRUSH brush = CreateSolidBrush(green);
+        POINT triangle[] = {{8, 18}, {14, 18}, {11, 22}};
+        const auto old = SelectObject(dc, brush);
+        Polygon(dc, triangle, static_cast<int>(std::size(triangle)));
+        SelectObject(dc, old); DeleteObject(brush);
+        break;
+    }
+    case CompareToolbarIcon::nextDifference:
+        drawDifference(10); drawArrow(dc, 12, 14, 0, 1, blue); break;
+    case CompareToolbarIcon::previousDifference:
+        drawDifference(15); drawArrow(dc, 12, 10, 0, -1, blue); break;
+    case CompareToolbarIcon::firstDifference:
+        drawDifference(5); drawArrow(dc, 12, 13, 0, -1, blue); break;
+    case CompareToolbarIcon::currentDifference:
+        drawDifference(10);
+        Ellipse(dc, 9, 7, 15, 13);
+        break;
+    case CompareToolbarIcon::lastDifference:
+        drawDifference(20); drawArrow(dc, 12, 12, 0, 1, blue); break;
+    case CompareToolbarIcon::firstRevision:
+        drawDocument(dc, 8, 4, orange);
+        drawArrow(dc, 7, 12, -1, 0, blue);
+        MoveToEx(dc, 2, 5, nullptr); LineTo(dc, 2, 19); break;
+    case CompareToolbarIcon::previousRevision:
+        drawDocument(dc, 9, 4, orange); drawArrow(dc, 7, 12, -1, 0, blue); break;
+    case CompareToolbarIcon::nextRevision:
+        drawDocument(dc, 4, 4, orange); drawArrow(dc, 17, 12, 1, 0, blue); break;
+    case CompareToolbarIcon::lastRevision:
+        drawDocument(dc, 4, 4, orange);
+        drawArrow(dc, 17, 12, 1, 0, blue);
+        MoveToEx(dc, 22, 5, nullptr); LineTo(dc, 22, 19); break;
+    case CompareToolbarIcon::options:
+    {
+        const HPEN pen = CreatePen(PS_SOLID, 2, darkBlue);
+        const HBRUSH brush = CreateSolidBrush(RGB(220, 235, 248));
+        const auto oldPen = SelectObject(dc, pen);
+        const auto oldBrush = SelectObject(dc, brush);
+        Ellipse(dc, 5, 5, 19, 19);
+        Ellipse(dc, 9, 9, 15, 15);
+        for (int i = 0; i < 8; ++i)
+        {
+            const double angle = i * 3.14159265358979323846 / 4.0;
+            MoveToEx(dc, 12 + static_cast<int>(7 * std::cos(angle)),
+                12 + static_cast<int>(7 * std::sin(angle)), nullptr);
+            LineTo(dc, 12 + static_cast<int>(10 * std::cos(angle)),
+                12 + static_cast<int>(10 * std::sin(angle)));
+        }
+        SelectObject(dc, oldBrush); SelectObject(dc, oldPen);
+        DeleteObject(brush); DeleteObject(pen);
+        break;
+    }
+    case CompareToolbarIcon::refresh:
+    {
+        const HPEN pen = CreatePen(PS_SOLID, 3, green);
+        const auto oldPen = SelectObject(dc, pen);
+        Arc(dc, 4, 4, 20, 20, 18, 7, 6, 17);
+        SelectObject(dc, oldPen); DeleteObject(pen);
+        drawArrow(dc, 17, 7, 1, 0, blue);
+        drawArrow(dc, 7, 17, -1, 0, green);
+        break;
+    }
+    default: break;
+    }
+    SelectObject(dc, previousBitmap);
+    DeleteDC(dc);
+    return bitmap;
+}
+
+bool configureComparisonToolbar(HWND toolbar, HINSTANCE instance, HIMAGELIST& images)
 {
     SendMessageW(toolbar, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
-    images = ImageList_LoadImageW(instance, MAKEINTRESOURCEW(IDB_WINMERGE_TOOLBAR), 32, 0,
-        RGB(255, 0, 255), IMAGE_BITMAP, LR_CREATEDIBSECTION);
+    images = ImageList_Create(24, 24, ILC_COLOR32 | ILC_MASK,
+        static_cast<int>(CompareToolbarIcon::count), 0);
+    if (!images)
+        return false;
+    for (int index = 0; index < static_cast<int>(CompareToolbarIcon::count); ++index)
+    {
+        const HBITMAP bitmap = createCompareToolbarBitmap(
+            static_cast<CompareToolbarIcon>(index));
+        ImageList_AddMasked(images, bitmap, RGB(255, 0, 255));
+        DeleteObject(bitmap);
+    }
     SendMessageW(toolbar, TB_SETIMAGELIST, 0, reinterpret_cast<LPARAM>(images));
-    SendMessageW(toolbar, TB_SETBITMAPSIZE, 0, MAKELPARAM(32, 31));
-    SendMessageW(toolbar, TB_SETBUTTONSIZE, 0, MAKELPARAM(37, 34));
+    SetPropW(toolbar, L"NppHistoryComparisonImageCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(CompareToolbarIcon::count)));
+    SetPropW(toolbar, L"NppHistoryComparisonImageSize",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(24)));
+    SendMessageW(toolbar, TB_SETBITMAPSIZE, 0, MAKELPARAM(24, 24));
+    SendMessageW(toolbar, TB_SETBUTTONSIZE, 0, MAKELPARAM(30, 30));
     std::vector<TBBUTTON> buttons;
     const auto addButton = [&](int image, bool enabled)
     {
@@ -531,21 +706,21 @@ bool configureWinMergeToolbar(HWND toolbar, HINSTANCE instance, HIMAGELIST& imag
         button.iBitmap = 5;
         buttons.push_back(button);
     };
+    addButton(0, true);
+    separator();
     addButton(1, true);
+    addButton(2, true);
+    addButton(3, true);
+    addButton(4, true);
+    addButton(5, true);
     separator();
     addButton(6, true);
     addButton(7, true);
+    addButton(8, true);
+    addButton(9, true);
+    separator();
     addButton(10, true);
     addButton(11, true);
-    addButton(12, true);
-    separator();
-    addButton(20, true);
-    addButton(21, true);
-    addButton(22, true);
-    addButton(23, true);
-    separator();
-    addButton(24, true);
-    addButton(25, true);
     SendMessageW(toolbar, TB_ADDBUTTONS, buttons.size(), reinterpret_cast<LPARAM>(buttons.data()));
     SendMessageW(toolbar, TB_AUTOSIZE, 0, 0);
     const HWND nativeTooltip = reinterpret_cast<HWND>(
@@ -569,26 +744,12 @@ bool configureWinMergeToolbar(HWND toolbar, HINSTANCE instance, HIMAGELIST& imag
 const wchar_t* toolbarHint(int image)
 {
     static const wchar_t* hints[] = {
-        L"New comparison (not available in the history viewer)",
         L"Choose revision to compare",
-        L"Save (disabled: history comparison is read-only)",
-        L"Undo (disabled: history comparison is read-only)",
-        L"Redo (disabled: history comparison is read-only)",
-        L"Go to the selected difference",
         L"Next difference",
         L"Previous difference",
-        L"Next conflict (not applicable to revision history)",
-        L"Previous conflict (not applicable to revision history)",
         L"First difference",
         L"Current difference",
         L"Last difference",
-        L"Copy left to right (disabled: history comparison is read-only)",
-        L"Copy right to left (disabled: history comparison is read-only)",
-        L"Copy left to right and go to next (disabled: read-only)",
-        L"Copy right to left and go to next (disabled: read-only)",
-        L"Copy all to right (disabled: history comparison is read-only)",
-        L"Copy all to left (disabled: history comparison is read-only)",
-        L"Automatic merge (disabled: history comparison is read-only)",
         L"First revision",
         L"Previous revision",
         L"Next revision",
@@ -1220,7 +1381,7 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
             SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
         }
         SendMessageW(combo, CB_SETCURSEL, context->revisionIndex, 0);
-        const bool tooltipsReady = configureWinMergeToolbar(
+        const bool tooltipsReady = configureComparisonToolbar(
             GetDlgItem(dialog, IDC_COMPARE_TOOLBAR), context->panel->_instance,
             context->toolbarImages);
         SetPropW(dialog, L"NppHistoryToolbarTooltipsReady",
@@ -1259,7 +1420,7 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
         const int image = LOWORD(wParam) - ID_COMPARE_TOOL_FIRST;
         pluginLogger().write(LogLevel::debug, L"Button click",
             std::wstring(L"Compare: ") + toolbarHint(image));
-        if (image == 1)
+        if (image == 0)
         {
             const HWND toolbar = GetDlgItem(dialog, IDC_COMPARE_TOOLBAR);
             RECT button{};
@@ -1269,26 +1430,26 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
             context->panel->showRevisionPicker(dialog, *context,
                 POINT{button.left, button.bottom}, TPM_LEFTALIGN);
         }
-        else if (image == 6) context->panel->navigateDifference(dialog, *context, 1);
-        else if (image == 7) context->panel->navigateDifference(dialog, *context, -1);
-        else if (image == 10 && !context->differenceRows.empty())
+        else if (image == 1) context->panel->navigateDifference(dialog, *context, 1);
+        else if (image == 2) context->panel->navigateDifference(dialog, *context, -1);
+        else if (image == 3 && !context->differenceRows.empty())
         {
             context->currentDifference = 0;
             context->panel->navigateDifference(dialog, *context, 0);
         }
-        else if (image == 11 && !context->differenceRows.empty())
+        else if (image == 4 && !context->differenceRows.empty())
             context->panel->navigateDifference(dialog, *context, 0);
-        else if (image == 12 && !context->differenceRows.empty())
+        else if (image == 5 && !context->differenceRows.empty())
         {
             context->currentDifference = static_cast<int>(context->differenceRows.size()) - 1;
             context->panel->navigateDifference(dialog, *context, 0);
         }
-        else if (image >= 20 && image <= 23 && !context->panel->_revisions.empty())
+        else if (image >= 6 && image <= 9 && !context->panel->_revisions.empty())
         {
             int revision = context->revisionIndex;
-            if (image == 20) revision = 0;
-            else if (image == 21) revision = (std::max)(0, revision - 1);
-            else if (image == 22) revision = (std::min)(
+            if (image == 6) revision = 0;
+            else if (image == 7) revision = (std::max)(0, revision - 1);
+            else if (image == 8) revision = (std::min)(
                 static_cast<int>(context->panel->_revisions.size()) - 1, revision + 1);
             else revision = static_cast<int>(context->panel->_revisions.size()) - 1;
             if (revision != context->revisionIndex)
@@ -1299,7 +1460,7 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
                 context->panel->renderComparison(dialog, *context);
             }
         }
-        else if (image == 24)
+        else if (image == 10)
         {
             HMENU options = CreatePopupMenu();
             AppendMenuW(options, MF_STRING | (context->options.ignoreWhitespace ? MF_CHECKED : 0),
@@ -1335,7 +1496,7 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
                 context->panel->renderComparison(dialog, *context);
             }
         }
-        else if (image == 25) context->panel->renderComparison(dialog, *context);
+        else if (image == 11) context->panel->renderComparison(dialog, *context);
         return TRUE;
     }
     if (message == WM_COMMAND && LOWORD(wParam) == IDC_COMPARE_LOCATION_CLOSE
@@ -1805,6 +1966,10 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
     if (message == WM_DESTROY)
     {
         RemovePropW(dialog, L"NppHistoryToolbarTooltipsReady");
+        RemovePropW(GetDlgItem(dialog, IDC_COMPARE_TOOLBAR),
+            L"NppHistoryComparisonImageCount");
+        RemovePropW(GetDlgItem(dialog, IDC_COMPARE_TOOLBAR),
+            L"NppHistoryComparisonImageSize");
         if (context->toolbarImages) ImageList_Destroy(context->toolbarImages);
         context->toolbarImages = nullptr;
         return TRUE;

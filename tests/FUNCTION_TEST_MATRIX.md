@@ -47,6 +47,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `Settings::load` | Direct defaults, all fields, clamping and legacy migration | PASS |
 | `Settings::save` | Direct all fields/frequencies and Unicode persistence | PASS |
 | `Settings::edit` | Live modal creation, centring, icon and content | PASS |
+| `Settings::refreshUpdateStatus` | Live checking/result text and Check-now enablement without closing Settings | PASS |
 
 ## Logger.cpp / PluginLogger
 
@@ -155,7 +156,10 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `setStyle` | Live Scintilla colours/styles | PASS |
 | `styleText` | Live syntax/difference text styling | PASS |
 | `configureScintilla` | Live line numbers, editors and scrolling | PASS |
-| `configureWinMergeToolbar` | Live 15-button toolbar | PASS |
+| `drawArrow` | Live native comparison toolbar rendering | PASS |
+| `drawDocument` | Live revision-selection/navigation icon rendering | PASS |
+| `createCompareToolbarBitmap` | Live twelve-icon, 24 x 24 image-list rendering | PASS |
+| `configureComparisonToolbar` | Live 12-command NppHistory-style toolbar with three separators | PASS |
 | `toolbarHint` | Live tooltip text/hover | PASS |
 | `isDifference` | Direct diff kinds plus live navigation count | PASS |
 | `markerColour` | Live location/difference palette | PASS |
@@ -194,8 +198,8 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `saveConfiguredScope` | Live current test file and direct scope persistence; multi-file live path not automated | PARTIAL |
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |
 | `updateThreadProc` | Live non-blocking GitHub request and completion message | PASS |
-| `startUpdateCheck` | Live manual background check; duplicate-start policy direct through helper | PASS |
-| `handleUpdateCompletion` | Live up-to-date result and timestamp persistence; available-link prompt covered at core policy level | PARTIAL |
+| `startUpdateCheck` | Live manual background check, in-window checking state and duplicate-start policy | PASS |
+| `handleUpdateCompletion` | Live non-modal result/status/timestamp persistence; automatic available-link prompt covered at core policy level | PARTIAL |
 | `timerProc` | Live after-edit timer; interval branch directly policy-tested | PASS |
 | `showHistory` | Live menu command and dock display | PASS |
 | `captureNow` | Live forced manual revision | PASS |

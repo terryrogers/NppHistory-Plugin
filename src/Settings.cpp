@@ -15,6 +15,9 @@ namespace npphistory
 {
 namespace
 {
+HWND activeSettingsDialog = nullptr;
+Settings* activeSettings = nullptr;
+
 unsigned readNumber(HWND dialog, int control, unsigned minimum, unsigned fallback)
 {
     BOOL translated = FALSE;
@@ -226,6 +229,8 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
     {
         settings = reinterpret_cast<Settings*>(lParam);
         SetWindowLongPtrW(dialog, DWLP_USER, lParam);
+        activeSettingsDialog = dialog;
+        activeSettings = settings;
         const HICON icon = LoadIconW(reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog,
             GWLP_HINSTANCE)), MAKEINTRESOURCEW(IDI_NPPHISTORY));
         SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icon));
@@ -350,6 +355,11 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
     }
     if (message == WM_DESTROY)
     {
+        if (activeSettingsDialog == dialog)
+        {
+            activeSettingsDialog = nullptr;
+            activeSettings = nullptr;
+        }
         DeleteObject(RemovePropW(dialog, L"NppHistorySettingsPageBrush"));
         RemovePropW(dialog, L"NppHistorySettingsPageColour");
     }
@@ -373,8 +383,11 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
     }
     if (message == WM_COMMAND && LOWORD(wParam) == IDC_UPDATE_CHECK_NOW)
     {
-        settings->checkForUpdatesNow = true;
-        SendMessageW(dialog, WM_COMMAND, IDOK, 0);
+        settings->refreshUpdateStatus(true);
+        const bool includePrereleases = IsDlgButtonChecked(dialog,
+            IDC_UPDATE_PRERELEASES) == BST_CHECKED;
+        PostMessageW(GetWindow(dialog, GW_OWNER), settingsCheckUpdateMessage,
+            includePrereleases ? TRUE : FALSE, 0);
         return TRUE;
     }
     if (message == WM_COMMAND && (LOWORD(wParam) == IDC_LOGGING_ENABLED
@@ -586,7 +599,6 @@ void Settings::load(const std::filesystem::path& file)
         updateStatus.data(), static_cast<DWORD>(updateStatus.size()), file.c_str());
     updateStatus.resize(wcslen(updateStatus.c_str()));
     lastUpdateStatus = std::move(updateStatus);
-    checkForUpdatesNow = false;
     loggingEnabled = readBoolean(file, L"LoggingEnabled", false);
     const int loadedLogLevel = GetPrivateProfileIntW(L"NppHistory", L"LogLevel", 2,
         file.c_str());
@@ -666,12 +678,26 @@ bool Settings::save(const std::filesystem::path& file) const
 bool Settings::edit(HWND owner, HINSTANCE instance)
 {
     Settings edited = *this;
-    edited.checkForUpdatesNow = false;
     edited.openLogNow = false;
     if (DialogBoxParamW(instance, MAKEINTRESOURCEW(IDD_SETTINGS), owner, settingsProc,
         reinterpret_cast<LPARAM>(&edited)) != IDOK)
         return false;
     *this = edited;
     return true;
+}
+
+void Settings::refreshUpdateStatus(bool checking) const
+{
+    if (!activeSettingsDialog || !IsWindow(activeSettingsDialog))
+        return;
+    if (!checking && activeSettings && activeSettings != this)
+    {
+        activeSettings->lastUpdateCheck = lastUpdateCheck;
+        activeSettings->lastUpdateStatus = lastUpdateStatus;
+        activeSettings->lastNotifiedVersion = lastNotifiedVersion;
+    }
+    SetDlgItemTextW(activeSettingsDialog, IDC_UPDATE_STATUS,
+        checking ? L"Status: Checking..." : updateStatusText(*this).c_str());
+    EnableWindow(GetDlgItem(activeSettingsDialog, IDC_UPDATE_CHECK_NOW), !checking);
 }
 }

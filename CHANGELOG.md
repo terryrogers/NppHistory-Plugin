@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0-beta.23
+
+- Changed **Check now** to remain inside Settings, show `Checking...`, and refresh the Updates status text without displaying a result dialog.
+- Preserved automatic update-available notifications while keeping manual checks non-modal for success, failure and available-update results.
+- Replaced the WinMerge bitmap-strip toolbar with twelve crisp NppHistory-native comparison icons using the plugin's blue, orange, green and grey palette.
+- Removed the unused third-party toolbar bitmap while retaining the documented WinMerge comparison-status artwork.
+
 ## 0.2.0-beta.22
 
 - Disabled Capture, Refresh, Compare and Restore for unsaved tabs and added a centered red Save File First message that collapses out of the pane after the first save.

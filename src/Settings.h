@@ -7,6 +7,8 @@
 
 namespace npphistory
 {
+inline constexpr UINT settingsCheckUpdateMessage = WM_APP + 241;
+
 enum class AutoSaveScope
 {
     currentFile,
@@ -77,7 +79,6 @@ struct Settings
     unsigned long long lastUpdateCheck = 0;
     std::wstring lastNotifiedVersion;
     std::wstring lastUpdateStatus;
-    bool checkForUpdatesNow = false;
     bool loggingEnabled = false;
     LogLevel logLevel = LogLevel::informational;
     LogLocationMode logLocationMode = LogLocationMode::pluginConfig;
@@ -103,5 +104,6 @@ struct Settings
     void load(const std::filesystem::path& file);
     bool save(const std::filesystem::path& file) const;
     bool edit(HWND owner, HINSTANCE instance);
+    void refreshUpdateStatus(bool checking = false) const;
 };
 }
