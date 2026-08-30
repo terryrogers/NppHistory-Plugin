@@ -8,6 +8,7 @@ int wmain()
     runDiffTests(context);
     runHistoryStoreTests(context);
     runHistoryCatalogTests(context);
+    runUpdateCheckerTests(context);
 
     std::cout << "NppHistory core verification: " << context.checks << " checks, "
         << context.failures << " failures.\n";

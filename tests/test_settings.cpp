@@ -22,6 +22,9 @@ bool sameSettings(const Settings& left, const Settings& right)
         && left.toolbarRestore == right.toolbarRestore
         && left.autoUpdateEnabled == right.autoUpdateEnabled
         && left.updateFrequency == right.updateFrequency
+        && left.includePrereleaseUpdates == right.includePrereleaseUpdates
+        && left.lastUpdateCheck == right.lastUpdateCheck
+        && left.lastNotifiedVersion == right.lastNotifiedVersion
         && left.historyEnabled == right.historyEnabled
         && left.historyBeforeSave == right.historyBeforeSave
         && left.historyAfterSave == right.historyAfterSave
@@ -56,6 +59,9 @@ void runSettingsTests(TestContext& context)
     configured.toolbarRestore = true;
     configured.autoUpdateEnabled = true;
     configured.updateFrequency = UpdateFrequency::monthly;
+    configured.includePrereleaseUpdates = false;
+    configured.lastUpdateCheck = 123456789ULL;
+    configured.lastNotifiedVersion = L"v0.2.0-beta.20";
     configured.historyEnabled = false;
     configured.historyBeforeSave = false;
     configured.historyAfterSave = false;
@@ -95,6 +101,12 @@ void runSettingsTests(TestContext& context)
         "AutoUpdateEnabled round-trips");
     context.expect(configured.updateFrequency == roundTrip.updateFrequency,
         "UpdateFrequency round-trips");
+    context.expect(configured.includePrereleaseUpdates == roundTrip.includePrereleaseUpdates,
+        "IncludePrereleaseUpdates round-trips");
+    context.expect(configured.lastUpdateCheck == roundTrip.lastUpdateCheck,
+        "LastUpdateCheck round-trips a 64-bit value");
+    context.expect(configured.lastNotifiedVersion == roundTrip.lastNotifiedVersion,
+        "LastNotifiedVersion round-trips");
     context.expect(configured.historyEnabled == roundTrip.historyEnabled,
         "HistoryEnabled round-trips");
     context.expect(configured.historyBeforeSave == roundTrip.historyBeforeSave,
@@ -221,6 +233,23 @@ void runSettingsTests(TestContext& context)
     policy.autoSaveAtIntervals = false;
     context.expect(!policy.intervalDue(240'000, 0),
         "intervalDue respects the interval checkbox");
+
+    policy.autoUpdateEnabled = true;
+    policy.updateFrequency = UpdateFrequency::daily;
+    policy.lastUpdateCheck = 100;
+    context.expect(!policy.updateCheckDue(86'499),
+        "daily update check is not due one second before its threshold");
+    context.expect(policy.updateCheckDue(86'500),
+        "daily update check is due exactly at its threshold");
+    policy.updateFrequency = UpdateFrequency::weekly;
+    context.expect(!policy.updateCheckDue(604'899) && policy.updateCheckDue(604'900),
+        "weekly update frequency uses seven days");
+    policy.updateFrequency = UpdateFrequency::monthly;
+    context.expect(!policy.updateCheckDue(2'592'099) && policy.updateCheckDue(2'592'100),
+        "monthly update frequency uses thirty days");
+    policy.autoUpdateEnabled = false;
+    context.expect(!policy.updateCheckDue(9'999'999),
+        "disabled automatic updates never become due");
 
     const auto normalizedPath = directory.path() / L"normalized.ini";
     WritePrivateProfileStringW(L"NppHistory", L"AfterEditSeconds", L"0", normalizedPath.c_str());

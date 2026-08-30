@@ -16,8 +16,8 @@ IDI_EDIT ICON "res\\Edit.ico"
 IDI_DELETE ICON "res\\Delete.ico"
 
 1 VERSIONINFO
- FILEVERSION 0,2,0,19
- PRODUCTVERSION 0,2,0,19
+ FILEVERSION 0,2,0,20
+ PRODUCTVERSION 0,2,0,20
  FILEFLAGSMASK 0x3fL
  FILEOS 0x40004L
  FILETYPE 0x2L
@@ -28,12 +28,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "NppHistory contributors\0"
             VALUE "FileDescription", "Automatic save and continuous history for Notepad++\0"
-            VALUE "FileVersion", "0.2.0-beta.20\0"
+            VALUE "FileVersion", "0.2.0-beta.21\0"
             VALUE "InternalName", "NppHistory\0"
             VALUE "LegalCopyright", "GPL-3.0\0"
             VALUE "OriginalFilename", "NppHistory.dll\0"
             VALUE "ProductName", "NppHistory\0"
-            VALUE "ProductVersion", "0.2.0-beta.20\0"
+            VALUE "ProductVersion", "0.2.0-beta.21\0"
             VALUE "ReleaseDate", NPPHISTORY_RELEASE_DATE "\0"
         END
     END
@@ -75,7 +75,8 @@ BEGIN
     CONTROL "Enable automatic update checks", IDC_AUTO_UPDATE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 134, 180, 13
     LTEXT "Frequency:", IDC_UPDATE_FREQUENCY_LABEL, 28, 157, 55, 12
     COMBOBOX IDC_UPDATE_FREQUENCY, 86, 154, 105, 70, CBS_DROPDOWNLIST | WS_TABSTOP
-    LTEXT "Placeholder only; update checking is not implemented yet.", IDC_UPDATE_NOTE, 28, 181, 270, 12
+    CONTROL "Include prerelease versions", IDC_UPDATE_PRERELEASES, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 181, 155, 13
+    PUSHBUTTON "Check now...", IDC_UPDATE_CHECK_NOW, 220, 176, 78, 18
 
     CONTROL "Enable automatic saving", IDC_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 37, 235, 13
     GROUPBOX "Auto Save when:", IDC_AUTOSAVE_WHEN_GROUP, 18, 55, 294, 115

@@ -53,6 +53,10 @@ struct Settings
     bool toolbarRestore = false;
     bool autoUpdateEnabled = false;
     UpdateFrequency updateFrequency = UpdateFrequency::weekly;
+    bool includePrereleaseUpdates = true;
+    unsigned long long lastUpdateCheck = 0;
+    std::wstring lastNotifiedVersion;
+    bool checkForUpdatesNow = false;
     bool historyEnabled = true;
     bool historyBeforeSave = true;
     bool historyAfterSave = true;
@@ -64,6 +68,7 @@ struct Settings
     bool shouldCreateRevision(RevisionTrigger trigger) const noexcept;
     bool afterEditDue(unsigned long long now, unsigned long long lastEdit) const noexcept;
     bool intervalDue(unsigned long long now, unsigned long long lastInterval) const noexcept;
+    bool updateCheckDue(unsigned long long nowSeconds) const noexcept;
 
     void load(const std::filesystem::path& file);
     bool save(const std::filesystem::path& file) const;

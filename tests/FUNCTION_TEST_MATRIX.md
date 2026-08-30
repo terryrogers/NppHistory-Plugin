@@ -30,6 +30,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `updateLocationControls` | Live custom/adjacent enablement | PASS |
 | `updateHistoryControls` | Live History master enablement | PASS |
 | `updateAutoSaveControls` | Live Auto Save master/interval enablement | PASS |
+| `updateUpdateControls` | Live automatic-update master/dependent-control enablement | PASS |
 | `showSettingsPage` | Live three-tab selection/rendering | PASS |
 | `browseForHistoryRoot` | Control presence/enablement live; native picker selection not automated | PARTIAL |
 | `settingsProc` | Live initialization, commands, page changes and dependent states | PASS |
@@ -37,9 +38,26 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `Settings::shouldCreateRevision` | Direct all revision paths, selected/cleared/master-off | PASS |
 | `Settings::afterEditDue` | Direct pre/exact threshold, disabled and tick reversal | PASS |
 | `Settings::intervalDue` | Direct pre/exact threshold, disabled and tick reversal | PASS |
+| `Settings::updateCheckDue` | Direct disabled, daily, weekly and monthly boundaries | PASS |
 | `Settings::load` | Direct defaults, all fields, clamping and legacy migration | PASS |
 | `Settings::save` | Direct all fields/frequencies and Unicode persistence | PASS |
 | `Settings::edit` | Live modal creation, centring, icon and content | PASS |
+
+## UpdateChecker.cpp
+
+| Function | Evidence | Status |
+|---|---|---|
+| `parseSemanticVersion` | Direct valid, prerelease, metadata, overflow/format and leading-zero cases | PASS |
+| `compareSemanticVersions` | Direct major/minor/patch, stable/prerelease, numeric/string and sequence precedence | PASS |
+| `parseGitHubReleases` | Direct nested fields, draft, trusted origin, incomplete and malformed responses | PASS |
+| `selectNewestUpdate` | Direct stable/prerelease channels, newest/current and invalid-installed-version cases | PASS |
+| `elapsedFrequencyDue` | Direct first run, pre/exact threshold and clock rollback | PASS |
+| `trustedReleaseUrl` | Direct HTTPS host/owner/repository allow-list cases | PASS |
+| `shouldNotifyUpdate` | Direct new, duplicate, manual and empty-tag cases | PASS |
+| `updateAccessErrorMessage` | Direct rate-limit, repository, proxy, HTTP, timeout, DNS, connection, TLS and unknown errors | PASS |
+| `currentUnixSeconds` | Indirect persisted successful live-check timestamp | PASS |
+| `checkGitHubForUpdates` | Live background request to the real public Releases endpoint | PASS |
+| `downloadReleaseJson` | Indirect live HTTPS request, status/size handling and core failure classification | PASS |
 
 ## TextDiff.cpp
 
@@ -155,6 +173,9 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `saveBuffer` | Live actual after-edit save | PASS |
 | `saveConfiguredScope` | Live current test file and direct scope persistence; multi-file live path not automated | PARTIAL |
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |
+| `updateThreadProc` | Live non-blocking GitHub request and completion message | PASS |
+| `startUpdateCheck` | Live manual background check; duplicate-start policy direct through helper | PASS |
+| `handleUpdateCompletion` | Live up-to-date result and timestamp persistence; available-link prompt covered at core policy level | PARTIAL |
 | `timerProc` | Live after-edit timer; interval branch directly policy-tested | PASS |
 | `showHistory` | Live menu command and dock display | PASS |
 | `captureNow` | Live forced manual revision | PASS |

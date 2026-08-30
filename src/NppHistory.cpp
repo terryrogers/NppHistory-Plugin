@@ -4,13 +4,17 @@
 #include "PluginInterface.h"
 #include "Settings.h"
 #include "Utilities.h"
+#include "UpdateChecker.h"
 #include "Version.h"
 #include "resource.h"
 
 #include <array>
+#include <atomic>
 #include <commctrl.h>
 #include <filesystem>
+#include <memory>
 #include <optional>
+#include <process.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <windows.h>
@@ -22,6 +26,7 @@ namespace
 {
 constexpr wchar_t pluginName[] = L"NppHistory";
 constexpr UINT timerPeriodMilliseconds = 1000;
+constexpr UINT updateCompleteMessage = WM_APP + 240;
 
 enum MenuIndex { showHistoryIndex, captureIndex, settingsIndex, aboutIndex,
     toolbarCompareIndex, toolbarRestoreIndex, menuCount };
@@ -51,6 +56,22 @@ bool configurationLoaded = false;
 UINT_PTR activeTimerId = 0;
 UINT_PTR lastActiveBuffer = 0;
 ULONGLONG lastIntervalTick = 0;
+std::atomic_bool updateCheckInProgress = false;
+std::atomic_bool updateShuttingDown = false;
+HANDLE updateThreadHandle = nullptr;
+
+struct UpdateRequest
+{
+    HWND notifyWindow = nullptr;
+    bool manual = false;
+    bool includePrereleases = false;
+};
+
+struct UpdateCompletion
+{
+    bool manual = false;
+    UpdateCheckResult result;
+};
 
 struct ToolbarAsset
 {
@@ -194,9 +215,117 @@ void saveConfiguredScope(UINT_PTR preferredBuffer = 0)
         saveBuffer(preferredBuffer ? preferredBuffer : currentBuffer());
 }
 
+unsigned __stdcall updateThreadProc(void* parameter)
+{
+    std::unique_ptr<UpdateRequest> request(static_cast<UpdateRequest*>(parameter));
+    auto completion = std::make_unique<UpdateCompletion>();
+    completion->manual = request->manual;
+    completion->result = checkGitHubForUpdates(NPPHISTORY_VERSION_SEMVER_W,
+        request->includePrereleases);
+    if (updateShuttingDown || !PostMessageW(request->notifyWindow, updateCompleteMessage, 0,
+        reinterpret_cast<LPARAM>(completion.get())))
+    {
+        updateCheckInProgress = false;
+        return 0;
+    }
+    completion.release();
+    return 0;
+}
+
+void startUpdateCheck(bool manual)
+{
+    bool expected = false;
+    if (!updateCheckInProgress.compare_exchange_strong(expected, true))
+    {
+        if (manual)
+            MessageBoxW(nppData._nppHandle, L"An update check is already in progress.",
+                pluginName, MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+    if (updateThreadHandle)
+    {
+        CloseHandle(updateThreadHandle);
+        updateThreadHandle = nullptr;
+    }
+    auto request = std::make_unique<UpdateRequest>();
+    request->notifyWindow = nppData._nppHandle;
+    request->manual = manual;
+    request->includePrereleases = settings.includePrereleaseUpdates;
+    const uintptr_t thread = _beginthreadex(nullptr, 0, updateThreadProc, request.get(), 0, nullptr);
+    if (!thread)
+    {
+        updateCheckInProgress = false;
+        if (manual)
+            MessageBoxW(nppData._nppHandle, L"The update check could not be started.",
+                pluginName, MB_OK | MB_ICONERROR);
+        return;
+    }
+    request.release();
+    updateThreadHandle = reinterpret_cast<HANDLE>(thread);
+}
+
+void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
+{
+    updateCheckInProgress = false;
+    if (updateThreadHandle)
+    {
+        CloseHandle(updateThreadHandle);
+        updateThreadHandle = nullptr;
+    }
+    const bool successful = completion->result.status == UpdateCheckStatus::updateAvailable
+        || completion->result.status == UpdateCheckStatus::upToDate;
+    if (successful)
+    {
+        settings.lastUpdateCheck = currentUnixSeconds();
+        settings.save(settingsFile);
+    }
+    if (completion->result.status == UpdateCheckStatus::updateAvailable)
+    {
+        const auto& release = completion->result.release;
+        if (!shouldNotifyUpdate(release.tag, settings.lastNotifiedVersion,
+            completion->manual))
+            return;
+        settings.lastNotifiedVersion = release.tag;
+        settings.save(settingsFile);
+        const std::wstring message = L"A newer NppHistory version is available: "
+            + release.tag + L"\n\nInstalled version: " + NPPHISTORY_VERSION_SEMVER_W
+            + L"\n\nOpen the verified GitHub release page?";
+        if (MessageBoxW(nppData._nppHandle, message.c_str(), L"NppHistory Update Available",
+            MB_YESNO | MB_ICONINFORMATION) == IDYES && trustedReleaseUrl(release.url))
+        {
+            const auto opened = reinterpret_cast<INT_PTR>(ShellExecuteW(nppData._nppHandle,
+                L"open", release.url.c_str(), nullptr, nullptr, SW_SHOWNORMAL));
+            if (opened <= 32)
+                MessageBoxW(nppData._nppHandle,
+                    L"Windows could not open the release page. Visit the NppHistory-Plugin repository on GitHub manually.",
+                    L"NppHistory Update Check", MB_OK | MB_ICONWARNING);
+        }
+    }
+    else if (completion->manual && completion->result.status == UpdateCheckStatus::upToDate)
+    {
+        MessageBoxW(nppData._nppHandle, L"This is the newest NppHistory version available for the selected update channel.",
+            L"NppHistory Update Check", MB_OK | MB_ICONINFORMATION);
+    }
+    else if (completion->manual)
+    {
+        const std::wstring message = L"NppHistory could not complete the update check.\n\n"
+            + completion->result.detail + L"\n\nNo files were downloaded or changed.";
+        MessageBoxW(nppData._nppHandle, message.c_str(), L"NppHistory Update Check",
+            MB_OK | MB_ICONWARNING);
+    }
+}
+
 LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
     UINT_PTR, DWORD_PTR)
 {
+    if (message == updateCompleteMessage)
+    {
+        std::unique_ptr<UpdateCompletion> completion(
+            reinterpret_cast<UpdateCompletion*>(lParam));
+        if (completion && ready)
+            handleUpdateCompletion(std::move(completion));
+        return 0;
+    }
     if (message == WM_ACTIVATEAPP && wParam == FALSE && ready
         && settings.shouldAutoSave(AutoSaveTrigger::focusLoss))
         saveConfiguredScope();
@@ -286,6 +415,8 @@ void editSettings()
 {
     if (settings.edit(nppData._nppHandle, moduleInstance))
     {
+        const bool checkNow = settings.checkForUpdatesNow;
+        settings.checkForUpdatesNow = false;
         settings.save(settingsFile);
         historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
             settings.customHistoryRoot, pluginConfigPath / L"history");
@@ -298,6 +429,8 @@ void editSettings()
             (void)bufferId;
             state.lastEditTick = now;
         }
+        if (checkNow)
+            startUpdateCheck(true);
     }
 }
 
@@ -440,6 +573,9 @@ void initialise()
     removeMenuCommand(mainMenu, menuItems[toolbarRestoreIndex]._cmdID);
     DrawMenuBar(nppData._nppHandle);
     ready = true;
+    updateShuttingDown = false;
+    if (settings.updateCheckDue(currentUnixSeconds()))
+        startUpdateCheck(false);
 }
 }
 
@@ -584,6 +720,14 @@ void handleNotification(SCNotification* notification)
     }
     else if (code == NPPN_SHUTDOWN)
     {
+        updateShuttingDown = true;
+        if (updateThreadHandle)
+        {
+            WaitForSingleObject(updateThreadHandle, 15000);
+            CloseHandle(updateThreadHandle);
+            updateThreadHandle = nullptr;
+        }
+        updateCheckInProgress = false;
         if (activeTimerId)
             KillTimer(nullptr, activeTimerId);
         activeTimerId = 0;

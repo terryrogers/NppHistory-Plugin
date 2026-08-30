@@ -13,7 +13,7 @@
   <PropertyGroup><OutDir>$(ProjectDir)..\build\tests\</OutDir><IntDir>$(ProjectDir)..\build\obj\tests\</IntDir><TargetName>NppHistory.Tests</TargetName></PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile><WarningLevel>Level4</WarningLevel><LanguageStandard>stdcpp17</LanguageStandard><AdditionalIncludeDirectories>$(ProjectDir)..\src</AdditionalIncludeDirectories><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
-    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>bcrypt.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>bcrypt.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tests\test_main.cpp" />
@@ -22,11 +22,13 @@
     <ClCompile Include="..\tests\test_diff.cpp" />
     <ClCompile Include="..\tests\test_history_store.cpp" />
     <ClCompile Include="..\tests\test_history_catalog.cpp" />
+    <ClCompile Include="..\tests\test_update_checker.cpp" />
     <ClCompile Include="..\src\HistoryCatalog.cpp" />
     <ClCompile Include="..\src\HistoryStore.cpp" />
     <ClCompile Include="..\src\Settings.cpp" />
     <ClCompile Include="..\src\TextDiff.cpp" />
     <ClCompile Include="..\src\Utilities.cpp" />
+    <ClCompile Include="..\src\UpdateChecker.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

@@ -36,7 +36,7 @@
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
-      <AdditionalDependencies>bcrypt.lib;comctl32.lib;shell32.lib;ole32.lib;user32.lib;kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>bcrypt.lib;winhttp.lib;comctl32.lib;shell32.lib;ole32.lib;user32.lib;kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -46,6 +46,7 @@
     <ClInclude Include="..\src\Settings.h" />
     <ClInclude Include="..\src\TextDiff.h" />
     <ClInclude Include="..\src\Utilities.h" />
+    <ClInclude Include="..\src\UpdateChecker.h" />
     <ClInclude Include="..\src\Version.h" />
     <ClInclude Include="..\src\PluginInterface.h" />
     <ClInclude Include="..\src\Notepad_plus_msgs.h" />
@@ -62,6 +63,7 @@
     <ClCompile Include="..\src\Settings.cpp" />
     <ClCompile Include="..\src\TextDiff.cpp" />
     <ClCompile Include="..\src\Utilities.cpp" />
+    <ClCompile Include="..\src\UpdateChecker.cpp" />
   </ItemGroup>
   <ItemGroup><ResourceCompile Include="..\src\NppHistory.rc" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

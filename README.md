@@ -59,7 +59,7 @@ For a portable installation, use the `plugins` folder beside `notepad++.exe`.
 
 Open **Plugins > NppHistory > Settings**. Settings are grouped into three tabs:
 
-- **General** controls optional Capture, Compare and Restore buttons on the main Notepad++ toolbar. Toolbar changes take effect after restarting Notepad++. The Update panel stores an enabled option and daily, weekly or monthly frequency for a future update checker; this beta does not contact an update service.
+- **General** controls optional Capture, Compare and Restore buttons on the main Notepad++ toolbar. Toolbar changes take effect after restarting Notepad++. The Update panel can check the public NppHistory GitHub Releases feed daily, weekly or monthly, optionally include prereleases, or perform an immediate manual check. Checks run in the background and only offer to open the official HTTPS release page; NppHistory does not download or replace its DLL.
 - **Auto Save** independently enables automatic saving, with **After editing stops** selected by default at 30 seconds. Optional triggers cover Notepad++ losing focus, timed intervals in minutes, file-tab changes and Notepad++ exit. Autosave can apply to the current file only or all open files. After-edit values below 10 seconds are normalized to 10 seconds.
 - **History** independently enables revision history and selects whether revisions are created before saves, after saves and before restores. It also selects either the default hidden `.npphistory` folder beside each text file or a common custom history root.
 
@@ -101,7 +101,7 @@ This makes the pre-edit disk version available for rollback and establishes the 
 
 ## Verification
 
-The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The current beta verification report is `TEST_REPORT-0.2.0-beta.20.md`.
+The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The current development verification report is `TEST_REPORT-0.2.0-beta.21.md`.
 
 ## Build and test
 
@@ -114,7 +114,7 @@ msbuild .\vs.proj\NppHistory.Tests.vcxproj /m /p:Configuration=Release /p:Platfo
 .\tests\runtime_smoke.ps1
 ```
 
-The runtime smoke test uses an isolated portable copy of an installed 64-bit Notepad++ and verifies a real 10-second autosave, adjacent hidden storage, the internal catalogue, save revisions, forced pane capture, pane and main-toolbar controls, the tabbed settings and About windows, and the WinMerge-style comparison viewer including synchronized scrolling, native line numbers, Location Pane rendering, toolbar navigation, file headers and pane status information. The plugin binary is written to `build\x64\Release\NppHistory.dll`.
+The runtime smoke test uses an isolated portable copy of an installed 64-bit Notepad++ and verifies a real 10-second autosave, adjacent hidden storage, the internal catalogue, save revisions, forced pane capture, pane and main-toolbar controls, a real background GitHub update check, the tabbed settings and About windows, and the WinMerge-style comparison viewer including synchronized scrolling, native line numbers, Location Pane rendering, toolbar navigation, file headers and pane status information. The plugin binary is written to `build\x64\Release\NppHistory.dll`.
 
 The comparison workflow was implemented after reviewing WinMerge's open-source location view, merge view, file header, status bar, syntax-color and diff-color implementations. The toolbar bitmap is derived from WinMerge's GPL-2.0-or-later artwork; see `THIRD_PARTY_NOTICES.md`. NppHistory's comparison and history engines remain independently implemented.
 

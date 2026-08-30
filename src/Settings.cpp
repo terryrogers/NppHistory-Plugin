@@ -1,6 +1,7 @@
 #include "Settings.h"
 #include "resource.h"
 #include "Utilities.h"
+#include "UpdateChecker.h"
 
 #include <algorithm>
 #include <commctrl.h>
@@ -22,6 +23,19 @@ unsigned readNumber(HWND dialog, int control, unsigned minimum, unsigned fallbac
 bool readBoolean(const std::filesystem::path& file, const wchar_t* key, bool fallback)
 {
     return GetPrivateProfileIntW(L"NppHistory", key, fallback ? 1 : 0, file.c_str()) != 0;
+}
+
+unsigned long long readUnsigned64(const std::filesystem::path& file,
+    const wchar_t* key, unsigned long long fallback)
+{
+    wchar_t text[32]{};
+    GetPrivateProfileStringW(L"NppHistory", key, L"", text,
+        static_cast<DWORD>(std::size(text)), file.c_str());
+    if (!text[0])
+        return fallback;
+    wchar_t* end = nullptr;
+    const unsigned long long value = _wcstoui64(text, &end, 10);
+    return end && *end == L'\0' ? value : fallback;
 }
 
 bool ensureUnicodeIni(const std::filesystem::path& file)
@@ -72,12 +86,21 @@ void updateAutoSaveControls(HWND dialog)
     EnableWindow(GetDlgItem(dialog, IDC_INTERVAL_LABEL), interval);
 }
 
+void updateUpdateControls(HWND dialog)
+{
+    const BOOL enabled = IsDlgButtonChecked(dialog, IDC_AUTO_UPDATE) == BST_CHECKED;
+    EnableWindow(GetDlgItem(dialog, IDC_UPDATE_FREQUENCY_LABEL), enabled);
+    EnableWindow(GetDlgItem(dialog, IDC_UPDATE_FREQUENCY), enabled);
+    EnableWindow(GetDlgItem(dialog, IDC_UPDATE_PRERELEASES), TRUE);
+}
+
 void showSettingsPage(HWND dialog, int page)
 {
     const int general[] = {IDC_GENERAL_TOOLBAR_GROUP, IDC_TOOLBAR_CAPTURE,
         IDC_TOOLBAR_COMPARE, IDC_TOOLBAR_RESTORE, IDC_TOOLBAR_DESCRIPTION,
         IDC_TOOLBAR_RESTART_NOTE, IDC_GENERAL_UPDATE_GROUP, IDC_AUTO_UPDATE,
-        IDC_UPDATE_FREQUENCY_LABEL, IDC_UPDATE_FREQUENCY, IDC_UPDATE_NOTE};
+        IDC_UPDATE_FREQUENCY_LABEL, IDC_UPDATE_FREQUENCY, IDC_UPDATE_PRERELEASES,
+        IDC_UPDATE_CHECK_NOW};
     const int autoSave[] = {IDC_ENABLED, IDC_AUTOSAVE_WHEN_GROUP, IDC_AFTER_EDIT,
         IDC_AFTER_EDIT_SECONDS, IDC_AFTER_EDIT_LABEL, IDC_AUTOSAVE_FOCUS_LOSS,
         IDC_AUTOSAVE_INTERVAL, IDC_AUTOSAVE_INTERVAL_MINUTES, IDC_INTERVAL_LABEL,
@@ -152,6 +175,9 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         for (const wchar_t* label : {L"Daily", L"Weekly", L"Monthly"})
             SendMessageW(frequency, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label));
         SendMessageW(frequency, CB_SETCURSEL, static_cast<int>(settings->updateFrequency), 0);
+        CheckDlgButton(dialog, IDC_UPDATE_PRERELEASES,
+            settings->includePrereleaseUpdates ? BST_CHECKED : BST_UNCHECKED);
+        updateUpdateControls(dialog);
 
         CheckDlgButton(dialog, IDC_ENABLED,
             settings->autoSaveEnabled ? BST_CHECKED : BST_UNCHECKED);
@@ -229,6 +255,17 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         updateAutoSaveControls(dialog);
         return TRUE;
     }
+    if (message == WM_COMMAND && LOWORD(wParam) == IDC_AUTO_UPDATE)
+    {
+        updateUpdateControls(dialog);
+        return TRUE;
+    }
+    if (message == WM_COMMAND && LOWORD(wParam) == IDC_UPDATE_CHECK_NOW)
+    {
+        settings->checkForUpdatesNow = true;
+        SendMessageW(dialog, WM_COMMAND, IDOK, 0);
+        return TRUE;
+    }
     if (message == WM_COMMAND && LOWORD(wParam) == IDC_HISTORY_BROWSE)
     {
         browseForHistoryRoot(dialog);
@@ -244,6 +281,8 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             CB_GETCURSEL, 0, 0);
         settings->updateFrequency = static_cast<UpdateFrequency>(
             frequency >= 0 && frequency <= 2 ? frequency : 1);
+        settings->includePrereleaseUpdates = IsDlgButtonChecked(dialog,
+            IDC_UPDATE_PRERELEASES) == BST_CHECKED;
 
         settings->autoSaveEnabled = IsDlgButtonChecked(dialog, IDC_ENABLED) == BST_CHECKED;
         settings->autoSaveAfterEdit = IsDlgButtonChecked(dialog, IDC_AFTER_EDIT) == BST_CHECKED;
@@ -338,6 +377,15 @@ bool Settings::intervalDue(unsigned long long now, unsigned long long lastInterv
         && now - lastInterval >= static_cast<unsigned long long>(intervalMinutes) * 60ULL * 1000ULL;
 }
 
+bool Settings::updateCheckDue(unsigned long long nowSeconds) const noexcept
+{
+    if (!autoUpdateEnabled)
+        return false;
+    const unsigned days = updateFrequency == UpdateFrequency::daily ? 1
+        : updateFrequency == UpdateFrequency::weekly ? 7 : 30;
+    return elapsedFrequencyDue(nowSeconds, lastUpdateCheck, days);
+}
+
 void Settings::load(const std::filesystem::path& file)
 {
     autoSaveEnabled = readBoolean(file, L"AutoSaveEnabled",
@@ -363,6 +411,14 @@ void Settings::load(const std::filesystem::path& file)
     const int frequency = GetPrivateProfileIntW(L"NppHistory", L"UpdateFrequency", 1,
         file.c_str());
     updateFrequency = static_cast<UpdateFrequency>((std::max)(0, (std::min)(2, frequency)));
+    includePrereleaseUpdates = readBoolean(file, L"IncludePrereleaseUpdates", true);
+    lastUpdateCheck = readUnsigned64(file, L"LastUpdateCheck", 0);
+    std::wstring notified(128, L'\0');
+    GetPrivateProfileStringW(L"NppHistory", L"LastNotifiedVersion", L"", notified.data(),
+        static_cast<DWORD>(notified.size()), file.c_str());
+    notified.resize(wcslen(notified.c_str()));
+    lastNotifiedVersion = std::move(notified);
+    checkForUpdatesNow = false;
     historyEnabled = readBoolean(file, L"HistoryEnabled", true);
     historyBeforeSave = readBoolean(file, L"HistoryBeforeSave", true);
     historyAfterSave = readBoolean(file, L"HistoryAfterSave", true);
@@ -399,6 +455,9 @@ bool Settings::save(const std::filesystem::path& file) const
         && write(L"ToolbarRestore", toolbarRestore ? L"1" : L"0")
         && write(L"AutoUpdateEnabled", autoUpdateEnabled ? L"1" : L"0")
         && write(L"UpdateFrequency", std::to_wstring(static_cast<int>(updateFrequency)))
+        && write(L"IncludePrereleaseUpdates", includePrereleaseUpdates ? L"1" : L"0")
+        && write(L"LastUpdateCheck", std::to_wstring(lastUpdateCheck))
+        && write(L"LastNotifiedVersion", lastNotifiedVersion)
         && write(L"HistoryEnabled", historyEnabled ? L"1" : L"0")
         && write(L"HistoryBeforeSave", historyBeforeSave ? L"1" : L"0")
         && write(L"HistoryAfterSave", historyAfterSave ? L"1" : L"0")
@@ -410,6 +469,7 @@ bool Settings::save(const std::filesystem::path& file) const
 bool Settings::edit(HWND owner, HINSTANCE instance)
 {
     Settings edited = *this;
+    edited.checkForUpdatesNow = false;
     if (DialogBoxParamW(instance, MAKEINTRESOURCEW(IDD_SETTINGS), owner, settingsProc,
         reinterpret_cast<LPARAM>(&edited)) != IDOK)
         return false;

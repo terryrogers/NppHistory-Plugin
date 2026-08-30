@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0-beta.21
+
+- Implemented non-blocking update checks against the public `terryrogers/NppHistory-Plugin` GitHub Releases feed.
+- Added daily, weekly and monthly automatic scheduling, an Include prerelease versions channel option and a manual Check now command.
+- Added semantic-version ordering, including stable/prerelease precedence and numeric prerelease identifiers.
+- Suppressed repeat automatic notifications for the same release while preserving explicit manual checks.
+- Restricted browser navigation to HTTPS release URLs under the official repository and retained notification-only behaviour: NppHistory never downloads or replaces its DLL.
+- Added specific handling for offline/DNS, connection, proxy authentication, TLS, timeout, GitHub rate-limit, HTTP, oversized and malformed-response failures. Automatic failures remain silent and retry on a later launch; manual failures explain that no files were downloaded or changed.
+- Added persistent last-check and last-notified state using the existing Unicode settings file.
+- Expanded direct core coverage from 180 to 238 checks and added a live background GitHub update check to the isolated Notepad++ verification.
+
 ## 0.2.0-beta.20
 
 - Embedded the beta's 2026-08-30 publication date for locale-aware display in the About window and DLL metadata.

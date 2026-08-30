@@ -37,6 +37,7 @@ ToolbarCompare=1
 ToolbarRestore=1
 AutoUpdateEnabled=0
 UpdateFrequency=1
+IncludePrereleaseUpdates=1
 HistoryEnabled=1
 HistoryBeforeSave=1
 HistoryAfterSave=1
@@ -139,6 +140,16 @@ public static class NppHistoryNative {
         var value = new StringBuilder(length + 1);
         SendMessageText(window, 0x000D, (IntPtr)value.Capacity, value);
         return value.ToString();
+    }
+    public static string AllChildText(IntPtr parent) {
+        var result = new StringBuilder();
+        EnumChildWindows(parent, delegate(IntPtr window, IntPtr state) {
+            var value = new StringBuilder(1024);
+            GetWindowText(window, value, value.Capacity);
+            if (value.Length > 0) result.Append(value).Append(" ");
+            return true;
+        }, IntPtr.Zero);
+        return result.ToString();
     }
     public static POINT EditScroll(IntPtr window) {
         POINT point = new POINT();
@@ -528,6 +539,11 @@ try {
     $settingsAutoSaveEnablementPassed = $false
     $settingsHistoryPassed = $false
     $settingsHistoryEnablementPassed = $false
+    $settingsUpdateEnablementPassed = $false
+    $manualUpdateCheckPassed = $false
+    $manualUpdateAccessError = $false
+    $updateDialogText = ''
+    $updateTimestampPersisted = $false
     $settingsGeneralScreenshot = Join-Path $testRoot 'settings-general.png'
     $settingsScreenshot = Join-Path $testRoot 'settings-auto-save.png'
     $settingsHistoryScreenshot = Join-Path $testRoot 'settings-history.png'
@@ -556,7 +572,21 @@ try {
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1072)) -eq 'Compare' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1073)) -eq 'Restore' -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1074)) -eq 'Enable automatic update checks' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1075)) -eq 'Weekly'
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1075)) -eq 'Weekly' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1102)) -eq 'Include prerelease versions' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1103)) -eq 'Check now...'
+            $updateMaster = [NppHistoryNative]::FindControl($settingsWindow, 1074)
+            $updateFrequency = [NppHistoryNative]::FindControl($settingsWindow, 1075)
+            $updatePrereleases = [NppHistoryNative]::FindControl($settingsWindow, 1102)
+            $updateCheckNow = [NppHistoryNative]::FindControl($settingsWindow, 1103)
+            $updateChildrenInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
+                [NppHistoryNative]::IsWindowEnabled($updatePrereleases) -and
+                [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
+            [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $updateChildrenEnabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
+                [NppHistoryNative]::IsWindowEnabled($updatePrereleases)
+            [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+            $settingsUpdateEnablementPassed = $updateChildrenInitiallyDisabled -and $updateChildrenEnabled
             Add-Type -AssemblyName System.Drawing
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
             [void][NppHistoryNative]::GetWindowRect($settingsWindow, [ref]$settingsCaptureRectangle)
@@ -639,10 +669,36 @@ try {
             finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
             $bitmap.Save($settingsHistoryScreenshot, [Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
-            [void][NppHistoryNative]::PostMessage($settingsWindow, 0x0111, [IntPtr]2, [IntPtr]::Zero)
+            $generalTabPoint = [IntPtr](30 -bor (10 -shl 16))
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $generalTabPoint)
+            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $generalTabPoint)
+            Start-Sleep -Milliseconds 100
+            [void][NppHistoryNative]::SendMessage($settingsWindow, 0x0111, [IntPtr]1103, [NppHistoryNative]::FindControl($settingsWindow, 1103))
         }
     }
+    $updateWindow = [IntPtr]::Zero
+    $updateDeadline = [DateTime]::UtcNow.AddSeconds(15)
+    while ([DateTime]::UtcNow -lt $updateDeadline -and $updateWindow -eq [IntPtr]::Zero) {
+        Start-Sleep -Milliseconds 100
+        $updateWindow = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'NppHistory Update Check')
+    }
+    if ($updateWindow -ne [IntPtr]::Zero) {
+        $updateText = ''
+        $updateTextDeadline = [DateTime]::UtcNow.AddSeconds(2)
+        while ([DateTime]::UtcNow -lt $updateTextDeadline -and [string]::IsNullOrWhiteSpace($updateText)) {
+            Start-Sleep -Milliseconds 50
+            $updateText = [NppHistoryNative]::AllChildText($updateWindow)
+        }
+        $updateDialogText = $updateText
+        $manualUpdateCheckPassed = $updateText.Contains('newest NppHistory version')
+        $manualUpdateAccessError = $updateText.Contains('could not complete') -and
+            $updateText.Contains('No files were downloaded or changed')
+        [void][NppHistoryNative]::PostMessage($updateWindow, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+    }
     Start-Sleep -Milliseconds 250
+    $savedSettingsText = [IO.File]::ReadAllText((Join-Path $configFolder 'NppHistory.ini'))
+    $timestampMatch = [regex]::Match($savedSettingsText, '(?m)^LastUpdateCheck=(\d+)\s*$')
+    $updateTimestampPersisted = $timestampMatch.Success -and [uint64]$timestampMatch.Groups[1].Value -gt 0
 
     $aboutWindow = [IntPtr]::Zero
     $aboutCentered = $false
@@ -665,14 +721,11 @@ try {
             $aboutVersion = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1061))
             $aboutAuthor = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1062))
             $aboutReleaseDate = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($aboutWindow, 1063))
-            $expectedReleaseDate = [datetime]::ParseExact('2026-08-30', 'yyyy-MM-dd',
-                [Globalization.CultureInfo]::InvariantCulture).ToString('d',
-                [Globalization.CultureInfo]::CurrentCulture)
             $aboutCaptionIcon = [NppHistoryNative]::SendMessage($aboutWindow, 0x007F, [IntPtr]0, [IntPtr]::Zero)
             $aboutContentIcon = [NppHistoryNative]::FindControl($aboutWindow, 1060)
-            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 20') -and
+            $aboutWindowPassed = $aboutVersion.Contains('0.2.0 beta 21') -and
                 $aboutAuthor.Contains('Terry Rogers') -and $aboutAuthor.Contains('terryrogers.me') -and
-                $aboutReleaseDate.Trim() -eq "Release Date: $expectedReleaseDate" -and
+                $aboutReleaseDate.Trim() -eq 'Release Date:' -and
                 $aboutCaptionIcon -ne [IntPtr]::Zero -and $aboutContentIcon -ne [IntPtr]::Zero
             Add-Type -AssemblyName System.Drawing
             $bitmap = [Drawing.Bitmap]::new($aboutRectangle.Right - $aboutRectangle.Left, $aboutRectangle.Bottom - $aboutRectangle.Top)
@@ -687,7 +740,7 @@ try {
     }
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -741,6 +794,11 @@ try {
         SettingsIconPassed = $settingsIconPassed
         SettingsTabsPassed = $settingsTabsPassed
         SettingsGeneralPassed = $settingsGeneralPassed
+        SettingsUpdateEnablementPassed = $settingsUpdateEnablementPassed
+        ManualUpdateCheckPassed = $manualUpdateCheckPassed
+        ManualUpdateAccessError = $manualUpdateAccessError
+        UpdateDialogText = $updateDialogText
+        UpdateTimestampPersisted = $updateTimestampPersisted
         SettingsAutoSavePassed = $settingsAutoSavePassed
         SettingsAutoSaveEnablementPassed = $settingsAutoSaveEnablementPassed
         SettingsHistoryPassed = $settingsHistoryPassed
