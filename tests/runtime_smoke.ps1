@@ -767,6 +767,9 @@ try {
     $autoSaveConflictNoticeText = ''
     $autoSaveConflictNoticeVisible = $false
     $settingsAutoSaveEnablementPassed = $false
+    $settingsTooltipsPassed = $false
+    $settingsTooltipCount = 0
+    $settingsTooltipActive = 0
     $settingsHistoryPassed = $false
     $settingsHistoryEnablementPassed = $false
     $settingsUpdateEnablementPassed = $false
@@ -843,6 +846,24 @@ try {
             $intervalMinutesControl = [NppHistoryNative]::FindControl($settingsWindow, 1078)
             $autoSaveExclusions = [NppHistoryNative]::FindControl($settingsWindow, 1128)
             $intervalInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)
+            $settingsTooltipCount = [NppHistoryNative]::GetProp(
+                $settingsWindow, 'NppHistorySettingsTooltipCount').ToInt64()
+            for ($settingsTooltipTick = 0; $settingsTooltipTick -lt 15; ++$settingsTooltipTick) {
+                [NppHistoryNative]::MoveCursorToCenter($intervalMinutesControl)
+                Start-Sleep -Milliseconds 100
+                [void][NppHistoryNative]::SendMessage(
+                    $settingsWindow, 0x0113, [IntPtr]0x4E51, [IntPtr]::Zero)
+                if ([NppHistoryNative]::GetProp(
+                    $settingsWindow, 'NppHistorySettingsTooltipActive').ToInt64() -eq 1078) { break }
+            }
+            $settingsTooltipWindow = [NppHistoryNative]::GetProp(
+                $settingsWindow, 'NppHistorySettingsTooltipWindow')
+            $settingsTooltipActive = [NppHistoryNative]::GetProp(
+                $settingsWindow, 'NppHistorySettingsTooltipActive').ToInt64()
+            $settingsTooltipsPassed = $settingsTooltipCount -eq 43 -and
+                $settingsTooltipActive -eq 1078 -and
+                $settingsTooltipWindow -ne [IntPtr]::Zero -and
+                [NppHistoryNative]::IsWindowVisible($settingsTooltipWindow)
             [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $intervalEnabledOnSelection = [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)
             [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
@@ -1025,10 +1046,12 @@ try {
         -not [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1006)) -and
         -not [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($historyPanel, 1003))
     $excludedRefreshButton = [NppHistoryNative]::FindControl($historyPanel, 1003)
-    [NppHistoryNative]::MoveCursorToCenter($excludedRefreshButton)
-    for ($tooltipTick = 0; $tooltipTick -lt 6; ++$tooltipTick) {
+    for ($tooltipTick = 0; $tooltipTick -lt 15; ++$tooltipTick) {
+        [NppHistoryNative]::MoveCursorToCenter($excludedRefreshButton)
         Start-Sleep -Milliseconds 100
         [void][NppHistoryNative]::SendMessage($historyPanel, 0x0113, [IntPtr]0x4E50, [IntPtr]::Zero)
+        if ([NppHistoryNative]::GetProp(
+            $historyPanel, 'NppHistoryPanelTooltipActive').ToInt64() -eq 1003) { break }
     }
     $disabledRefreshTooltip = [NppHistoryNative]::GetProp(
         $historyPanel, 'NppHistoryPanelButtonTooltipWindow')
@@ -1163,7 +1186,7 @@ try {
         $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $panelButtonTooltipsPassed -and $disabledRefreshTooltipPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $selectedPaneActionsPassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $panelButtonTooltipsPassed -and $disabledRefreshTooltipPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsTooltipsPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1259,6 +1282,9 @@ try {
         AutoSaveConflictNoticeText = $autoSaveConflictNoticeText
         AutoSaveConflictNoticeVisible = $autoSaveConflictNoticeVisible
         SettingsAutoSaveEnablementPassed = $settingsAutoSaveEnablementPassed
+        SettingsTooltipsPassed = $settingsTooltipsPassed
+        SettingsTooltipCount = $settingsTooltipCount
+        SettingsTooltipActive = $settingsTooltipActive
         SettingsHistoryPassed = $settingsHistoryPassed
         SettingsHistoryEnablementPassed = $settingsHistoryEnablementPassed
         ExclusionSettingsPersisted = $exclusionSettingsPersisted

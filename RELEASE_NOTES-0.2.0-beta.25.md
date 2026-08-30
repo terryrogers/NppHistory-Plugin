@@ -16,6 +16,7 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 - Adds a clear pale-blue hover state to the History pane command buttons.
 - Adds separate automatic-saving and revision-history wildcard exclusion lists, with clear labelled **AS** and **H** tab badges in reserved space and a wrapping **File Excluded in Settings** pane status. Each badge appears only while its feature is enabled.
 - Disables all file-history actions for excluded History files and adds explanatory hover tooltips to every History pane button, including disabled buttons.
+- Adds contextual hover help to every actionable Settings control, including disabled inputs.
 - Detects the separate Notepad++ AutoSave plugin and disables NppHistory Auto Save with a red settings notice, preventing competing automatic-saving engines.
 
 ## Installation from beta 24 or earlier

@@ -17,6 +17,142 @@ namespace
 {
 HWND activeSettingsDialog = nullptr;
 Settings* activeSettings = nullptr;
+constexpr UINT_PTR settingsTooltipTimer = 0x4E51;
+
+struct SettingsTooltipEntry
+{
+    int id;
+    const wchar_t* text;
+};
+
+const SettingsTooltipEntry settingsTooltips[] = {
+    {IDC_TOOLBAR_CAPTURE, L"Add or remove the NppHistory Capture command on the main Notepad++ toolbar after restart."},
+    {IDC_TOOLBAR_COMPARE, L"Add or remove the NppHistory Compare command on the main Notepad++ toolbar after restart."},
+    {IDC_TOOLBAR_RESTORE, L"Add or remove the NppHistory Restore command on the main Notepad++ toolbar after restart."},
+    {IDC_ENABLED, L"Enable NppHistory automatic file saving. This is unavailable while AutoSave.dll is installed."},
+    {IDC_AFTER_EDIT, L"Automatically save after editing has stopped for the configured number of seconds."},
+    {IDC_AFTER_EDIT_SECONDS, L"Seconds of editing inactivity before automatic saving; the minimum is 10 seconds."},
+    {IDC_AUTOSAVE_FOCUS_LOSS, L"Automatically save when the Notepad++ window loses focus."},
+    {IDC_AUTOSAVE_INTERVAL, L"Automatically save repeatedly at the configured interval."},
+    {IDC_AUTOSAVE_INTERVAL_MINUTES, L"Number of minutes between interval-based automatic saves."},
+    {IDC_AUTOSAVE_TAB_CHANGE, L"Automatically save when you switch to another file tab."},
+    {IDC_AUTOSAVE_EXIT, L"Automatically save when Notepad++ exits, subject to normal save permissions."},
+    {IDC_AUTOSAVE_CURRENT_FILE, L"Apply an automatic-save trigger only to the currently active file."},
+    {IDC_AUTOSAVE_ALL_FILES, L"Apply an automatic-save trigger to every open modified file."},
+    {IDC_AUTOSAVE_EXCLUSIONS, L"One case-insensitive wildcard per line. Matching files are excluded from NppHistory Auto Save."},
+    {IDC_AUTOSAVE_CONFLICT_NOTICE, L"NppHistory Auto Save is disabled to avoid competing with the installed AutoSave plugin."},
+    {IDC_HISTORY_ENABLED, L"Enable creation of local NppHistory file revisions."},
+    {IDC_HISTORY_BEFORE_SAVE, L"Create a revision containing the editor content immediately before a file is saved."},
+    {IDC_HISTORY_AFTER_SAVE, L"Create a revision containing the saved content immediately after a file is saved."},
+    {IDC_HISTORY_BEFORE_RESTORE, L"Create a safety revision before replacing a file with an older revision."},
+    {IDC_HISTORY_ADJACENT, L"Store each file's revisions in a hidden .npphistory folder beside that file."},
+    {IDC_HISTORY_CUSTOM, L"Store revisions beneath one common folder instead of beside each source file."},
+    {IDC_HISTORY_PATH, L"Common root folder used for revision storage when Common folder is selected."},
+    {IDC_HISTORY_BROWSE, L"Choose the common revision-history folder."},
+    {IDC_HISTORY_EXCLUSIONS, L"One case-insensitive wildcard per line. Matching files cannot create, refresh, compare or restore revisions."},
+    {IDC_LOGGING_ENABLED, L"Enable NppHistory diagnostic and audit logging."},
+    {IDC_LOGGING_LEVEL, L"Choose the minimum severity recorded: Errors, Warnings, Informational or Debug."},
+    {IDC_LOGGING_DEFAULT, L"Write the log in the normal Notepad++ plugin configuration folder."},
+    {IDC_LOGGING_CUSTOM, L"Write the log to a custom file path."},
+    {IDC_LOGGING_PATH, L"Full path of the custom NppHistory log file."},
+    {IDC_LOGGING_BROWSE, L"Choose a custom log file location."},
+    {IDC_LOGGING_OPEN, L"Open the active NppHistory log file in Notepad++."},
+    {IDC_LOGGING_EFFECTIVE_PATH, L"The complete log file path that NppHistory will currently use."},
+    {IDC_LOGGING_MAX_SIZE, L"Maximum log size in megabytes before the selected rollover action is applied."},
+    {IDC_LOGGING_ROLLOVER, L"Choose whether a full log is overwritten or renamed as an archive."},
+    {IDC_LOGGING_ARCHIVES, L"Maximum number of archived log files retained when archive rollover is selected."},
+    {IDC_AUTO_UPDATE, L"Allow NppHistory to check GitHub automatically for eligible releases."},
+    {IDC_UPDATE_FREQUENCY, L"Choose how often automatic update checks are due: daily, weekly or monthly."},
+    {IDC_UPDATE_PRERELEASES, L"Include beta and other prerelease builds when checking for updates."},
+    {IDC_UPDATE_CHECK_NOW, L"Check for an eligible update now and offer installation if one is available."},
+    {IDC_UPDATE_STATUS, L"Shows the latest update result, last successful check and next scheduled check."},
+    {IDOK, L"Save all Settings changes and close this window."},
+    {IDCANCEL, L"Discard unsaved Settings changes and close this window."},
+    {IDC_SETTINGS_TABS, L"Choose the General, Auto Save, History, Logging or Updates settings page."}
+};
+
+void configureSettingsTooltips(HWND dialog)
+{
+    const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog,
+        GWLP_HINSTANCE));
+    const HWND tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
+        CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
+        dialog, nullptr, instance, nullptr);
+    if (!tooltip)
+        return;
+    SendMessageW(tooltip, TTM_SETMAXTIPWIDTH, 0, 420);
+    int added = 0;
+    for (const auto& entry : settingsTooltips)
+    {
+        if (!GetDlgItem(dialog, entry.id))
+            continue;
+        TOOLINFOW tool{sizeof(tool)};
+        tool.uFlags = TTF_TRACK | TTF_ABSOLUTE;
+        tool.hwnd = dialog;
+        tool.uId = static_cast<UINT_PTR>(entry.id);
+        tool.lpszText = const_cast<wchar_t*>(entry.text);
+        if (SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)))
+            ++added;
+    }
+    SetPropW(dialog, L"NppHistorySettingsTooltipWindow", tooltip);
+    SetPropW(dialog, L"NppHistorySettingsTooltipCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(added)));
+    SetTimer(dialog, settingsTooltipTimer, 100, nullptr);
+}
+
+void updateSettingsTooltip(HWND dialog)
+{
+    const HWND tooltip = static_cast<HWND>(GetPropW(dialog,
+        L"NppHistorySettingsTooltipWindow"));
+    if (!tooltip)
+        return;
+    POINT cursor{};
+    GetCursorPos(&cursor);
+    int hovered = 0;
+    for (const auto& entry : settingsTooltips)
+    {
+        const HWND control = GetDlgItem(dialog, entry.id);
+        RECT bounds{};
+        if (control && IsWindowVisible(control) && GetWindowRect(control, &bounds)
+            && PtInRect(&bounds, cursor))
+        {
+            hovered = entry.id;
+            break;
+        }
+    }
+    const int previous = static_cast<int>(reinterpret_cast<INT_PTR>(
+        GetPropW(dialog, L"NppHistorySettingsTooltipTarget")));
+    if (hovered != previous)
+    {
+        if (previous)
+        {
+            TOOLINFOW oldTool{sizeof(oldTool)};
+            oldTool.hwnd = dialog;
+            oldTool.uId = static_cast<UINT_PTR>(previous);
+            SendMessageW(tooltip, TTM_TRACKACTIVATE, FALSE,
+                reinterpret_cast<LPARAM>(&oldTool));
+        }
+        SetPropW(dialog, L"NppHistorySettingsTooltipTarget",
+            reinterpret_cast<HANDLE>(static_cast<INT_PTR>(hovered)));
+        SetPropW(dialog, L"NppHistorySettingsTooltipStarted",
+            reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(GetTickCount64())));
+        RemovePropW(dialog, L"NppHistorySettingsTooltipActive");
+    }
+    const unsigned long long started = static_cast<unsigned long long>(
+        reinterpret_cast<ULONG_PTR>(GetPropW(dialog, L"NppHistorySettingsTooltipStarted")));
+    if (!hovered || GetTickCount64() - started < 400)
+        return;
+    RECT bounds{};
+    GetWindowRect(GetDlgItem(dialog, hovered), &bounds);
+    TOOLINFOW tool{sizeof(tool)};
+    tool.hwnd = dialog;
+    tool.uId = static_cast<UINT_PTR>(hovered);
+    SendMessageW(tooltip, TTM_TRACKPOSITION, 0, MAKELPARAM(bounds.left, bounds.bottom + 2));
+    SendMessageW(tooltip, TTM_TRACKACTIVATE, TRUE, reinterpret_cast<LPARAM>(&tool));
+    SetPropW(dialog, L"NppHistorySettingsTooltipActive",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(hovered)));
+}
 
 unsigned readNumber(HWND dialog, int control, unsigned minimum, unsigned fallback)
 {
@@ -422,7 +558,13 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         updateHistoryControls(dialog);
         updateAutoSaveControls(dialog);
         showSettingsPage(dialog, 0);
+        configureSettingsTooltips(dialog);
         centerWindowOnOwner(dialog, GetParent(dialog));
+        return TRUE;
+    }
+    if (message == WM_TIMER && wParam == settingsTooltipTimer)
+    {
+        updateSettingsTooltip(dialog);
         return TRUE;
     }
     if (message == WM_COMMAND && HIWORD(wParam) != EN_CHANGE)
@@ -463,6 +605,12 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
     }
     if (message == WM_DESTROY)
     {
+        KillTimer(dialog, settingsTooltipTimer);
+        RemovePropW(dialog, L"NppHistorySettingsTooltipWindow");
+        RemovePropW(dialog, L"NppHistorySettingsTooltipCount");
+        RemovePropW(dialog, L"NppHistorySettingsTooltipTarget");
+        RemovePropW(dialog, L"NppHistorySettingsTooltipStarted");
+        RemovePropW(dialog, L"NppHistorySettingsTooltipActive");
         if (activeSettingsDialog == dialog)
         {
             activeSettingsDialog = nullptr;

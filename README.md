@@ -58,7 +58,7 @@ For a portable installation, use the `plugins` folder beside `notepad++.exe`.
 
 ## Configuration
 
-Open **Plugins > NppHistory > Settings**. Settings are grouped into five tabs:
+Open **Plugins > NppHistory > Settings**. Settings are grouped into five tabs. Every actionable Settings control has a contextual tooltip explaining its purpose, units, scope and dependencies, including when that control is disabled:
 
 - **General** controls optional Capture, Compare and Restore buttons on the main Notepad++ toolbar. Toolbar changes take effect after restarting Notepad++.
 - **Auto Save** independently enables automatic saving, with **After editing stops** selected by default at 30 seconds. Optional triggers cover Notepad++ losing focus, timed intervals in minutes, file-tab changes and Notepad++ exit. Autosave can apply to the current file only or all open files. After-edit values below 10 seconds are normalized to 10 seconds. Its own multiline exclusion list prevents plugin-initiated saving of matching files. If the separate Notepad++ `AutoSave.dll` plugin is installed, NppHistory disables its Auto Save engine and displays the reason in red, avoiding two automatic-saving systems acting on the same documents; the saved NppHistory settings are retained for use if that plugin is later removed.

@@ -8,6 +8,7 @@
 - Added separate multiline wildcard exclusion lists for automatic saving and revision history, with filename and full-path matching.
 - Added distinct labelled **AS** (Auto Save) and **H** (History) document-tab badges in reserved tab space plus a wrapping red **File Excluded in Settings** pane message; each badge is shown only while its feature is enabled.
 - Excluded History files now disable Capture, Refresh, Compare and Restore, and all six History pane buttons have explanatory tooltips that also work while a button is disabled.
+- Added contextual tooltips to all 43 Settings tabs, checkboxes, radio options, inputs, dropdowns, status fields and action buttons, including controls disabled by another option.
 - Detects an installed `AutoSave.dll`, disables NppHistory's overlapping Auto Save engine, displays an unchecked disabled master control with a red explanation, preserves the configured preference for later restoration and records a warning in the plugin log.
 
 ## 0.2.0-beta.25 (release candidate)

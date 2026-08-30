@@ -26,6 +26,9 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 
 ## Settings.cpp / Settings
 
+| `configureSettingsTooltips` | Live registration of all 43 actionable Settings targets | PASS |
+| `updateSettingsTooltip` | Live visible tooltip activation for a disabled Auto Save interval input | PASS |
+
 | Function | Evidence | Status |
 |---|---|---|
 | `readNumber` | Indirect through settings dialog/load and minimum normalization | PASS |
