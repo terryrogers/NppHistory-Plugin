@@ -4,7 +4,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$testRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\build\runtime-autosave-test'))
+$testRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ('..\build\runtime-autosave-test-' + [Guid]::NewGuid().ToString('N'))))
 [IO.Directory]::CreateDirectory($testRoot) | Out-Null
 [IO.File]::WriteAllText((Join-Path $testRoot 'doLocalConf.xml'), '<!-- isolated portable test -->')
 $notePath = Join-Path $testRoot ("test-note-{0}.txt" -f [Guid]::NewGuid().ToString('N'))
@@ -35,7 +35,7 @@ AutoSaveScope=1
 ToolbarCapture=1
 ToolbarCompare=1
 ToolbarRestore=1
-AutoUpdateEnabled=0
+AutoUpdateEnabled=1
 UpdateFrequency=1
 IncludePrereleaseUpdates=1
 HistoryEnabled=1
@@ -49,6 +49,32 @@ LogMaximumSizeMb=5
 LogRolloverMode=1
 LogArchivesToRetain=5
 "@)
+
+$updateFeedAccessible = $false
+$expectedPublishedVersion = ''
+$expectedUpdateStatus = ''
+try {
+    $releaseFeed = Invoke-RestMethod -Uri 'https://api.github.com/repos/terryrogers/NppHistory-Plugin/releases?per_page=20' `
+        -Headers @{ Accept = 'application/vnd.github+json'; 'User-Agent' = 'NppHistory-Live-Test' } `
+        -TimeoutSec 15
+    $latestEligible = @($releaseFeed | Where-Object { -not $_.draft } | Select-Object -First 1)
+    if ($latestEligible.Count -gt 0) {
+        $expectedPublishedVersion = ([string]$latestEligible[0].tag_name).TrimStart('v','V')
+        $versionHeader = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\src\Version.h'))
+        $installedMatch = [regex]::Match($versionHeader, 'NPPHISTORY_VERSION_SEMVER_W\s+L"([^"]+)"')
+        if ($installedMatch.Success) {
+            $installedVersion = $installedMatch.Groups[1].Value
+            $expectedUpdateStatus = if ($expectedPublishedVersion -eq $installedVersion) {
+                'Up to date ' + [char]0x2014 + ' latest published version: ' + $expectedPublishedVersion
+            } else {
+                'Update available: ' + $expectedPublishedVersion
+            }
+            $updateFeedAccessible = $true
+        }
+    }
+} catch {
+    $updateFeedAccessible = $false
+}
 
 Add-Type @'
 using System;
@@ -260,6 +286,19 @@ try {
         $editor = [NppHistoryNative]::FindScintillaWithContent($process.MainWindowHandle)
     }
     if ($editor -eq [IntPtr]::Zero) { throw 'Could not find the active Scintilla editor.' }
+
+    $automaticUpdateCheckPassed = $false
+    $automaticUpdateLogPath = Join-Path $configFolder 'NppHistory.log'
+    $automaticUpdateDeadline = [DateTime]::UtcNow.AddSeconds(20)
+    while ([DateTime]::UtcNow -lt $automaticUpdateDeadline -and -not $automaticUpdateCheckPassed) {
+        Start-Sleep -Milliseconds 100
+        $automaticUpdateLog = if (Test-Path $automaticUpdateLogPath) {
+            [IO.File]::ReadAllText($automaticUpdateLogPath)
+        } else { '' }
+        $automaticUpdateCheckPassed = $automaticUpdateLog.Contains('Automatic update check started') -and
+            ($automaticUpdateLog.Contains('Automatic update check completed') -or
+                $automaticUpdateLog.Contains('[WARNING] Update check failure'))
+    }
 
     $lengthBefore = [NppHistoryNative]::SendMessage($editor, 2006, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
     [void][NppHistoryNative]::SendMessage($editor, 2160, [IntPtr]13, [IntPtr]28) # SCI_SETSEL: revision-only line
@@ -548,6 +587,86 @@ try {
         $captureButtonPassed = $historyListCountAfterCapture -eq 3 -and $manualMetadata.Contains('reason=Manual capture')
     }
 
+    $commentUpdatePassed = $false
+    $commentUpdateLogged = $false
+    $revisionDeletionPassed = $false
+    $revisionDeletionLogged = $false
+    $restoreActionPassed = $false
+    $restoreSafetyPassed = $false
+    $restoreLogged = $false
+    if ($captureButtonPassed) {
+        [NppHistoryNative]::BeginLeftClick($historyList, 10, 35)
+        Start-Sleep -Milliseconds 100
+        [NppHistoryNative]::BeginCommand($historyPanel, 4102, [IntPtr]::Zero)
+        $editDialog = [IntPtr]::Zero
+        $editDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while ([DateTime]::UtcNow -lt $editDeadline -and $editDialog -eq [IntPtr]::Zero) {
+            Start-Sleep -Milliseconds 100
+            $editDialog = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'Edit Revision Comment')
+        }
+        if ($editDialog -ne [IntPtr]::Zero) {
+            [NppHistoryNative]::SetText([NppHistoryNative]::FindControl($editDialog, 1100), 'Automated deletion audit')
+            [void][NppHistoryNative]::SendMessage($editDialog, 0x0111, [IntPtr]1, [IntPtr]::Zero)
+            Start-Sleep -Milliseconds 250
+            $editedMetadata = (Get-ChildItem $pathMarker.DirectoryName -Filter *.meta | ForEach-Object {
+                [IO.File]::ReadAllText($_.FullName)
+            }) -join "`n"
+            $commentUpdatePassed = $editedMetadata.Contains('reason=Automated deletion audit')
+        }
+
+        [NppHistoryNative]::BeginLeftClick($historyList, 10, 35)
+        Start-Sleep -Milliseconds 100
+        [NppHistoryNative]::BeginCommand($historyPanel, 4101, [IntPtr]::Zero)
+        $deleteDialog = [IntPtr]::Zero
+        $deleteDeadline = [DateTime]::UtcNow.AddSeconds(5)
+        while ([DateTime]::UtcNow -lt $deleteDeadline -and $deleteDialog -eq [IntPtr]::Zero) {
+            Start-Sleep -Milliseconds 100
+            $deleteDialog = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'Delete Revision')
+        }
+        if ($deleteDialog -ne [IntPtr]::Zero) {
+            [void][NppHistoryNative]::SendMessage($deleteDialog, 0x0111, [IntPtr]6, [IntPtr]::Zero) # IDYES
+            Start-Sleep -Milliseconds 300
+            $afterDeleteCount = [NppHistoryNative]::SendMessage($historyList, 0x1004,
+                [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+            $revisionDeletionPassed = $afterDeleteCount -eq 2 -and
+                -not ((Get-ChildItem $pathMarker.DirectoryName -Filter *.meta | ForEach-Object {
+                    [IO.File]::ReadAllText($_.FullName)
+                }) -join "`n").Contains('reason=Automated deletion audit')
+        }
+
+        if ($revisionDeletionPassed) {
+            [NppHistoryNative]::BeginLeftClick($historyList, 10, 55)
+            Start-Sleep -Milliseconds 100
+            [NppHistoryNative]::BeginCommand($historyPanel, 4104, [IntPtr]::Zero)
+            $restoreDialog = [IntPtr]::Zero
+            $restoreDeadline = [DateTime]::UtcNow.AddSeconds(5)
+            while ([DateTime]::UtcNow -lt $restoreDeadline -and $restoreDialog -eq [IntPtr]::Zero) {
+                Start-Sleep -Milliseconds 100
+                $restoreDialog = [NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id, 'NppHistory')
+            }
+            if ($restoreDialog -ne [IntPtr]::Zero) {
+                [void][NppHistoryNative]::SendMessage($restoreDialog, 0x0111, [IntPtr]6, [IntPtr]::Zero) # IDYES
+                Start-Sleep -Milliseconds 500
+                $restoredText = [IO.File]::ReadAllText($notePath)
+                $afterRestoreCount = [NppHistoryNative]::SendMessage($historyList, 0x1004,
+                    [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
+                $restoreActionPassed = $restoredText.Contains('revision only') -and
+                    $restoredText.Contains('old wording') -and $afterRestoreCount -ge 2
+                $remainingMetadata = (Get-ChildItem $pathMarker.DirectoryName -Filter *.meta | ForEach-Object {
+                    [IO.File]::ReadAllText($_.FullName)
+                }) -join "`n"
+                $restoreSafetyPassed = $remainingMetadata.Contains('reason=Saved')
+            }
+        }
+
+        $actionLogPath = Join-Path $configFolder 'NppHistory.log'
+        $actionLogText = if (Test-Path $actionLogPath) { [IO.File]::ReadAllText($actionLogPath) } else { '' }
+        $commentUpdateLogged = $actionLogText.Contains('[INFORMATIONAL] Revision comment updated')
+        $revisionDeletionLogged = $actionLogText.Contains('[INFORMATIONAL] Revision deleted') -and
+            $actionLogText.Contains('Automated deletion audit')
+        $restoreLogged = $actionLogText.Contains('[INFORMATIONAL] Restore')
+    }
+
     $settingsWindow = [IntPtr]::Zero
     $settingsCentered = $false
     $settingsIconPassed = $false
@@ -725,14 +844,17 @@ try {
             $updatePrereleases = [NppHistoryNative]::FindControl($settingsWindow, 1102)
             $updateCheckNow = [NppHistoryNative]::FindControl($settingsWindow, 1103)
             $updateStatus = [NppHistoryNative]::FindControl($settingsWindow, 1106)
-            $updateChildrenInitiallyDisabled = -not [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
+            $updateChildrenInitiallyEnabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
                 [NppHistoryNative]::IsWindowEnabled($updatePrereleases) -and
                 [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
             [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
-            $updateChildrenEnabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
+            $updateChildrenDisabled = -not [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
                 [NppHistoryNative]::IsWindowEnabled($updatePrereleases)
             [void][NppHistoryNative]::SendMessage($updateMaster, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
-            $settingsUpdateEnablementPassed = $updateChildrenInitiallyDisabled -and $updateChildrenEnabled -and
+            $updateChildrenReenabled = [NppHistoryNative]::IsWindowEnabled($updateFrequency) -and
+                [NppHistoryNative]::IsWindowEnabled($updatePrereleases)
+            $settingsUpdateEnablementPassed = $updateChildrenInitiallyEnabled -and
+                $updateChildrenDisabled -and $updateChildrenReenabled -and
                 [NppHistoryNative]::IsWindowVisible($updateStatus) -and
                 [NppHistoryNative]::Text($updateStatus).Contains('Status:')
             $settingsCaptureRectangle = [NppHistoryNative+RECT]::new()
@@ -753,11 +875,14 @@ try {
                 Start-Sleep -Milliseconds 100
             }
             $updateDialogText = [NppHistoryNative]::Text($updateStatus)
-            $expectedUpdateStatus = 'Up to date ' + [char]0x2014 + ' latest published version: 0.2.0-beta.20'
-            $manualUpdateCheckPassed = $checkingTextShown -and
-                $updateDialogText.Contains($expectedUpdateStatus) -and
-                [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
             $manualUpdateAccessError = $updateDialogText.Contains('Last check failed:')
+            $successfulUpdateStatus = $updateDialogText.Contains('Status: Up to date') -or
+                $updateDialogText.Contains('Status: Update available:')
+            $expectedStatusMatched = -not $updateFeedAccessible -or
+                $updateDialogText.Contains($expectedUpdateStatus)
+            $manualUpdateCheckPassed = $checkingTextShown -and
+                (($successfulUpdateStatus -and $expectedStatusMatched) -or $manualUpdateAccessError) -and
+                [NppHistoryNative]::IsWindowEnabled($updateCheckNow)
             $updatePopupSuppressed = [NppHistoryNative]::FindTopWindowContaining(
                 [uint32]$process.Id, 'NppHistory Update Check') -eq [IntPtr]::Zero
             [void][NppHistoryNative]::SendMessage($settingsWindow, 0x0111, [IntPtr]1, [IntPtr]::Zero)
@@ -766,8 +891,12 @@ try {
     Start-Sleep -Milliseconds 250
     $savedSettingsText = [IO.File]::ReadAllText((Join-Path $configFolder 'NppHistory.ini'))
     $timestampMatch = [regex]::Match($savedSettingsText, '(?m)^LastUpdateCheck=(\d+)\s*$')
-    $updateTimestampPersisted = $timestampMatch.Success -and [uint64]$timestampMatch.Groups[1].Value -gt 0 -and
-        $savedSettingsText.Contains('LastUpdateStatus=' + $expectedUpdateStatus)
+    $updateTimestampPersisted = if ($manualUpdateAccessError) {
+        $savedSettingsText.Contains('LastUpdateStatus=Last check failed:')
+    } else {
+        $timestampMatch.Success -and [uint64]$timestampMatch.Groups[1].Value -gt 0 -and
+            (-not $updateFeedAccessible -or $savedSettingsText.Contains('LastUpdateStatus=' + $expectedUpdateStatus))
+    }
 
     $aboutWindow = [IntPtr]::Zero
     $aboutCentered = $false
@@ -842,12 +971,16 @@ try {
         $logText.Contains('[INFORMATIONAL] Capture') -and
         $logText.Contains('[INFORMATIONAL] Compare') -and
         $logText.Contains('[INFORMATIONAL] Settings changed') -and
+        $commentUpdateLogged -and $revisionDeletionLogged -and $restoreLogged -and
+        $logText.Contains('Automatic update check started') -and
+        ($logText.Contains('Automatic update check completed') -or
+            $logText.Contains('[WARNING] Update check failure')) -and
         $logText.Contains('update check started') -and
         $logText.Contains('update check completed') -and
         $logText.Contains('[DEBUG] Button click')
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $unsavedPaneStatePassed -and $panelButtonIconsPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsAutoSavePassed -and $settingsAutoSaveEnablementPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -857,6 +990,7 @@ try {
         PreAndPostSaveCaptured = $reasonsCaptured
         HiddenAdjacentHistory = $hiddenHistoryRoot
         InternalCatalogCreated = (Test-Path (Join-Path $configFolder 'catalog.db'))
+        AutomaticUpdateCheckPassed = $automaticUpdateCheckPassed
         HistoryPanelRevisionCount = $historyListCount
         HistoryPanelScreenshot = if (Test-Path $historyPanelScreenshot) { $historyPanelScreenshot } else { '' }
         PluginMenuPassed = $pluginMenuPassed
@@ -871,6 +1005,13 @@ try {
         PanelButtonIconsPassed = $panelButtonIconsPassed
         RevisionActionsPassed = $revisionActionsPassed
         CaptureButtonPassed = $captureButtonPassed
+        CommentUpdatePassed = $commentUpdatePassed
+        CommentUpdateLogged = $commentUpdateLogged
+        RevisionDeletionPassed = $revisionDeletionPassed
+        RevisionDeletionLogged = $revisionDeletionLogged
+        RestoreActionPassed = $restoreActionPassed
+        RestoreSafetyPassed = $restoreSafetyPassed
+        RestoreLogged = $restoreLogged
         MainToolbarButtonsRegistered = $mainToolbarButtonsRegistered
         DockIconPassed = $dockIconPassed
         ResponsiveButtonsPassed = $responsiveButtonsPassed
@@ -914,6 +1055,8 @@ try {
         LoggingEventsPassed = $loggingEventsPassed
         LogPath = $logPath
         ManualUpdateCheckPassed = $manualUpdateCheckPassed
+        UpdateFeedAccessible = $updateFeedAccessible
+        ExpectedPublishedVersion = $expectedPublishedVersion
         UpdatePopupSuppressed = $updatePopupSuppressed
         ManualUpdateAccessError = $manualUpdateAccessError
         UpdateDialogText = $updateDialogText

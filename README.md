@@ -105,7 +105,7 @@ This makes the pre-edit disk version available for rollback and establishes the 
 
 ## Verification
 
-The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The current development verification report is `TEST_REPORT-0.2.0-beta.24.md`.
+The source package includes direct core tests, live Notepad++ integration tests, a full-verification runner and a function-by-function evidence matrix under `tests`. The beta 24 release report is `TEST_REPORT-0.2.0-beta.24.md`; the latest post-release update and logging validation is `TEST_REPORT-POST-BETA24.md`.
 
 The beta 24 DLL, Windows properties, Plugins Admin version and About dialog use the numeric build version `0.2.0.24`. GitHub and the prerelease update channel use the semantic prerelease identifier `0.2.0-beta.24`.
 

@@ -285,10 +285,8 @@ void HistoryPanel::showRevisionActions(int index, POINT anchor)
     if (command)
         pluginLogger().write(LogLevel::debug, L"Revision action",
             std::to_wstring(command));
-    if (command == ID_REVISION_DELETE) deleteSelected();
-    else if (command == ID_REVISION_EDIT) editSelectedComment();
-    else if (command == ID_REVISION_COMPARE) compareSelected();
-    else if (command == ID_REVISION_RESTORE) restoreSelected();
+    if (command)
+        SendMessageW(_dialog, WM_COMMAND, MAKEWPARAM(command, 0), 0);
 }
 
 void HistoryPanel::editSelectedComment()
@@ -310,7 +308,7 @@ void HistoryPanel::editSelectedComment()
         return;
     }
     pluginLogger().write(LogLevel::informational, L"Revision comment updated",
-        _currentFile.wstring());
+        _currentFile.wstring() + L" | " + _revisions[index].timestamp);
     pluginLogger().write(LogLevel::debug, L"Option change",
         L"Revision comment: " + previousComment + L" -> " + context.comment);
     refresh(_currentFile);
@@ -340,7 +338,7 @@ void HistoryPanel::deleteSelected()
         return;
     }
     pluginLogger().write(LogLevel::informational, L"Revision deleted",
-        _currentFile.wstring());
+        _currentFile.wstring() + L" | " + revision.timestamp + L" | " + revision.reason);
     refresh(_currentFile);
 }
 
@@ -1101,10 +1099,11 @@ void HistoryPanel::restoreSelected()
         pluginLogger().write(LogLevel::error, L"Restore failed", _currentFile.wstring());
         return;
     }
+    pluginLogger().write(LogLevel::informational, L"Restore",
+        _currentFile.wstring() + L" | " + selected.timestamp + L" | " + selected.reason);
     SendMessageW(_nppData._nppHandle, NPPM_RELOADFILE, FALSE,
         reinterpret_cast<LPARAM>(_currentFile.c_str()));
     refresh(_currentFile);
-    pluginLogger().write(LogLevel::informational, L"Restore", _currentFile.wstring());
 }
 
 void HistoryPanel::layout()
@@ -1285,6 +1284,26 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
     }
     if (message == WM_COMMAND)
     {
+        if (LOWORD(wParam) == ID_REVISION_DELETE)
+        {
+            panel->deleteSelected();
+            return TRUE;
+        }
+        if (LOWORD(wParam) == ID_REVISION_EDIT)
+        {
+            panel->editSelectedComment();
+            return TRUE;
+        }
+        if (LOWORD(wParam) == ID_REVISION_COMPARE)
+        {
+            panel->compareSelected();
+            return TRUE;
+        }
+        if (LOWORD(wParam) == ID_REVISION_RESTORE)
+        {
+            panel->restoreSelected();
+            return TRUE;
+        }
         wchar_t buttonLabel[64]{};
         GetDlgItemTextW(dialog, LOWORD(wParam), buttonLabel,
             static_cast<int>(std::size(buttonLabel)));

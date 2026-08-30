@@ -57,12 +57,12 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `oneLine` | Direct CR/LF/tab sanitisation in logged detail | PASS |
 | `pluginLogger` | Direct singleton access across tests and live plugin | PASS |
 | `logLevelName` | Direct Error/Warning/Informational/Debug record checks | PASS |
-| `PluginLogger::configure` | Direct disabled/default/custom/threshold/rotation configurations | PASS |
-| `PluginLogger::enabled` | Direct disabled and severity-threshold checks | PASS |
+| `PluginLogger::configure` | Direct disabled/default/custom/threshold/overwrite/archive configurations | PASS |
+| `PluginLogger::enabled` | Direct informational/debug/disabled severity-threshold checks | PASS |
 | `PluginLogger::path` | Direct default and custom path assertions | PASS |
 | `PluginLogger::ensureFile` | Direct parent-directory and empty-log creation | PASS |
-| `PluginLogger::rotateIfNeeded` | Direct maximum-size overwrite/archive/retention behaviour | PASS |
-| `PluginLogger::write` | Direct levels, filtering, sanitisation and live action records | PASS |
+| `PluginLogger::rotateIfNeeded` | Direct maximum-size overwrite, archive rotation and archive-retention limit | PASS |
+| `PluginLogger::write` | Direct levels, filtering, sanitisation and live file-save/capture/compare/comment/delete/restore/settings/update records | PASS |
 
 ## UpdateChecker.cpp
 
@@ -78,8 +78,9 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `shouldNotifyUpdate` | Direct new, duplicate, manual and empty-tag cases | PASS |
 | `updateAccessErrorMessage` | Direct rate-limit, repository, proxy, HTTP, timeout, DNS, connection, TLS and unknown errors | PASS |
 | `currentUnixSeconds` | Indirect persisted successful live-check timestamp | PASS |
+| `evaluateReleaseJson` | Direct update-available, current, stable-only and invalid/unusable response results | PASS |
 | `checkGitHubForUpdates` | Live background request to the real public Releases endpoint | PASS |
-| `downloadReleaseJson` | Indirect live HTTPS request, status/size handling and core failure classification | PASS |
+| `downloadReleaseJson` | Indirect automatic/manual live HTTPS requests plus direct rate-limit, oversized, HTTP and network failure classification | PASS |
 
 ## TextDiff.cpp
 
@@ -105,9 +106,9 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `captureBytes` | Direct empty/binary byte captures and duplicate logic | PASS |
 | `revisionsFor` | Direct parse, sort, malformed/orphan/empty metadata cases | PASS |
 | `readRevision` | Direct content read | PASS |
-| `restoreRevision` | Direct success and missing-file rejection; modal live action not confirmed | PARTIAL |
-| `updateComment` | Direct success, sanitization and missing-metadata rejection; modal submit not automated | PARTIAL |
-| `deleteRevision` | Direct success, state recalculation and missing-file rejection; confirm dialog not automated | PARTIAL |
+| `restoreRevision` | Direct success/missing-file rejection plus live confirmed restore and retained safety revision | PASS |
+| `updateComment` | Direct success/sanitization/missing-metadata rejection plus live dialog submission and log verification | PASS |
+| `deleteRevision` | Direct success/state recalculation/missing-file rejection plus live confirmation, removal and audit log | PASS |
 
 ## HistoryCatalog.cpp / HistoryCatalog
 
@@ -149,8 +150,8 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `refresh` | Live saved/unsaved state, revision refresh, warning and action enablement | PASS |
 | `selectedIndex` | Live selection/action-menu targeting | PASS |
 | `showRevisionActions` | Live right-click popup and four icon commands | PASS |
-| `editSelectedComment` | Store logic direct; modal edit submission not automated | PARTIAL |
-| `deleteSelected` | Store logic direct; confirmation click not automated | PARTIAL |
+| `editSelectedComment` | Live dialog submission, metadata update, Informational audit and Debug before/after values | PASS |
+| `deleteSelected` | Live confirmation, file/metadata removal, list refresh and detailed Informational audit | PASS |
 | `compareSelected` | Live comparison launch | PASS |
 | `currentSourceText` | Live source content displayed in comparison | PASS |
 | `renderSide` | Direct diff rows plus live two-pane rendering | PASS |
@@ -171,14 +172,14 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `updateComparisonStatus` | Live difference counter/status | PASS |
 | `navigateDifference` | Live previous/next navigation | PASS |
 | `showRevisionPicker` | Live picker position and revision count | PASS |
-| `restoreSelected` | Core restore path direct; modal overwrite/reload not automated | PARTIAL |
+| `restoreSelected` | Live confirmation, safety-revision preservation, file reload and pre-reload Informational audit | PASS |
 | `layout` | Live normal, resized, wrapped, collapsed and conditional unsaved warning layouts | PASS |
 | `configureButtonIcons` | Live all six pane icons | PASS |
 | `dialogProc` | Live pane init, resize, commands and context menu | PASS |
-| `editCommentProc` | Dialog construction/underlying update covered; submit not automated | PARTIAL |
+| `editCommentProc` | Live dialog construction, text replacement and Save submission | PASS |
 | `compareProc` | Live init, resize, toolbar, headers, scroll and close paths | PASS |
 | `compare` | Live selected-revision comparison | PASS |
-| `restore` | Core restore and toolbar wiring; modal completion not automated | PARTIAL |
+| `restore` | Live selected-revision restore through the shared command path | PASS |
 | `handle` | Live dock notification/command handling | PASS |
 
 ## NppHistory.cpp and exported plugin surface
@@ -200,12 +201,12 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |
 | `updateThreadProc` | Live non-blocking GitHub request and completion message | PASS |
 | `startUpdateCheck` | Live manual background check, in-window checking state and duplicate-start policy | PASS |
-| `handleUpdateCompletion` | Live non-modal result/status/timestamp persistence; automatic available-link prompt covered at core policy level | PARTIAL |
+| `handleUpdateCompletion` | Live automatic/manual non-modal result, exact current-release status and timestamp persistence; available-link acceptance remains manual | PARTIAL |
 | `timerProc` | Live after-edit timer; interval branch directly policy-tested | PASS |
 | `showHistory` | Live menu command and dock display | PASS |
 | `captureNow` | Live forced manual revision | PASS |
 | `compareFromToolbar` | Live main-toolbar comparison | PASS |
-| `restoreFromToolbar` | Command registered; modal completion not automated | PARTIAL |
+| `restoreFromToolbar` | Command registered; the shared restore action and confirmation are live-tested from the pane command path | PARTIAL |
 | `boolText` | Indirect every Boolean option-change detail | PASS |
 | `logSettingsChanges` | Live informational summary plus Debug previous/new values for every setting | PASS |
 | `editSettings` | Live settings open/apply UI | PASS |

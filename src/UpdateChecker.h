@@ -52,6 +52,8 @@ bool shouldNotifyUpdate(std::wstring_view availableVersion,
     std::wstring_view lastNotifiedVersion, bool manual) noexcept;
 std::wstring updateAccessErrorMessage(unsigned httpStatus, unsigned long systemError);
 std::uint64_t currentUnixSeconds() noexcept;
+UpdateCheckResult evaluateReleaseJson(std::string_view json,
+    std::wstring_view currentVersion, bool includePrereleases);
 UpdateCheckResult checkGitHubForUpdates(std::wstring_view currentVersion,
     bool includePrereleases);
 }

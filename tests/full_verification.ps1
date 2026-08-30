@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$outputRoot = Join-Path $projectRoot 'build\verification-beta24'
+$outputRoot = Join-Path $projectRoot 'build\verification-post-beta24'
 [IO.Directory]::CreateDirectory($outputRoot) | Out-Null
 
 $msbuild = 'C:\Program Files\Microsoft Visual Studio\18\Community\MSBuild\Current\Bin\MSBuild.exe'
@@ -88,6 +88,15 @@ try {
         CoreFailures = $coreFailures
         RequiredExports = $requiredExports.Count
         LiveNotepadVerification = $runtimeObject.Passed
+        AutomaticUpdateCheck = $runtimeObject.AutomaticUpdateCheckPassed
+        ManualUpdateCheck = $runtimeObject.ManualUpdateCheckPassed
+        UpdateFeedAccessible = $runtimeObject.UpdateFeedAccessible
+        RevisionCommentUpdate = $runtimeObject.CommentUpdatePassed
+        RevisionCommentUpdateLogged = $runtimeObject.CommentUpdateLogged
+        RevisionDeletion = $runtimeObject.RevisionDeletionPassed
+        RevisionDeletionLogged = $runtimeObject.RevisionDeletionLogged
+        RevisionRestore = $runtimeObject.RestoreActionPassed
+        RevisionRestoreLogged = $runtimeObject.RestoreLogged
         FileVersion = $version.FileVersion
         ProductVersion = $version.ProductVersion
         FileDescription = $version.FileDescription
@@ -95,6 +104,7 @@ try {
         Comments = $version.Comments
         DllSha256 = $hash.Hash
         EvidenceDirectory = $outputRoot
+        RuntimeEvidenceDirectory = Split-Path $runtimeObject.HistoryPanelScreenshot -Parent
     }
     $summary | Format-List * | Out-String |
         Set-Content -LiteralPath (Join-Path $outputRoot 'summary.log') -Encoding utf8

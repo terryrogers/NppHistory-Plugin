@@ -93,6 +93,33 @@ void runUpdateCheckerTests(TestContext& context)
         == L"v0.2.0-beta.24",
         "beta 22 detects a published beta 24 when prereleases are included");
 
+    const std::string publishedBetaJson = R"json([
+      {"tag_name":"v0.2.0-beta.20","html_url":"https://github.com/terryrogers/NppHistory-Plugin/releases/tag/v0.2.0-beta.20","draft":false,"prerelease":true},
+      {"tag_name":"v0.2.0-beta.24","html_url":"https://github.com/terryrogers/NppHistory-Plugin/releases/tag/v0.2.0-beta.24","draft":false,"prerelease":true}
+    ])json";
+    const auto availableResult = evaluateReleaseJson(publishedBetaJson,
+        L"0.2.0-beta.22", true);
+    context.expect(availableResult.status == UpdateCheckStatus::updateAvailable
+        && availableResult.release.tag == L"v0.2.0-beta.24",
+        "release evaluation reports beta 24 as available to beta 22");
+    const auto currentResult = evaluateReleaseJson(publishedBetaJson,
+        L"0.2.0-beta.24", true);
+    context.expect(currentResult.status == UpdateCheckStatus::upToDate
+        && currentResult.release.tag == L"v0.2.0-beta.24",
+        "up-to-date evaluation retains the latest published version for status text");
+    const auto stableResult = evaluateReleaseJson(publishedBetaJson, L"0.2.0", false);
+    context.expect(stableResult.status == UpdateCheckStatus::upToDate
+        && stableResult.release.tag.empty(),
+        "stable-only evaluation ignores prerelease releases without failing");
+    for (const auto invalidJson : {std::string_view("not-json"), std::string_view("[]"),
+        std::string_view("[{\"tag_name\":\"v0.2.0-beta.24\"}]")})
+    {
+        const auto invalidResult = evaluateReleaseJson(invalidJson, L"0.2.0-beta.24", true);
+        context.expect(invalidResult.status == UpdateCheckStatus::invalidResponse
+            && invalidResult.detail.find(L"no usable") != std::wstring::npos,
+            "invalid or unusable release data produces a safe invalid-response result");
+    }
+
     context.expect(elapsedFrequencyDue(100, 0, 7), "an update check with no previous timestamp is due");
     context.expect(!elapsedFrequencyDue(604899, 100, 7), "weekly check is not due one second early");
     context.expect(elapsedFrequencyDue(604900, 100, 7), "weekly check is due exactly at its threshold");
@@ -115,6 +142,8 @@ void runUpdateCheckerTests(TestContext& context)
 
     context.expect(updateAccessErrorMessage(403, 0).find(L"limit") != std::wstring::npos,
         "HTTP access-limit errors give retry guidance");
+    context.expect(updateAccessErrorMessage(429, 0).find(L"limit") != std::wstring::npos,
+        "HTTP rate-limit errors give retry guidance");
     context.expect(updateAccessErrorMessage(404, 0).find(L"could not be accessed") != std::wstring::npos,
         "missing repository errors are described");
     context.expect(updateAccessErrorMessage(407, 0).find(L"proxy") != std::wstring::npos,
@@ -129,6 +158,10 @@ void runUpdateCheckerTests(TestContext& context)
         "connection failures mention firewall and proxy access");
     context.expect(updateAccessErrorMessage(0, ERROR_WINHTTP_SECURE_FAILURE).find(L"HTTPS") != std::wstring::npos,
         "TLS access errors are described");
+    context.expect(updateAccessErrorMessage(0, ERROR_INSUFFICIENT_BUFFER).find(L"safely process") != std::wstring::npos,
+        "oversized release responses are rejected with a bounded-data explanation");
+    context.expect(updateAccessErrorMessage(0, 0).find(L"could not be accessed") != std::wstring::npos,
+        "an unclassified access failure still produces a useful message");
     context.expect(updateAccessErrorMessage(0, 12345).find(L"12345") != std::wstring::npos,
         "unknown Windows access errors preserve the diagnostic code");
 }

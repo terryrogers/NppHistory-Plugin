@@ -494,7 +494,13 @@ UpdateCheckResult checkGitHubForUpdates(std::wstring_view currentVersion,
     const auto json = downloadReleaseJson(detail);
     if (!json)
         return {UpdateCheckStatus::networkError, {}, std::move(detail)};
-    const auto releases = parseGitHubReleases(*json);
+    return evaluateReleaseJson(*json, currentVersion, includePrereleases);
+}
+
+UpdateCheckResult evaluateReleaseJson(std::string_view json,
+    std::wstring_view currentVersion, bool includePrereleases)
+{
+    const auto releases = parseGitHubReleases(json);
     if (releases.empty())
         return {UpdateCheckStatus::invalidResponse, {},
             L"GitHub returned no usable NppHistory releases."};

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Made revision action commands share one testable command route and added live dialog coverage for comment editing, deletion and restoration.
+- Added detailed Informational audit records for revision deletion and restoration, with the restore record written before Notepad++ reloads the editor.
+- Expanded update-result and access-error tests, logging-level and rollover tests, and automatic/manual live update verification.
+- Made each live verification run use a fresh isolated directory and replaced the stale beta-20 update expectation with the current public Releases feed.
+
 ## 0.2.0-beta.24
 
 - Clarified successful update checks by displaying the latest eligible published GitHub release, for example `Up to date — latest published version: 0.2.0-beta.20`.
