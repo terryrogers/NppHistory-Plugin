@@ -113,5 +113,7 @@ struct Settings
     bool save(const std::filesystem::path& file) const;
     bool edit(HWND owner, HINSTANCE instance);
     void refreshUpdateStatus(bool checking = false) const;
+    HWND activeDialogWindow() const noexcept;
+    bool closeForUpdateInstall() const;
 };
 }

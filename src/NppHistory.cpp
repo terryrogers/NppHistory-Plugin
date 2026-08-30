@@ -515,15 +515,18 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         availableUpdate = {};
     settings.updateInstallAvailable = trustedUpdateAsset(availableUpdate);
     settings.refreshUpdateStatus(false);
-    if (!completion->manual && completion->result.status == UpdateCheckStatus::updateAvailable)
+    if (completion->result.status == UpdateCheckStatus::updateAvailable)
     {
         const auto& release = completion->result.release;
         if (!shouldNotifyUpdate(release.tag, settings.lastNotifiedVersion,
             completion->manual))
             return;
-        settings.lastNotifiedVersion = release.tag;
-        if (!settings.save(settingsFile))
-            pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
+        if (!completion->manual)
+        {
+            settings.lastNotifiedVersion = release.tag;
+            if (!settings.save(settingsFile))
+                pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
+        }
         const bool installable = trustedUpdateAsset(release);
         const std::wstring content = L"Available version: " + release.tag
             + L"\nInstalled version: " + NPPHISTORY_VERSION_SEMVER_W
@@ -535,7 +538,9 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
             {1002, L"View release"},
             {IDCANCEL, L"Later"}};
         TASKDIALOGCONFIG dialog{sizeof(dialog)};
-        dialog.hwndParent = nppData._nppHandle;
+        const HWND settingsDialog = completion->manual
+            ? settings.activeDialogWindow() : nullptr;
+        dialog.hwndParent = settingsDialog ? settingsDialog : nppData._nppHandle;
         dialog.dwFlags = TDF_ALLOW_DIALOG_CANCELLATION | TDF_POSITION_RELATIVE_TO_WINDOW;
         dialog.pszWindowTitle = L"NppHistory Update Available";
         dialog.pszMainIcon = TD_INFORMATION_ICON;
@@ -548,7 +553,10 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         if (SUCCEEDED(TaskDialogIndirect(&dialog, &selected, nullptr, nullptr)))
         {
             if (selected == 1001)
-                beginUpdateInstall(release);
+            {
+                if (!completion->manual || !settings.closeForUpdateInstall())
+                    beginUpdateInstall(release);
+            }
             else if (selected == 1002)
                 openReleasePage(release);
         }

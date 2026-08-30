@@ -177,7 +177,7 @@ void runUpdateCheckerTests(TestContext& context)
     context.expect(!shouldNotifyUpdate(L"v1.0.0", L"v1.0.0", false),
         "automatic checks suppress a duplicate version notification");
     context.expect(shouldNotifyUpdate(L"v1.0.0", L"v1.0.0", true),
-        "manual checks may show the selected update again");
+        "manual checks reoffer the selected update even when it was previously notified");
     context.expect(!shouldNotifyUpdate(L"", L"", true),
         "an empty release tag never produces a notification");
 

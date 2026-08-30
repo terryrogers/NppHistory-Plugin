@@ -803,4 +803,19 @@ void Settings::refreshUpdateStatus(bool checking) const
     EnableWindow(GetDlgItem(activeSettingsDialog, IDC_UPDATE_INSTALL),
         !checking && updateInstallAvailable);
 }
+
+HWND Settings::activeDialogWindow() const noexcept
+{
+    return activeSettingsDialog && IsWindow(activeSettingsDialog)
+        ? activeSettingsDialog : nullptr;
+}
+
+bool Settings::closeForUpdateInstall() const
+{
+    if (!activeSettingsDialog || !IsWindow(activeSettingsDialog) || !activeSettings)
+        return false;
+    activeSettings->installUpdateNow = true;
+    SendMessageW(activeSettingsDialog, WM_COMMAND, IDOK, 0);
+    return true;
+}
 }

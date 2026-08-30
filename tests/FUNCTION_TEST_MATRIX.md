@@ -212,7 +212,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |
 | `updateThreadProc` | Live non-blocking GitHub request and completion message | PASS |
 | `startUpdateCheck` | Live manual background check, in-window checking state and duplicate-start policy | PASS |
-| `handleUpdateCompletion` | Live automatic/manual non-modal result, exact current-release status and timestamp persistence; available-link acceptance remains manual | PARTIAL |
+| `handleUpdateCompletion` | Live automatic/manual result, exact current-release status and timestamp persistence; both automatic and manual checks share the update action prompt, while accepting an available update remains manual UAT | PARTIAL |
 | `installThreadProc` | Built and message wiring inspected; live release download awaits an installable future release | PARTIAL |
 | `beginUpdateInstall` | Trusted-asset and duplicate-download policies direct; available-update user flow awaits manual UAT | PARTIAL |
 | `handleInstallCompletion` | Isolated updater success/failure replacement tests; Notepad++ restart path awaits manual UAT | PARTIAL |
