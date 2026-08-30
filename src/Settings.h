@@ -2,6 +2,7 @@
 
 #include "HistoryCatalog.h"
 
+#include <array>
 #include <filesystem>
 #include <windows.h>
 
@@ -59,6 +60,21 @@ enum class RevisionTrigger
     manual
 };
 
+struct HotkeySetting
+{
+    bool enabled = false;
+    bool ctrl = true;
+    bool alt = true;
+    bool shift = false;
+    unsigned key = 0;
+
+    bool operator==(const HotkeySetting& other) const noexcept
+    {
+        return enabled == other.enabled && ctrl == other.ctrl && alt == other.alt
+            && shift == other.shift && key == other.key;
+    }
+};
+
 struct Settings
 {
     bool autoSaveEnabled = true;
@@ -75,7 +91,11 @@ struct Settings
     std::filesystem::path externalAutoSavePluginPath;
     bool toolbarCapture = false;
     bool toolbarCompare = false;
-    bool toolbarRestore = false;
+    bool toolbarHistory = false;
+    HotkeySetting hotkeyCapture{false, true, true, false, 'C'};
+    HotkeySetting hotkeyCompare{false, true, true, false, 'M'};
+    HotkeySetting hotkeyHistory{false, true, true, false, 'H'};
+    std::array<int, 3> hotkeyCommandIds{};
     bool autoUpdateEnabled = false;
     UpdateFrequency updateFrequency = UpdateFrequency::weekly;
     bool includePrereleaseUpdates = true;

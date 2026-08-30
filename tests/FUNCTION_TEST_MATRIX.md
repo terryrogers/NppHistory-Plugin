@@ -26,8 +26,10 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 
 ## Settings.cpp / Settings
 
-| `configureSettingsTooltips` | Live registration of all 43 actionable Settings targets | PASS |
+| `configureSettingsTooltips` | Live registration of all 51 actionable Settings targets | PASS |
 | `updateSettingsTooltip` | Live visible tooltip activation for a disabled Auto Save interval input | PASS |
+| `populateHotkeyControls` / `hotkeyFromControls` | Live native Capture/Compare/History hotkey population, mutation and persistence | PASS |
+| `validateHotkeys` | Live duplicate rejection and successful recovery; existing Notepad++ menu shortcuts are scanned before save | PASS |
 
 | Function | Evidence | Status |
 |---|---|---|
@@ -234,18 +236,17 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `timerProc` | Live delayed automatic update scheduling and after-edit timer; interval branch directly policy-tested | PASS |
 | `showHistory` | Live menu command and dock display | PASS |
 | `captureNow` | Live forced manual revision | PASS |
-| `compareFromToolbar` | Live main-toolbar comparison | PASS |
-| `restoreFromToolbar` | Command registered; the shared restore action and confirmation are live-tested from the pane command path | PARTIAL |
+| `compareCurrent` | Live menu/main-toolbar route plus newest-revision fallback while the History pane is closed | PASS |
+| `setToolbarCommandEnabled` / `setCommandEnabled` / `syncCommandStates` | Live saved, excluded, unsaved, hidden-pane, visible-unselected and visible-selected state transitions | PASS |
 | `boolText` | Indirect every Boolean option-change detail | PASS |
 | `logSettingsChanges` | Live informational summary plus Debug previous/new values for every setting | PASS |
 | `editSettings` | Live settings open/apply UI | PASS |
 | `aboutProc` | Live About content/icon/close; external link launch not automated | PARTIAL |
 | `showAbout` | Live centred About window | PASS |
-| `setMenuItem` | Live exact four menu entries | PASS |
+| `setMenuItem` | Live exact Capture, Compare, History, Settings and About menu entries | PASS |
 | `ensureConfigurationLoaded` | Live isolated INI/catalogue initialization | PASS |
 | `createToolbarBitmap` | Live three main-toolbar icons | PASS |
 | `registerConfiguredToolbarButtons` | Live three configured toolbar buttons | PASS |
-| `removeMenuCommand` | Live resulting trimmed Plugins menu | PASS |
 | `initialise` | Live plugin initialization/dock/menu/timer | PASS |
 | `DllMain` | DLL loads in real Notepad++ | PASS |
 | `setInfo` | ABI present and live Notepad++ initialization | PASS |

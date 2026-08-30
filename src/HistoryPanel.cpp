@@ -177,7 +177,7 @@ LRESULT CALLBACK comparisonHeaderSubclass(HWND window, UINT message, WPARAM wPar
 bool HistoryPanel::create(HINSTANCE instance, const NppData& nppData, HistoryStore& store,
     const Settings& settings,
     int commandId, PFUNCPLUGINCMD captureCallback, PFUNCPLUGINCMD settingsCallback,
-    PFUNCPLUGINCMD aboutCallback)
+    PFUNCPLUGINCMD aboutCallback, PFUNCPLUGINCMD stateChangedCallback)
 {
     LoadLibraryW(L"Msftedit.dll");
     _instance = instance;
@@ -187,6 +187,7 @@ bool HistoryPanel::create(HINSTANCE instance, const NppData& nppData, HistorySto
     _captureCallback = captureCallback;
     _settingsCallback = settingsCallback;
     _aboutCallback = aboutCallback;
+    _stateChangedCallback = stateChangedCallback;
     _dialog = CreateDialogParamW(instance, MAKEINTRESOURCEW(IDD_HISTORY_PANEL), nppData._nppHandle,
         dialogProc, reinterpret_cast<LPARAM>(this));
     if (!_dialog)
@@ -201,14 +202,19 @@ bool HistoryPanel::create(HINSTANCE instance, const NppData& nppData, HistorySto
     SetPropW(_dialog, L"NppHistoryDockIconReady",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(data.hIconTab ? 1 : 0)));
     data.pszModuleName = L"NppHistory.dll";
-    return SendMessageW(nppData._nppHandle, NPPM_DMMREGASDCKDLG, 0,
+    const bool registered = SendMessageW(nppData._nppHandle, NPPM_DMMREGASDCKDLG, 0,
         reinterpret_cast<LPARAM>(&data)) != FALSE;
+    _registered = registered;
+    return registered;
 }
 
 void HistoryPanel::show()
 {
     if (_dialog)
+    {
+        _opened = true;
         SendMessageW(_nppData._nppHandle, NPPM_DMMSHOW, 0, reinterpret_cast<LPARAM>(_dialog));
+    }
 }
 
 void HistoryPanel::refresh(const std::filesystem::path& file)
@@ -269,6 +275,8 @@ void HistoryPanel::updateActionButtons()
     const BOOL revisionSelected = _fileSaved && !historyExcluded && selectedIndex() >= 0;
     EnableWindow(GetDlgItem(_dialog, IDC_COMPARE), revisionSelected);
     EnableWindow(GetDlgItem(_dialog, IDC_RESTORE), revisionSelected);
+    if (_stateChangedCallback)
+        _stateChangedCallback();
 }
 
 void HistoryPanel::showRevisionActions(int index, POINT anchor)
@@ -1393,6 +1401,14 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
         return TRUE;
     }
     if (message == WM_SIZE) { panel->layout(); return TRUE; }
+    if (message == WM_SHOWWINDOW)
+    {
+        if (panel->_registered)
+            panel->_opened = wParam != FALSE;
+        if (panel->_stateChangedCallback)
+            panel->_stateChangedCallback();
+        return FALSE;
+    }
     if (message == WM_CTLCOLORSTATIC
         && GetDlgCtrlID(reinterpret_cast<HWND>(lParam)) == IDC_SAVE_FILE_FIRST)
     {

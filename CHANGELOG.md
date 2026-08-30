@@ -2,13 +2,18 @@
 
 ## Unreleased
 
+- Changed **Plugins > NppHistory** to exactly Capture, Compare, History, Settings and About, and changed the optional main toolbar to Capture, Compare and History.
+- Made main-toolbar and Plugins-menu command availability mirror the active file, exclusions, revision availability and History-pane selection state; Refresh and Restore remain pane-only actions with the same state rules.
+- Made Compare use the newest saved revision automatically when the History pane is closed, while requiring an explicit revision selection when the pane is open.
+- Renamed the General settings tab to **Toolbar & Hotkeys**, replaced its Restore toolbar option with History, and added configurable Capture, Compare and History hotkeys with duplicate and existing-Notepad++ shortcut validation.
+- Expanded the live Notepad++ regression workflow to verify the exact menu, all toolbar/menu state transitions, hidden-pane Compare fallback, native hotkey controls, conflict rejection, persistence and 51 Settings tooltip registrations.
 - Keep Compare and Restore disabled until a revision is selected, while retaining Capture and Refresh for saved files.
 - Renamed the revision-list Bytes column to Size and added human-readable dynamic B, KB, MB, GB, TB, PB and EB units.
 - Added a pale-blue hover background and blue outline to enabled History pane buttons.
 - Added separate multiline wildcard exclusion lists for automatic saving and revision history, with filename and full-path matching.
 - Added distinct labelled **AS** (Auto Save) and **H** (History) document-tab badges in reserved tab space plus a wrapping red **File Excluded in Settings** pane message; each badge is shown only while its feature is enabled.
 - Excluded History files now disable Capture, Refresh, Compare and Restore, and all six History pane buttons have explanatory tooltips that also work while a button is disabled.
-- Added contextual tooltips to all 43 Settings tabs, checkboxes, radio options, inputs, dropdowns, status fields and action buttons, including controls disabled by another option.
+- Added contextual tooltips to all Settings tabs, checkboxes, radio options, inputs, dropdowns, status fields and action buttons, including controls disabled by another option.
 - Detects an installed `AutoSave.dll`, disables NppHistory's overlapping Auto Save engine, displays an unchecked disabled master control with a red explanation, preserves the configured preference for later restoration and records a warning in the plugin log.
 
 ## 0.2.0-beta.25 (release candidate)

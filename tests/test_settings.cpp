@@ -20,7 +20,10 @@ bool sameSettings(const Settings& left, const Settings& right)
         && left.autoSaveExclusions == right.autoSaveExclusions
         && left.toolbarCapture == right.toolbarCapture
         && left.toolbarCompare == right.toolbarCompare
-        && left.toolbarRestore == right.toolbarRestore
+        && left.toolbarHistory == right.toolbarHistory
+        && left.hotkeyCapture == right.hotkeyCapture
+        && left.hotkeyCompare == right.hotkeyCompare
+        && left.hotkeyHistory == right.hotkeyHistory
         && left.autoUpdateEnabled == right.autoUpdateEnabled
         && left.updateFrequency == right.updateFrequency
         && left.includePrereleaseUpdates == right.includePrereleaseUpdates
@@ -70,7 +73,10 @@ void runSettingsTests(TestContext& context)
     configured.autoSaveExclusions = L"*.log\r\nmyfile*.com";
     configured.toolbarCapture = true;
     configured.toolbarCompare = true;
-    configured.toolbarRestore = true;
+    configured.toolbarHistory = true;
+    configured.hotkeyCapture = {true, true, false, true, 'C'};
+    configured.hotkeyCompare = {true, true, true, false, 'M'};
+    configured.hotkeyHistory = {true, false, true, true, VK_F8};
     configured.autoUpdateEnabled = true;
     configured.updateFrequency = UpdateFrequency::monthly;
     configured.includePrereleaseUpdates = false;
@@ -123,8 +129,14 @@ void runSettingsTests(TestContext& context)
         "ToolbarCapture round-trips");
     context.expect(configured.toolbarCompare == roundTrip.toolbarCompare,
         "ToolbarCompare round-trips");
-    context.expect(configured.toolbarRestore == roundTrip.toolbarRestore,
-        "ToolbarRestore round-trips");
+    context.expect(configured.toolbarHistory == roundTrip.toolbarHistory,
+        "ToolbarHistory round-trips");
+    context.expect(configured.hotkeyCapture == roundTrip.hotkeyCapture,
+        "Capture hotkey round-trips modifiers, key and enabled state");
+    context.expect(configured.hotkeyCompare == roundTrip.hotkeyCompare,
+        "Compare hotkey round-trips modifiers, key and enabled state");
+    context.expect(configured.hotkeyHistory == roundTrip.hotkeyHistory,
+        "History hotkey round-trips modifiers, key and enabled state");
     context.expect(configured.autoUpdateEnabled == roundTrip.autoUpdateEnabled,
         "AutoUpdateEnabled round-trips");
     context.expect(configured.updateFrequency == roundTrip.updateFrequency,
@@ -221,6 +233,16 @@ void runSettingsTests(TestContext& context)
         && migratedBytes[1] == 0xFE
         && migratedReload.customHistoryRoot == migrated.customHistoryRoot,
         "ANSI migration writes a UTF-16 BOM and preserves new Unicode values");
+
+    const auto toolbarMigrationPath = directory.path() / L"toolbar-migration.ini";
+    const std::string toolbarMigrationText =
+        "[NppHistory]\r\nToolbarRestore=1\r\n";
+    writeAllBytesAtomic(toolbarMigrationPath, std::vector<std::uint8_t>(
+        toolbarMigrationText.begin(), toolbarMigrationText.end()));
+    Settings toolbarMigration;
+    toolbarMigration.load(toolbarMigrationPath);
+    context.expect(toolbarMigration.toolbarHistory,
+        "legacy ToolbarRestore preference migrates to ToolbarHistory");
 
     Settings policy;
     policy.autoSaveEnabled = true;

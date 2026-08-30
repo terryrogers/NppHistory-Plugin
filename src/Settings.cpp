@@ -10,6 +10,8 @@
 #include <cwchar>
 #include <shlobj.h>
 #include <string>
+#include <unordered_set>
+#include <vector>
 
 namespace npphistory
 {
@@ -28,7 +30,15 @@ struct SettingsTooltipEntry
 const SettingsTooltipEntry settingsTooltips[] = {
     {IDC_TOOLBAR_CAPTURE, L"Add or remove the NppHistory Capture command on the main Notepad++ toolbar after restart."},
     {IDC_TOOLBAR_COMPARE, L"Add or remove the NppHistory Compare command on the main Notepad++ toolbar after restart."},
-    {IDC_TOOLBAR_RESTORE, L"Add or remove the NppHistory Restore command on the main Notepad++ toolbar after restart."},
+    {IDC_TOOLBAR_HISTORY, L"Add or remove the NppHistory History command on the main Notepad++ toolbar after restart."},
+    {IDC_HOTKEY_CAPTURE_ENABLED, L"Enable a configurable keyboard shortcut for Capture after restarting Notepad++."},
+    {IDC_HOTKEY_CAPTURE_INPUT, L"Press the complete key combination to use for Capture."},
+    {IDC_HOTKEY_COMPARE_ENABLED, L"Enable a configurable keyboard shortcut for Compare after restarting Notepad++."},
+    {IDC_HOTKEY_COMPARE_INPUT, L"Press the complete key combination to use for Compare."},
+    {IDC_HOTKEY_HISTORY_ENABLED, L"Enable a configurable keyboard shortcut for opening History after restarting Notepad++."},
+    {IDC_HOTKEY_HISTORY_INPUT, L"Press the complete key combination to use for History."},
+    {IDC_HOTKEY_NOTE, L"Toolbar and hotkey changes are loaded by Notepad++ when it next starts."},
+    {IDC_HOTKEY_STATUS, L"Shows whether the selected hotkeys are complete, unique and currently available."},
     {IDC_ENABLED, L"Enable NppHistory automatic file saving. This is unavailable while AutoSave.dll is installed."},
     {IDC_AFTER_EDIT, L"Automatically save after editing has stopped for the configured number of seconds."},
     {IDC_AFTER_EDIT_SECONDS, L"Seconds of editing inactivity before automatic saving; the minimum is 10 seconds."},
@@ -68,7 +78,7 @@ const SettingsTooltipEntry settingsTooltips[] = {
     {IDC_UPDATE_STATUS, L"Shows the latest update result, last successful check and next scheduled check."},
     {IDOK, L"Save all Settings changes and close this window."},
     {IDCANCEL, L"Discard unsaved Settings changes and close this window."},
-    {IDC_SETTINGS_TABS, L"Choose the General, Auto Save, History, Logging or Updates settings page."}
+    {IDC_SETTINGS_TABS, L"Choose the Toolbar & Hotkeys, Auto Save, History, Logging or Updates settings page."}
 };
 
 void configureSettingsTooltips(HWND dialog)
@@ -229,6 +239,138 @@ bool ensureUnicodeIni(const std::filesystem::path& file)
     return writeAllBytesAtomic(file, unicode);
 }
 
+constexpr int hotkeyEnableIds[] = {IDC_HOTKEY_CAPTURE_ENABLED,
+    IDC_HOTKEY_COMPARE_ENABLED, IDC_HOTKEY_HISTORY_ENABLED};
+constexpr int hotkeyInputIds[] = {IDC_HOTKEY_CAPTURE_INPUT,
+    IDC_HOTKEY_COMPARE_INPUT, IDC_HOTKEY_HISTORY_INPUT};
+constexpr const wchar_t* hotkeyNames[] = {L"Capture", L"Compare", L"History"};
+
+void populateHotkeyControls(HWND dialog, int row, const HotkeySetting& hotkey)
+{
+    CheckDlgButton(dialog, hotkeyEnableIds[row], hotkey.enabled ? BST_CHECKED : BST_UNCHECKED);
+    WORD modifiers = 0;
+    if (hotkey.shift) modifiers |= HOTKEYF_SHIFT;
+    if (hotkey.ctrl) modifiers |= HOTKEYF_CONTROL;
+    if (hotkey.alt) modifiers |= HOTKEYF_ALT;
+    SendDlgItemMessageW(dialog, hotkeyInputIds[row], HKM_SETHOTKEY,
+        MAKEWORD(hotkey.key, modifiers), 0);
+}
+
+HotkeySetting hotkeyFromControls(HWND dialog, int row)
+{
+    HotkeySetting result;
+    result.enabled = IsDlgButtonChecked(dialog, hotkeyEnableIds[row]) == BST_CHECKED;
+    const WORD value = static_cast<WORD>(SendDlgItemMessageW(dialog,
+        hotkeyInputIds[row], HKM_GETHOTKEY, 0, 0));
+    result.key = LOBYTE(value);
+    const BYTE modifiers = HIBYTE(value);
+    result.ctrl = (modifiers & HOTKEYF_CONTROL) != 0;
+    result.alt = (modifiers & HOTKEYF_ALT) != 0;
+    result.shift = (modifiers & HOTKEYF_SHIFT) != 0;
+    return result;
+}
+
+void updateHotkeyControls(HWND dialog)
+{
+    for (int row = 0; row < 3; ++row)
+    {
+        const BOOL enabled = IsDlgButtonChecked(dialog, hotkeyEnableIds[row]) == BST_CHECKED;
+        EnableWindow(GetDlgItem(dialog, hotkeyInputIds[row]), enabled);
+    }
+}
+
+std::wstring hotkeyText(const HotkeySetting& hotkey)
+{
+    std::wstring text;
+    if (hotkey.ctrl) text += L"Ctrl+";
+    if (hotkey.alt) text += L"Alt+";
+    if (hotkey.shift) text += L"Shift+";
+    if (hotkey.key >= VK_F1 && hotkey.key <= VK_F12)
+        text += L"F" + std::to_wstring(hotkey.key - VK_F1 + 1);
+    else if (hotkey.key)
+        text += static_cast<wchar_t>(hotkey.key);
+    return text;
+}
+
+struct MenuShortcut
+{
+    int command = 0;
+    std::wstring text;
+};
+
+void collectMenuShortcuts(HMENU menu, std::vector<MenuShortcut>& shortcuts)
+{
+    const int count = GetMenuItemCount(menu);
+    for (int index = 0; index < count; ++index)
+    {
+        if (const HMENU child = GetSubMenu(menu, index))
+            collectMenuShortcuts(child, shortcuts);
+        else
+        {
+            const UINT command = GetMenuItemID(menu, index);
+            wchar_t label[512]{};
+            GetMenuStringW(menu, index, label, static_cast<int>(std::size(label)),
+                MF_BYPOSITION);
+            const wchar_t* separator = wcschr(label, L'\t');
+            if (command != static_cast<UINT>(-1) && command != 0 && separator
+                && separator[1])
+                shortcuts.push_back({static_cast<int>(command), separator + 1});
+        }
+    }
+}
+
+bool validateHotkeys(HWND dialog, const Settings& settings, bool showMessage)
+{
+    const std::array<HotkeySetting, 3> selected = {hotkeyFromControls(dialog, 0),
+        hotkeyFromControls(dialog, 1), hotkeyFromControls(dialog, 2)};
+    std::wstring issue;
+    for (int row = 0; row < 3 && issue.empty(); ++row)
+    {
+        if (!selected[row].enabled)
+            continue;
+        if (!selected[row].key)
+            issue = std::wstring(hotkeyNames[row]) + L" needs a key.";
+        for (int previous = 0; previous < row && issue.empty(); ++previous)
+        {
+            if (selected[previous].enabled
+                && selected[previous].ctrl == selected[row].ctrl
+                && selected[previous].alt == selected[row].alt
+                && selected[previous].shift == selected[row].shift
+                && selected[previous].key == selected[row].key)
+                issue = hotkeyText(selected[row]) + L" is selected more than once.";
+        }
+    }
+
+    HWND owner = GetWindow(dialog, GW_OWNER);
+    if (issue.empty() && owner)
+    {
+        std::vector<MenuShortcut> shortcuts;
+        collectMenuShortcuts(GetMenu(owner), shortcuts);
+        const std::unordered_set<int> ownCommands(settings.hotkeyCommandIds.begin(),
+            settings.hotkeyCommandIds.end());
+        for (const auto& shortcut : shortcuts)
+        {
+            if (ownCommands.count(shortcut.command) != 0)
+                continue;
+            for (int row = 0; row < 3 && issue.empty(); ++row)
+            {
+                if (selected[row].enabled
+                    && _wcsicmp(shortcut.text.c_str(), hotkeyText(selected[row]).c_str()) == 0)
+                    issue = hotkeyText(selected[row]) + L" is already assigned in Notepad++.";
+            }
+        }
+    }
+    SetDlgItemTextW(dialog, IDC_HOTKEY_STATUS,
+        issue.empty() ? L"No hotkey conflicts." : issue.c_str());
+    SetPropW(dialog, L"NppHistoryHotkeysValid",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(issue.empty() ? 2 : 1)));
+    InvalidateRect(GetDlgItem(dialog, IDC_HOTKEY_STATUS), nullptr, TRUE);
+    if (!issue.empty() && showMessage)
+        MessageBoxW(dialog, issue.c_str(), L"NppHistory Hotkey Conflict",
+            MB_OK | MB_ICONWARNING);
+    return issue.empty();
+}
+
 void updateLocationControls(HWND dialog)
 {
     const BOOL historyEnabled = IsDlgButtonChecked(dialog, IDC_HISTORY_ENABLED) == BST_CHECKED;
@@ -385,8 +527,12 @@ void updateLoggingControls(HWND dialog, const Settings& settings)
 void showSettingsPage(HWND dialog, int page)
 {
     const int general[] = {IDC_GENERAL_TOOLBAR_GROUP, IDC_TOOLBAR_CAPTURE,
-        IDC_TOOLBAR_COMPARE, IDC_TOOLBAR_RESTORE, IDC_TOOLBAR_DESCRIPTION,
-        IDC_TOOLBAR_RESTART_NOTE};
+        IDC_TOOLBAR_COMPARE, IDC_TOOLBAR_HISTORY, IDC_TOOLBAR_DESCRIPTION,
+        IDC_TOOLBAR_RESTART_NOTE, IDC_HOTKEYS_GROUP, IDC_HOTKEY_CAPTURE_ENABLED,
+        IDC_HOTKEY_CAPTURE_INPUT, IDC_HOTKEY_COMPARE_ENABLED,
+        IDC_HOTKEY_COMPARE_INPUT, IDC_HOTKEY_HISTORY_ENABLED,
+        IDC_HOTKEY_HISTORY_INPUT,
+        IDC_HOTKEY_NOTE, IDC_HOTKEY_STATUS};
     const int autoSave[] = {IDC_ENABLED, IDC_AUTOSAVE_WHEN_GROUP, IDC_AFTER_EDIT,
         IDC_AFTER_EDIT_SECONDS, IDC_AFTER_EDIT_LABEL, IDC_AUTOSAVE_FOCUS_LOSS,
         IDC_AUTOSAVE_INTERVAL, IDC_AUTOSAVE_INTERVAL_MINUTES, IDC_INTERVAL_LABEL,
@@ -469,7 +615,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon));
 
         const HWND tabs = GetDlgItem(dialog, IDC_SETTINGS_TABS);
-        for (const wchar_t* label : {L"General", L"Auto Save", L"History", L"Logging", L"Updates"})
+        for (const wchar_t* label : {L"Toolbar & Hotkeys", L"Auto Save", L"History", L"Logging", L"Updates"})
         {
             TCITEMW item{};
             item.mask = TCIF_TEXT;
@@ -488,8 +634,13 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             settings->toolbarCapture ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(dialog, IDC_TOOLBAR_COMPARE,
             settings->toolbarCompare ? BST_CHECKED : BST_UNCHECKED);
-        CheckDlgButton(dialog, IDC_TOOLBAR_RESTORE,
-            settings->toolbarRestore ? BST_CHECKED : BST_UNCHECKED);
+        CheckDlgButton(dialog, IDC_TOOLBAR_HISTORY,
+            settings->toolbarHistory ? BST_CHECKED : BST_UNCHECKED);
+        populateHotkeyControls(dialog, 0, settings->hotkeyCapture);
+        populateHotkeyControls(dialog, 1, settings->hotkeyCompare);
+        populateHotkeyControls(dialog, 2, settings->hotkeyHistory);
+        updateHotkeyControls(dialog);
+        validateHotkeys(dialog, *settings, false);
         CheckDlgButton(dialog, IDC_AUTO_UPDATE,
             settings->autoUpdateEnabled ? BST_CHECKED : BST_UNCHECKED);
         const HWND frequency = GetDlgItem(dialog, IDC_UPDATE_FREQUENCY);
@@ -585,7 +736,9 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         const HDC dc = reinterpret_cast<HDC>(wParam);
         const HWND control = reinterpret_cast<HWND>(lParam);
         const int id = GetDlgCtrlID(control);
-        if (id == IDC_AUTOSAVE_CONFLICT_NOTICE)
+        if (id == IDC_AUTOSAVE_CONFLICT_NOTICE
+            || (id == IDC_HOTKEY_STATUS && reinterpret_cast<INT_PTR>(
+                GetPropW(dialog, L"NppHistoryHotkeysValid")) == 1))
         {
             SetTextColor(dc, RGB(200, 0, 0));
             SetBkMode(dc, TRANSPARENT);
@@ -611,6 +764,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         RemovePropW(dialog, L"NppHistorySettingsTooltipTarget");
         RemovePropW(dialog, L"NppHistorySettingsTooltipStarted");
         RemovePropW(dialog, L"NppHistorySettingsTooltipActive");
+        RemovePropW(dialog, L"NppHistoryHotkeysValid");
         if (activeSettingsDialog == dialog)
         {
             activeSettingsDialog = nullptr;
@@ -635,6 +789,18 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
     if (message == WM_COMMAND && LOWORD(wParam) == IDC_AUTO_UPDATE)
     {
         updateUpdateControls(dialog);
+        return TRUE;
+    }
+    if (message == WM_COMMAND
+        && ((LOWORD(wParam) == IDC_HOTKEY_CAPTURE_ENABLED
+            || LOWORD(wParam) == IDC_HOTKEY_COMPARE_ENABLED
+            || LOWORD(wParam) == IDC_HOTKEY_HISTORY_ENABLED)
+            || LOWORD(wParam) == IDC_HOTKEY_CAPTURE_INPUT
+            || LOWORD(wParam) == IDC_HOTKEY_COMPARE_INPUT
+            || LOWORD(wParam) == IDC_HOTKEY_HISTORY_INPUT))
+    {
+        updateHotkeyControls(dialog);
+        validateHotkeys(dialog, *settings, false);
         return TRUE;
     }
     if (message == WM_COMMAND && LOWORD(wParam) == IDC_UPDATE_CHECK_NOW)
@@ -673,9 +839,18 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
     }
     if (message == WM_COMMAND && LOWORD(wParam) == IDOK)
     {
+        if (!validateHotkeys(dialog, *settings, true))
+        {
+            TabCtrl_SetCurSel(GetDlgItem(dialog, IDC_SETTINGS_TABS), 0);
+            showSettingsPage(dialog, 0);
+            return TRUE;
+        }
         settings->toolbarCapture = IsDlgButtonChecked(dialog, IDC_TOOLBAR_CAPTURE) == BST_CHECKED;
         settings->toolbarCompare = IsDlgButtonChecked(dialog, IDC_TOOLBAR_COMPARE) == BST_CHECKED;
-        settings->toolbarRestore = IsDlgButtonChecked(dialog, IDC_TOOLBAR_RESTORE) == BST_CHECKED;
+        settings->toolbarHistory = IsDlgButtonChecked(dialog, IDC_TOOLBAR_HISTORY) == BST_CHECKED;
+        settings->hotkeyCapture = hotkeyFromControls(dialog, 0);
+        settings->hotkeyCompare = hotkeyFromControls(dialog, 1);
+        settings->hotkeyHistory = hotkeyFromControls(dialog, 2);
         settings->autoUpdateEnabled = IsDlgButtonChecked(dialog, IDC_AUTO_UPDATE) == BST_CHECKED;
         const LRESULT frequency = SendDlgItemMessageW(dialog, IDC_UPDATE_FREQUENCY,
             CB_GETCURSEL, 0, 0);
@@ -886,7 +1061,23 @@ void Settings::load(const std::filesystem::path& file)
     autoSaveExclusions = decodePatternSetting(readTextSetting(file, L"AutoSaveExclusions"));
     toolbarCapture = readBoolean(file, L"ToolbarCapture", false);
     toolbarCompare = readBoolean(file, L"ToolbarCompare", false);
-    toolbarRestore = readBoolean(file, L"ToolbarRestore", false);
+    toolbarHistory = readBoolean(file, L"ToolbarHistory",
+        readBoolean(file, L"ToolbarRestore", false));
+    const auto readHotkey = [&](const wchar_t* prefix, unsigned fallbackKey) {
+        HotkeySetting hotkey;
+        const std::wstring base(prefix);
+        hotkey.enabled = readBoolean(file, (base + L"Enabled").c_str(), false);
+        hotkey.ctrl = readBoolean(file, (base + L"Ctrl").c_str(), true);
+        hotkey.alt = readBoolean(file, (base + L"Alt").c_str(), true);
+        hotkey.shift = readBoolean(file, (base + L"Shift").c_str(), false);
+        const int key = GetPrivateProfileIntW(L"NppHistory", (base + L"Key").c_str(),
+            static_cast<int>(fallbackKey), file.c_str());
+        hotkey.key = key >= 0 && key <= 255 ? static_cast<unsigned>(key) : fallbackKey;
+        return hotkey;
+    };
+    hotkeyCapture = readHotkey(L"HotkeyCapture", 'C');
+    hotkeyCompare = readHotkey(L"HotkeyCompare", 'M');
+    hotkeyHistory = readHotkey(L"HotkeyHistory", 'H');
     autoUpdateEnabled = readBoolean(file, L"AutoUpdateEnabled", false);
     const int frequency = GetPrivateProfileIntW(L"NppHistory", L"UpdateFrequency", 1,
         file.c_str());
@@ -964,7 +1155,22 @@ bool Settings::save(const std::filesystem::path& file) const
         && write(L"AutoSaveExclusions", encodePatternSetting(autoSaveExclusions))
         && write(L"ToolbarCapture", toolbarCapture ? L"1" : L"0")
         && write(L"ToolbarCompare", toolbarCompare ? L"1" : L"0")
-        && write(L"ToolbarRestore", toolbarRestore ? L"1" : L"0")
+        && write(L"ToolbarHistory", toolbarHistory ? L"1" : L"0")
+        && write(L"HotkeyCaptureEnabled", hotkeyCapture.enabled ? L"1" : L"0")
+        && write(L"HotkeyCaptureCtrl", hotkeyCapture.ctrl ? L"1" : L"0")
+        && write(L"HotkeyCaptureAlt", hotkeyCapture.alt ? L"1" : L"0")
+        && write(L"HotkeyCaptureShift", hotkeyCapture.shift ? L"1" : L"0")
+        && write(L"HotkeyCaptureKey", std::to_wstring(hotkeyCapture.key))
+        && write(L"HotkeyCompareEnabled", hotkeyCompare.enabled ? L"1" : L"0")
+        && write(L"HotkeyCompareCtrl", hotkeyCompare.ctrl ? L"1" : L"0")
+        && write(L"HotkeyCompareAlt", hotkeyCompare.alt ? L"1" : L"0")
+        && write(L"HotkeyCompareShift", hotkeyCompare.shift ? L"1" : L"0")
+        && write(L"HotkeyCompareKey", std::to_wstring(hotkeyCompare.key))
+        && write(L"HotkeyHistoryEnabled", hotkeyHistory.enabled ? L"1" : L"0")
+        && write(L"HotkeyHistoryCtrl", hotkeyHistory.ctrl ? L"1" : L"0")
+        && write(L"HotkeyHistoryAlt", hotkeyHistory.alt ? L"1" : L"0")
+        && write(L"HotkeyHistoryShift", hotkeyHistory.shift ? L"1" : L"0")
+        && write(L"HotkeyHistoryKey", std::to_wstring(hotkeyHistory.key))
         && write(L"AutoUpdateEnabled", autoUpdateEnabled ? L"1" : L"0")
         && write(L"UpdateFrequency", std::to_wstring(static_cast<int>(updateFrequency)))
         && write(L"IncludePrereleaseUpdates", includePrereleaseUpdates ? L"1" : L"0")

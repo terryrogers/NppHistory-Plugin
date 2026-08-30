@@ -69,9 +69,19 @@ BEGIN
     GROUPBOX "Toolbar", IDC_GENERAL_TOOLBAR_GROUP, 18, 37, 334, 72
     CONTROL "Capture", IDC_TOOLBAR_CAPTURE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 54, 75, 13
     CONTROL "Compare", IDC_TOOLBAR_COMPARE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 123, 54, 75, 13
-    CONTROL "Restore", IDC_TOOLBAR_RESTORE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 258, 54, 75, 13
+    CONTROL "History", IDC_TOOLBAR_HISTORY, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 258, 54, 75, 13
     LTEXT "Add selected commands to the main Notepad++ toolbar.", IDC_TOOLBAR_DESCRIPTION, 28, 75, 310, 12
     LTEXT "Toolbar changes apply after restarting Notepad++.", IDC_TOOLBAR_RESTART_NOTE, 28, 91, 310, 12
+
+    GROUPBOX "Hotkeys", IDC_HOTKEYS_GROUP, 18, 116, 334, 180
+    CONTROL "Capture", IDC_HOTKEY_CAPTURE_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 137, 75, 13
+    CONTROL "", IDC_HOTKEY_CAPTURE_INPUT, "msctls_hotkey32", WS_BORDER | WS_TABSTOP, 112, 134, 228, 16
+    CONTROL "Compare", IDC_HOTKEY_COMPARE_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 169, 75, 13
+    CONTROL "", IDC_HOTKEY_COMPARE_INPUT, "msctls_hotkey32", WS_BORDER | WS_TABSTOP, 112, 166, 228, 16
+    CONTROL "History", IDC_HOTKEY_HISTORY_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 201, 75, 13
+    CONTROL "", IDC_HOTKEY_HISTORY_INPUT, "msctls_hotkey32", WS_BORDER | WS_TABSTOP, 112, 198, 228, 16
+    LTEXT "Hotkey changes apply after restarting Notepad++. Conflicts must be resolved before saving.", IDC_HOTKEY_NOTE, 28, 228, 310, 24
+    LTEXT "No hotkey conflicts.", IDC_HOTKEY_STATUS, 28, 260, 310, 24
 
     CONTROL "Enable automatic saving", IDC_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 37, 235, 13
     LTEXT "Disabled because AutoSave.dll is installed.", IDC_AUTOSAVE_CONFLICT_NOTICE, 178, 37, 172, 13, SS_RIGHT

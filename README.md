@@ -35,8 +35,9 @@ NppHistory is an open-source Notepad++ plugin that automatically saves ordinary 
 - Supports revision selection and navigation from a streamlined WinMerge-style toolbar without inapplicable merge or editing commands.
 - Restores a revision after first retaining the current saved file as a safety revision.
 - Supports forced manual revision capture, including when the file matches the latest revision.
-- Provides the four-command Plugins > NppHistory menu: Show History, Capture Now, Settings and About.
-- Can add icon buttons for Capture, Compare and Restore to the main Notepad++ toolbar.
+- Provides the five-command **Plugins > NppHistory** menu: Capture, Compare, History, Settings and About.
+- Can add icon buttons for Capture, Compare and History to the main Notepad++ toolbar; Capture and Compare mirror the History pane's file/revision availability.
+- Compares the current file with its newest saved revision when Compare is invoked while the History pane is closed.
 - Centres comparison, settings and About windows on Notepad++; the comparison window also fits itself to smaller editor windows so the main tab area remains visible.
 - Includes a native About window showing the plugin icon, linked author, version, architecture, release date and licence. When populated, the embedded ISO release date is displayed using the computer's Windows regional date format.
 - Checks for updates while Notepad++ remains open and can download a verified x64 release, restart Notepad++, install it with rollback protection and reopen the editor.
@@ -60,7 +61,7 @@ For a portable installation, use the `plugins` folder beside `notepad++.exe`.
 
 Open **Plugins > NppHistory > Settings**. Settings are grouped into five tabs. Every actionable Settings control has a contextual tooltip explaining its purpose, units, scope and dependencies, including when that control is disabled:
 
-- **General** controls optional Capture, Compare and Restore buttons on the main Notepad++ toolbar. Toolbar changes take effect after restarting Notepad++.
+- **Toolbar & Hotkeys** controls optional Capture, Compare and History buttons on the main Notepad++ toolbar and configurable shortcuts for the same commands. Duplicate shortcuts and combinations already assigned by Notepad++ are rejected. Toolbar and hotkey changes take effect after restarting Notepad++.
 - **Auto Save** independently enables automatic saving, with **After editing stops** selected by default at 30 seconds. Optional triggers cover Notepad++ losing focus, timed intervals in minutes, file-tab changes and Notepad++ exit. Autosave can apply to the current file only or all open files. After-edit values below 10 seconds are normalized to 10 seconds. Its own multiline exclusion list prevents plugin-initiated saving of matching files. If the separate Notepad++ `AutoSave.dll` plugin is installed, NppHistory disables its Auto Save engine and displays the reason in red, avoiding two automatic-saving systems acting on the same documents; the saved NppHistory settings are retained for use if that plugin is later removed.
 - **History** independently enables revision history and selects whether revisions are created before saves, after saves and before restores. It also selects either the default hidden `.npphistory` folder beside each text file or a common custom history root. Its separate multiline exclusion list prevents new revisions for matching files.
 - **Logging** optionally records Error, Warning, Informational or Debug events. The log can use the standard Notepad++ plugin configuration folder or a custom file, can be opened directly in Notepad++, and supports a maximum size, overwrite or archive rollover, and configurable archive retention.

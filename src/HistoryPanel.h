@@ -19,12 +19,18 @@ public:
     bool create(HINSTANCE instance, const NppData& nppData, HistoryStore& store,
         const Settings& settings,
         int commandId, PFUNCPLUGINCMD captureCallback, PFUNCPLUGINCMD settingsCallback,
-        PFUNCPLUGINCMD aboutCallback);
+        PFUNCPLUGINCMD aboutCallback, PFUNCPLUGINCMD stateChangedCallback);
     void show();
     void refresh(const std::filesystem::path& file);
     void compare() { compareSelected(); }
     void restore() { restoreSelected(); }
     HWND handle() const noexcept { return _dialog; }
+    bool visible() const noexcept
+    {
+        return _opened && _dialog && IsWindowVisible(_dialog) != FALSE;
+    }
+    bool hasRevisions() const noexcept { return !_revisions.empty(); }
+    bool hasSelectedRevision() const { return selectedIndex() >= 0; }
 
 private:
     struct CompareContext
@@ -88,10 +94,13 @@ private:
     std::filesystem::path _currentFile;
     std::vector<RevisionInfo> _revisions;
     bool _fileSaved = false;
+    bool _registered = false;
+    bool _opened = false;
     HWND _hotButton = nullptr;
     PFUNCPLUGINCMD _captureCallback = nullptr;
     PFUNCPLUGINCMD _settingsCallback = nullptr;
     PFUNCPLUGINCMD _aboutCallback = nullptr;
+    PFUNCPLUGINCMD _stateChangedCallback = nullptr;
     std::array<HIMAGELIST, 6> _buttonImages{};
 };
 }
