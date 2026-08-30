@@ -12,7 +12,7 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 | Area | Evidence | Status |
 |---|---|---|
-| Core behavioural suite | 330 checks, 0 failures | PASS |
+| Core behavioural suite | 334 checks, 0 failures | PASS |
 | Plugin build | Release x64 | PASS |
 | Restart-installer build | Release x64 | PASS |
 | Core-test build | Release x64 | PASS |
@@ -22,13 +22,15 @@ The embedded release date is intentionally empty during candidate testing. It wi
 | Automatic update scheduling | Completion or access-error logging and next-check countdown | PASS |
 | Manual update check | In-window checking state with success and access-error handling | PASS |
 | History pane selection state | Compare and Restore disabled until a revision is selected | PASS |
+| Shared Compare command state | Pane, Plugins menu and main toolbar disable without a selection, re-enable with a selection, and closed-pane Compare uses the latest revision | PASS — automated and manual UAT |
+| Plugin command icons | Capture, Compare, History, Settings and About display matching menu icons | PASS — automated and manual UAT |
 | Revision size display | Dynamic B, KB, MB and GB formatting with direct boundary checks | PASS |
 | History pane button hover | All six buttons register and clear pointer hover state | PASS |
 | Independent exclusions | Multiline wildcard persistence, matching, Auto Save suppression, manual-save allowance and History suppression | PASS |
 | Exclusion indicators | Live labelled AS/H badges in reserved tab space, feature-enable gating and wrapping red pane status | PASS |
 | Excluded-file actions and help | Capture, Refresh, Compare and Restore disabled; all six pane tooltips registered and disabled Refresh tooltip visibly activated | PASS |
-| Settings contextual help | 43 targets registered; disabled interval input selected and tooltip popup visibly activated | PASS |
-| External AutoSave conflict | Direct absent/conventional/recursive discovery, all-trigger suppression, hidden non-conflict notice and installed-plugin UAT pending | PASS/PARTIAL |
+| Settings contextual help | 51 targets registered; disabled interval input selected and tooltip popup visibly activated | PASS |
+| External AutoSave conflict | Direct absent/conventional/recursive discovery, all-trigger suppression, hidden non-conflict notice and installed-plugin UAT | PASS |
 | Revision capture/comment/delete/restore | Live UI and audit-log evidence | PASS |
 | Comparison interface | Live rendering, navigation, shared scrolling, tooltips and pane behavior | PASS |
 | Settings and About | Five tabs, dependent controls, numeric version and blank candidate release date | PASS |
@@ -37,8 +39,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `47104E71473A9811B04BB8D1A292929449A784B63BAAA3AD4CA11E2DC769FBE2`
-- Candidate updater SHA-256: `D2C55418D3E1D3AC319C1270F3A2DAD008F9611F886BEF47FFC0B995EE8283C4`
+- Candidate DLL SHA-256: `CBC3BD87093D98F8E1BD327AD38F28037D58FBA8175E38FC8519494D8DFF5358`
+- Candidate updater SHA-256: `4255D585DA78590D8C3D4F5C24A651594580AAF5BA7A81144C27A60CFCCF2BB0`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 
@@ -57,13 +59,21 @@ The access-error live path exposed two over-strict test assumptions: a failed fi
 
 ## CI and publication gates
 
-- Normal pushes and pull requests now build the plugin, updater and core tests, run the 330-check suite, run updater replacement/rollback smoke tests and upload both binaries.
+- Normal pushes and pull requests now build the plugin, updater and core tests, run the 334-check suite, run updater replacement/rollback smoke tests and upload both binaries.
 - Tagged releases repeat the core and updater tests.
 - Publication rejects mismatched semantic tags, numeric plugin versions, missing/invalid publication dates and missing version-specific release notes.
 - The manual ZIP is structured as `NppHistory\NppHistory.dll`.
 - Automatic-update assets include the exact versioned x64 DLL, `NppHistoryUpdater.exe` and a SHA-256 manifest.
 
 ## Remaining manual UAT
+
+Completed in Terry Rogers' installed Notepad++ environment on 30 August 2026:
+
+- With the History pane open and no revision selected, pane Compare/Restore, the Plugins menu Compare command and the main-toolbar Compare command were disabled.
+- Selecting a revision enabled all corresponding Compare controls and pane Restore.
+- All five Plugins > NppHistory commands displayed their matching icons.
+- Closing the History pane left Compare enabled and successfully compared the current file with its latest revision.
+- The verified DLL was installed over the previous candidate with a recoverable backup and its installed SHA-256 matched the candidate hash above.
 
 The following remain release gates rather than automated claims:
 
@@ -74,7 +84,6 @@ The following remain release gates rather than automated claims:
 - Restore safety with unsaved editor changes.
 - Logging rollover and archive behavior through the visible Settings workflow.
 - Display at the user's normal DPI and docking arrangements.
-- Manual beta-24-to-beta-25 installation.
 - Real automatic beta-25-to-beta-26 download, UAC/replacement, restart and result reporting.
 
 ## Reproduction
