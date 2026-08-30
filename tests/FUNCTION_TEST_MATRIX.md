@@ -237,13 +237,14 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `showHistory` | Live menu command and dock display | PASS |
 | `captureNow` | Live forced manual revision | PASS |
 | `compareCurrent` | Live menu/main-toolbar route plus newest-revision fallback while the History pane is closed | PASS |
-| `setToolbarCommandEnabled` / `setCommandEnabled` / `syncCommandStates` | Live saved, excluded, unsaved, hidden-pane, visible-unselected and visible-selected state transitions | PASS |
+| `setToolbarCommandEnabled` / `setCommandEnabled` / `syncCommandStates` | Live saved, excluded, unsaved, hidden-pane, visible-unselected and visible-selected transitions; menu and main-toolbar Compare states mirror pane selection | PASS |
+| `createPluginMenuBitmap` / `configurePluginMenuIcons` | Live all five Plugins > NppHistory commands registered with their matching icons | PASS |
 | `boolText` | Indirect every Boolean option-change detail | PASS |
 | `logSettingsChanges` | Live informational summary plus Debug previous/new values for every setting | PASS |
 | `editSettings` | Live settings open/apply UI | PASS |
 | `aboutProc` | Live About content/icon/close; external link launch not automated | PARTIAL |
 | `showAbout` | Live centred About window | PASS |
-| `setMenuItem` | Live exact Capture, Compare, History, Settings and About menu entries | PASS |
+| `setMenuItem` | Live exact Capture, Compare, History, Settings and About menu entries with icon registration | PASS |
 | `ensureConfigurationLoaded` | Live isolated INI/catalogue initialization | PASS |
 | `createToolbarBitmap` | Live three main-toolbar icons | PASS |
 | `registerConfiguredToolbarButtons` | Live three configured toolbar buttons | PASS |

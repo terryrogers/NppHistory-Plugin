@@ -27,7 +27,7 @@ public:
     HWND handle() const noexcept { return _dialog; }
     bool visible() const noexcept
     {
-        return _opened && _dialog && IsWindowVisible(_dialog) != FALSE;
+        return _opened;
     }
     bool hasRevisions() const noexcept { return !_revisions.empty(); }
     bool hasSelectedRevision() const { return selectedIndex() >= 0; }

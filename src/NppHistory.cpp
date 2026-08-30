@@ -111,6 +111,7 @@ struct ToolbarAsset
 };
 
 std::array<ToolbarAsset, 3> toolbarAssets{};
+std::array<HBITMAP, 5> pluginMenuBitmaps{};
 std::array<ShortcutKey, 3> commandShortcuts{};
 
 fs::path pathForBuffer(UINT_PTR bufferId)
@@ -1079,10 +1080,83 @@ void setToolbarCommandEnabled(int commandId, bool enabled)
             return TRUE;
         const auto* state = reinterpret_cast<const std::pair<int, bool>*>(value);
         if (SendMessageW(window, TB_COMMANDTOINDEX, state->first, 0) >= 0)
+        {
             SendMessageW(window, TB_ENABLEBUTTON, state->first,
                 MAKELPARAM(state->second ? TRUE : FALSE, 0));
+            LRESULT buttonState = SendMessageW(window, TB_GETSTATE, state->first, 0);
+            if (buttonState >= 0)
+            {
+                if (state->second)
+                    buttonState |= TBSTATE_ENABLED;
+                else
+                    buttonState &= ~TBSTATE_ENABLED;
+                SendMessageW(window, TB_SETSTATE, state->first,
+                    MAKELPARAM(buttonState, 0));
+            }
+            InvalidateRect(window, nullptr, FALSE);
+        }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&state));
+}
+
+HBITMAP createPluginMenuBitmap(int resource)
+{
+    const HICON icon = static_cast<HICON>(LoadImageW(moduleInstance,
+        MAKEINTRESOURCEW(resource), IMAGE_ICON, 16, 16, LR_SHARED));
+    if (!icon)
+        return nullptr;
+    HDC screen = GetDC(nullptr);
+    HDC memory = CreateCompatibleDC(screen);
+    HBITMAP bitmap = CreateCompatibleBitmap(screen, 16, 16);
+    const HGDIOBJ previous = SelectObject(memory, bitmap);
+    RECT bounds{0, 0, 16, 16};
+    FillRect(memory, &bounds, GetSysColorBrush(COLOR_MENU));
+    DrawIconEx(memory, 0, 0, icon, 16, 16, 0, nullptr, DI_NORMAL);
+    SelectObject(memory, previous);
+    DeleteDC(memory);
+    ReleaseDC(nullptr, screen);
+    return bitmap;
+}
+
+void configurePluginMenuIcons()
+{
+    if (!nppData._nppHandle)
+        return;
+    const auto findContainingMenu = [](HMENU root, int target, const auto& self) -> HMENU
+    {
+        const int count = GetMenuItemCount(root);
+        for (int item = 0; item < count; ++item)
+        {
+            if (GetMenuItemID(root, item) == static_cast<UINT>(target))
+                return root;
+            if (const HMENU child = GetSubMenu(root, item))
+                if (const HMENU found = self(child, target, self))
+                    return found;
+        }
+        return nullptr;
+    };
+    const int indices[] = {captureIndex, compareIndex, historyIndex, settingsIndex, aboutIndex};
+    const int resources[] = {IDI_CAPTURE, IDI_COMPARE, IDI_NPPHISTORY, IDI_SETTINGS, IDI_ABOUT};
+    int configured = 0;
+    for (int index = 0; index < static_cast<int>(std::size(indices)); ++index)
+    {
+        const int command = menuItems[indices[index]]._cmdID;
+        const HMENU menu = findContainingMenu(GetMenu(nppData._nppHandle), command,
+            findContainingMenu);
+        if (!menu)
+            continue;
+        pluginMenuBitmaps[index] = createPluginMenuBitmap(resources[index]);
+        if (!pluginMenuBitmaps[index])
+            continue;
+        MENUITEMINFOW item{sizeof(item)};
+        item.fMask = MIIM_BITMAP;
+        item.hbmpItem = pluginMenuBitmaps[index];
+        if (SetMenuItemInfoW(menu, command, FALSE, &item))
+            ++configured;
+    }
+    SetPropW(nppData._nppHandle, L"NppHistoryPluginMenuIconsReady",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(configured + 1)));
+    DrawMenuBar(nppData._nppHandle);
 }
 
 void setCommandEnabled(int index, bool enabled)
@@ -1214,6 +1288,7 @@ void initialise()
     nextUpdateStatusRefreshTick = now;
     SetWindowSubclass(nppData._nppHandle, mainWindowSubclass, 1, 0);
     ready = true;
+    configurePluginMenuIcons();
     syncCommandStates();
     updateShuttingDown = false;
     showPendingUpdateResult();
@@ -1411,6 +1486,11 @@ void handleNotification(SCNotification* notification)
             if (asset.bitmap) DeleteObject(asset.bitmap);
             asset.bitmap = nullptr;
             asset.icon = nullptr;
+        }
+        for (auto& bitmap : pluginMenuBitmaps)
+        {
+            if (bitmap) DeleteObject(bitmap);
+            bitmap = nullptr;
         }
         ready = false;
     }

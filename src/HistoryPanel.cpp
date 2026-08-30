@@ -22,6 +22,10 @@ namespace
 constexpr UINT comparisonWheelMessage = WM_APP + 42;
 constexpr UINT comparisonMarkerClickMessage = WM_APP + 43;
 constexpr UINT_PTR panelTooltipTimer = 0x4E50;
+constexpr UINT dockingNotificationFirst = 1050;
+constexpr UINT dockingClose = dockingNotificationFirst + 1;
+constexpr UINT dockingSwitchIn = dockingNotificationFirst + 4;
+constexpr UINT dockingSwitchOff = dockingNotificationFirst + 5;
 const wchar_t* toolbarHint(int image);
 
 HBITMAP createMenuBitmap(HINSTANCE instance, int resource)
@@ -1401,13 +1405,20 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
         return TRUE;
     }
     if (message == WM_SIZE) { panel->layout(); return TRUE; }
-    if (message == WM_SHOWWINDOW)
+    if (message == WM_NOTIFY)
     {
-        if (panel->_registered)
-            panel->_opened = wParam != FALSE;
-        if (panel->_stateChangedCallback)
-            panel->_stateChangedCallback();
-        return FALSE;
+        const auto* notification = reinterpret_cast<NMHDR*>(lParam);
+        if (notification && notification->hwndFrom == panel->_nppData._nppHandle)
+        {
+            const UINT code = LOWORD(notification->code);
+            if (code == dockingSwitchIn)
+                panel->_opened = true;
+            else if (code == dockingSwitchOff || code == dockingClose)
+                panel->_opened = false;
+            if ((code == dockingSwitchIn || code == dockingSwitchOff || code == dockingClose)
+                && panel->_stateChangedCallback)
+                panel->_stateChangedCallback();
+        }
     }
     if (message == WM_CTLCOLORSTATIC
         && GetDlgCtrlID(reinterpret_cast<HWND>(lParam)) == IDC_SAVE_FILE_FIRST)
