@@ -385,7 +385,8 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         updateLoggingControls(dialog, *settings);
 
         CheckDlgButton(dialog, IDC_ENABLED,
-            settings->autoSaveEnabled ? BST_CHECKED : BST_UNCHECKED);
+            settings->autoSaveEnabled && !settings->externalAutoSavePluginDetected
+                ? BST_CHECKED : BST_UNCHECKED);
         CheckDlgButton(dialog, IDC_AFTER_EDIT,
             settings->autoSaveAfterEdit ? BST_CHECKED : BST_UNCHECKED);
         SetDlgItemInt(dialog, IDC_AFTER_EDIT_SECONDS, settings->afterEditSeconds, FALSE);
@@ -557,7 +558,10 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         settings->logArchivesToRetain = (std::min)(100U,
             readNumber(dialog, IDC_LOGGING_ARCHIVES, 0, settings->logArchivesToRetain));
 
-        settings->autoSaveEnabled = IsDlgButtonChecked(dialog, IDC_ENABLED) == BST_CHECKED;
+        // The conflict UI deliberately appears unchecked. Preserve the configured preference
+        // while AutoSave.dll is present so it can resume if that plugin is later removed.
+        if (!settings->externalAutoSavePluginDetected)
+            settings->autoSaveEnabled = IsDlgButtonChecked(dialog, IDC_ENABLED) == BST_CHECKED;
         settings->autoSaveAfterEdit = IsDlgButtonChecked(dialog, IDC_AFTER_EDIT) == BST_CHECKED;
         settings->afterEditSeconds = readNumber(dialog, IDC_AFTER_EDIT_SECONDS, 10,
             settings->afterEditSeconds);

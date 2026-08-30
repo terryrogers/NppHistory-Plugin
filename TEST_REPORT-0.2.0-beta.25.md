@@ -35,8 +35,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `E9F4B56A35EA87A0BB4F69C42173C366FBF894C9962A01F67776A2348C398F1F`
-- Candidate updater SHA-256: `69E63CC431E5B1953387A04AF72F662C0D8F3EB741AC3A1F71EEDBF39C0F7923`
+- Candidate DLL SHA-256: `03087C59D478E32D9DBCFB1DA514390CF687120A6A1E9122AD2620D17720D443`
+- Candidate updater SHA-256: `45928076C563940E1ABE45122B4EE9BCF1B2B98859C4B1DCA6FF2574FB0A035E`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 
