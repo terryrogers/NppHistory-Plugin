@@ -1005,6 +1005,52 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
 }
 }
 
+std::wstring autoSaveScopeDisplayName(AutoSaveScope value)
+{
+    return value == AutoSaveScope::currentFile ? L"Current file only" : L"All open files";
+}
+
+std::wstring updateFrequencyDisplayName(UpdateFrequency value)
+{
+    switch (value)
+    {
+    case UpdateFrequency::daily: return L"Daily";
+    case UpdateFrequency::weekly: return L"Weekly";
+    case UpdateFrequency::monthly: return L"Monthly";
+    }
+    return L"Unknown";
+}
+
+std::wstring logLevelDisplayName(LogLevel value)
+{
+    switch (value)
+    {
+    case LogLevel::error: return L"Error";
+    case LogLevel::warning: return L"Warning";
+    case LogLevel::informational: return L"Informational";
+    case LogLevel::debug: return L"Debug";
+    }
+    return L"Unknown";
+}
+
+std::wstring logLocationDisplayName(LogLocationMode value)
+{
+    return value == LogLocationMode::pluginConfig
+        ? L"Notepad++ plugin configuration folder" : L"Custom file";
+}
+
+std::wstring logRolloverDisplayName(LogRolloverMode value)
+{
+    return value == LogRolloverMode::overwrite
+        ? L"Overwrite current log" : L"Create archives";
+}
+
+std::wstring historyLocationDisplayName(HistoryLocationMode value)
+{
+    return value == HistoryLocationMode::adjacent
+        ? L"Hidden .npphistory folder beside each file" : L"Common folder";
+}
+
 bool Settings::shouldAutoSave(AutoSaveTrigger trigger) const noexcept
 {
     if (!autoSaveEnabled || externalAutoSavePluginDetected)

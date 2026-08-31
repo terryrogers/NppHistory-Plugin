@@ -14,7 +14,7 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 - Keeps Compare and Restore disabled until a history revision is selected.
 - Renames the revision-list Bytes column to Size and displays dynamic human-readable units.
 - Adds a clear pale-blue hover state to the History pane command buttons.
-- Adds separate automatic-saving and revision-history wildcard exclusion lists, with distinct crossed-out Auto Save and Revision History tab icons in reserved space and a wrapping **File Excluded in Settings** pane status. Each icon appears only while its feature is enabled.
+- Adds separate automatic-saving and revision-history wildcard exclusion lists, with distinct crossed-out Auto Save and Revision History tab icons and a wrapping **File Excluded in Settings** pane status. Each icon appears only while its feature is enabled, and indicator painting leaves Notepad++'s tab padding, captions, widths and ordering untouched.
 - Disables all file-history actions for excluded History files and adds explanatory hover tooltips to every History pane button, including disabled buttons.
 - Adds contextual hover help to every actionable Settings control, including disabled inputs.
 - Detects the separate Notepad++ AutoSave plugin and disables NppHistory Auto Save with a red settings notice, preventing competing automatic-saving engines.
@@ -22,6 +22,7 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 - Uses compact `[INFO]` severity labels for informational log records.
 - Keeps all five Plugins-menu icons attached if Notepad++ refreshes or rebuilds the menu.
 - Records readable Settings debug actions such as `Settings tab | Logging` and `Settings control | Open Log`, without raw numeric control IDs.
+- Records setting changes with readable option names and values instead of internal numbers, and emits each pane-button click once.
 - Centres plugin dialogs and confirmations on the main Notepad++ window.
 
 ## Installation from beta 24 or earlier

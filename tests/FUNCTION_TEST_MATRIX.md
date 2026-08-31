@@ -54,6 +54,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `Settings::shouldCreateRevision` | Direct all revision paths, selected/cleared/master-off | PASS |
 | `Settings::isAutoSaveExcluded` | Direct filename wildcard and independent-list cases; live settings/pane/tab state | PASS |
 | `Settings::isHistoryExcluded` | Direct filename wildcard and independent-list cases; live settings/pane/tab state | PASS |
+| Settings display-name helpers | Direct coverage of every Auto Save scope, update frequency, log level, log location, rollover policy and history location used by setting-change logs | PASS |
 | `Settings::afterEditDue` | Direct pre/exact threshold, disabled and tick reversal | PASS |
 | `Settings::intervalDue` | Direct pre/exact threshold, disabled and tick reversal | PASS |
 | `Settings::updateCheckDue` | Direct disabled, daily, weekly and monthly boundaries plus retry suppression | PASS |
@@ -224,7 +225,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `reconcileFile` | Live active file plus direct catalogue outcomes | PASS |
 | `detectMissingBuffers` | Notification/timer wiring built; disappearing-open-file alert remains manual UAT | PARTIAL |
 | `refreshPanel` | Live list refresh | PASS |
-| `drawDocumentTabIndicators` / `documentTabControls` / `refreshDocumentTabIndicators` | Live supplied 16 px Auto Save/History disabled icons, both embedded resources, 50 px two-icon padding, screenshot evidence, feature gating and external AutoSave conflict | PASS |
+| `drawDocumentTabIndicators` / `documentTabControls` / `refreshDocumentTabIndicators` | Live supplied 16 px Auto Save/History disabled icons, stable cached paint data, both embedded resources, ten-document screenshot evidence, feature gating, external AutoSave conflict and a regression guard that rejects shared tab padding/minimum-width/caption mutation | PASS |
 | `saveBuffer` | Live actual after-edit save | PASS |
 | `saveConfiguredScope` | Live current test file and direct scope persistence; multi-file live path not automated | PARTIAL |
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |
@@ -242,7 +243,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `setToolbarCommandEnabled` / `setCommandEnabled` / `syncCommandStates` | Live saved, excluded, unsaved, hidden-pane, visible-unselected and visible-selected transitions; menu and main-toolbar Compare states mirror pane selection | PASS |
 | `createPluginMenuBitmap` / `configurePluginMenuIcons` | Live all five Plugins > NppHistory commands registered with their matching icons | PASS |
 | `boolText` | Indirect every Boolean option-change detail | PASS |
-| `logSettingsChanges` | Live informational summary plus Debug previous/new values for every setting | PASS |
+| `logSettingsChanges` | Live informational changed-option count plus Debug previous/new values; direct exhaustive readable names for enum choices | PASS |
 | `editSettings` | Live settings open/apply UI | PASS |
 | `aboutProc` | Live About content/icon/close; external link launch not automated | PARTIAL |
 | `showAbout` | Live centred About window | PASS |

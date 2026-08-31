@@ -53,6 +53,30 @@ bool sameSettings(const Settings& left, const Settings& right)
 void runSettingsTests(TestContext& context)
 {
     TestDirectory directory(L"settings");
+    context.expect(autoSaveScopeDisplayName(AutoSaveScope::currentFile) == L"Current file only"
+        && autoSaveScopeDisplayName(AutoSaveScope::allOpenFiles) == L"All open files",
+        "Auto Save scope log names describe both choices");
+    context.expect(updateFrequencyDisplayName(UpdateFrequency::daily) == L"Daily"
+        && updateFrequencyDisplayName(UpdateFrequency::weekly) == L"Weekly"
+        && updateFrequencyDisplayName(UpdateFrequency::monthly) == L"Monthly",
+        "update-frequency log names describe every schedule");
+    context.expect(logLevelDisplayName(LogLevel::error) == L"Error"
+        && logLevelDisplayName(LogLevel::warning) == L"Warning"
+        && logLevelDisplayName(LogLevel::informational) == L"Informational"
+        && logLevelDisplayName(LogLevel::debug) == L"Debug",
+        "log-level names describe every severity");
+    context.expect(logLocationDisplayName(LogLocationMode::pluginConfig)
+            == L"Notepad++ plugin configuration folder"
+        && logLocationDisplayName(LogLocationMode::customFile) == L"Custom file",
+        "log-location names describe both storage choices");
+    context.expect(logRolloverDisplayName(LogRolloverMode::overwrite)
+            == L"Overwrite current log"
+        && logRolloverDisplayName(LogRolloverMode::archive) == L"Create archives",
+        "log-rollover names describe both policies");
+    context.expect(historyLocationDisplayName(HistoryLocationMode::adjacent)
+            == L"Hidden .npphistory folder beside each file"
+        && historyLocationDisplayName(HistoryLocationMode::customRoot) == L"Common folder",
+        "history-location names describe both storage choices");
     const auto missingPath = directory.path() / L"missing.ini";
     Settings defaults;
     Settings loadedDefaults;

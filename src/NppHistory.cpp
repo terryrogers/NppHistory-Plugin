@@ -20,6 +20,7 @@
 #include <process.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 #include <windows.h>
 
 namespace fs = std::filesystem;
@@ -125,10 +126,11 @@ struct ToolbarAsset
 std::array<ToolbarAsset, 3> toolbarAssets{};
 std::array<HBITMAP, 5> pluginMenuBitmaps{};
 std::array<ShortcutKey, 3> commandShortcuts{};
+std::unordered_map<HWND, std::vector<unsigned char>> documentTabIndicatorCache;
 
 fs::path pathForBuffer(UINT_PTR bufferId)
 {
-    if (!nppData._nppHandle || !bufferId)
+    if (!nppData._nppHandle || !bufferId || bufferId == static_cast<UINT_PTR>(-1))
         return {};
     const LRESULT length = SendMessageW(nppData._nppHandle, NPPM_GETFULLPATHFROMBUFFERID,
         static_cast<WPARAM>(bufferId), 0);
@@ -170,6 +172,10 @@ std::vector<HWND> documentTabControls()
 
 void drawDocumentTabIndicators(HWND tabs, int view)
 {
+    (void)view;
+    const auto cached = documentTabIndicatorCache.find(tabs);
+    if (cached == documentTabIndicatorCache.end())
+        return;
     const HDC dc = GetDC(tabs);
     if (!dc)
         return;
@@ -177,14 +183,11 @@ void drawDocumentTabIndicators(HWND tabs, int view)
         MAKEINTRESOURCEW(IDI_AUTOSAVE_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
     const HICON historyDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
         MAKEINTRESOURCEW(IDI_HISTORY_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
-    const int count = TabCtrl_GetItemCount(tabs);
+    const int tabCount = TabCtrl_GetItemCount(tabs);
+    const int cachedCount = static_cast<int>(cached->second.size());
+    const int count = tabCount < cachedCount ? tabCount : cachedCount;
     for (int index = 0; index < count; ++index)
     {
-        const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
-            NPPM_GETBUFFERIDFROMPOS, index, view));
-        const fs::path path = pathForBuffer(bufferId);
-        if (path.empty())
-            continue;
         RECT item{};
         if (!TabCtrl_GetItemRect(tabs, index, &item))
             continue;
@@ -195,11 +198,10 @@ void drawDocumentTabIndicators(HWND tabs, int view)
             const int y = item.top + ((item.bottom - item.top) - size) / 2;
             DrawIconEx(dc, x, y, icon, size, size, 0, nullptr, DI_NORMAL);
         };
-        const bool autoSaveExcluded = settings.autoSaveEnabled
-            && !settings.externalAutoSavePluginDetected && settings.isAutoSaveExcluded(path);
-        const bool historyExcluded = settings.historyEnabled && settings.isHistoryExcluded(path);
-        // Extra tab padding is reserved before painting. The icons therefore sit after the
-        // filename and before Notepad++'s pin/close glyphs without covering either.
+        const bool autoSaveExcluded = (cached->second[index] & 1U) != 0;
+        const bool historyExcluded = (cached->second[index] & 2U) != 0;
+        // Paint only: never change the shared tab control's padding, minimum width, or
+        // item captions. Notepad++ must retain sole control of tab sizing and ordering.
         if (autoSaveExcluded)
             drawIndicator(item.right - (historyExcluded ? 70 : 52), autoSaveDisabledIcon);
         if (historyExcluded)
@@ -213,6 +215,7 @@ LRESULT CALLBACK documentTabSubclass(HWND tabs, UINT message, WPARAM wParam, LPA
 {
     if (message == WM_NCDESTROY)
     {
+        documentTabIndicatorCache.erase(tabs);
         RemoveWindowSubclass(tabs, documentTabSubclass, subclassId);
         return DefSubclassProc(tabs, message, wParam, lParam);
     }
@@ -230,7 +233,9 @@ void refreshDocumentTabIndicators()
     std::array<HWND, 2> viewTabs{};
     int autoSaveIndicatorCount = 0;
     int historyIndicatorCount = 0;
-    int maximumIndicatorPadding = 6;
+    int excludedItemCount = 0;
+    int normalItemCount = 0;
+    int documentTabCount = 0;
     std::vector<bool> used(controls.size(), false);
     for (int view = 0; view < 2; ++view)
     {
@@ -254,7 +259,8 @@ void refreshDocumentTabIndicators()
         SetWindowSubclass(tabs, documentTabSubclass, static_cast<UINT_PTR>(view + 1),
             static_cast<DWORD_PTR>(view));
         const int count = TabCtrl_GetItemCount(tabs);
-        int maximumIndicators = 0;
+        std::vector<unsigned char> indicators(static_cast<std::size_t>(count), 0);
+        documentTabCount += count;
         for (int index = 0; index < count; ++index)
         {
             const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
@@ -273,25 +279,29 @@ void refreshDocumentTabIndicators()
             {
                 ++historyIndicatorCount;
             }
-            maximumIndicators = (std::max)(maximumIndicators,
-                static_cast<int>(autoSaveExcluded) + static_cast<int>(historyExcluded));
+            const int indicatorCount = static_cast<int>(autoSaveExcluded)
+                + static_cast<int>(historyExcluded);
+            indicators[static_cast<std::size_t>(index)] =
+                static_cast<unsigned char>((autoSaveExcluded ? 1U : 0U)
+                    | (historyExcluded ? 2U : 0U));
+            if (indicatorCount > 0)
+                ++excludedItemCount;
+            else
+                ++normalItemCount;
         }
-        // Notepad++ paints its pin/close glyphs at the right edge. Reserve enough horizontal
-        // space for the filename, one or two 16 px indicators, their gap, and those glyphs.
-        const int horizontalPadding = maximumIndicators == 2 ? 50
-            : maximumIndicators == 1 ? 34 : 6;
-        maximumIndicatorPadding = (std::max)(maximumIndicatorPadding, horizontalPadding);
-        SendMessageW(tabs, TCM_SETPADDING, 0, MAKELPARAM(horizontalPadding, 3));
-        SetPropW(tabs, L"NppHistoryTabIndicatorPadding",
-            reinterpret_cast<HANDLE>(static_cast<INT_PTR>(horizontalPadding)));
+        documentTabIndicatorCache[tabs] = std::move(indicators);
         InvalidateRect(tabs, nullptr, FALSE);
     }
     SetPropW(nppData._nppHandle, L"NppHistoryAutoSaveTabIndicatorCount",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(autoSaveIndicatorCount)));
     SetPropW(nppData._nppHandle, L"NppHistoryHistoryTabIndicatorCount",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(historyIndicatorCount)));
-    SetPropW(nppData._nppHandle, L"NppHistoryTabIndicatorPadding",
-        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(maximumIndicatorPadding)));
+    SetPropW(nppData._nppHandle, L"NppHistoryExcludedDocumentTabCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(excludedItemCount)));
+    SetPropW(nppData._nppHandle, L"NppHistoryNormalDocumentTabCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(normalItemCount)));
+    SetPropW(nppData._nppHandle, L"NppHistoryDocumentTabCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(documentTabCount)));
     const HICON autoSaveDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
         MAKEINTRESOURCEW(IDI_AUTOSAVE_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
     const HICON historyDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
@@ -879,18 +889,30 @@ void compareCurrent()
     historyPanel.compare();
 }
 
-std::wstring boolText(bool value) { return value ? L"true" : L"false"; }
+std::wstring boolText(bool value) { return value ? L"Enabled" : L"Disabled"; }
 
 void logSettingsChanges(const Settings& previous, const Settings& current)
 {
-    bool changed = false;
+    unsigned changedCount = 0;
+    const auto displayValue = [](const std::wstring& value) {
+        if (value.empty())
+            return std::wstring(L"(not set)");
+        std::wstring display = value;
+        for (wchar_t& character : display)
+        {
+            if (character == L'\r' || character == L'\n')
+                character = L' ';
+        }
+        return display;
+    };
     const auto change = [&](std::wstring_view name, const std::wstring& before,
         const std::wstring& after)
     {
         if (before == after) return;
-        changed = true;
+        ++changedCount;
         pluginLogger().write(LogLevel::debug, L"Setting change",
-            std::wstring(name) + L": " + before + L" -> " + after);
+            std::wstring(name) + L": " + displayValue(before) + L" -> "
+                + displayValue(after));
     };
     const auto boolean = [&](std::wstring_view name, bool before, bool after) {
         change(name, boolText(before), boolText(after));
@@ -925,26 +947,34 @@ void logSettingsChanges(const Settings& previous, const Settings& current)
     change(L"Interval minutes", std::to_wstring(previous.intervalMinutes), std::to_wstring(current.intervalMinutes));
     boolean(L"Save on tab change", previous.autoSaveOnTabChange, current.autoSaveOnTabChange);
     boolean(L"Save on exit", previous.autoSaveOnExit, current.autoSaveOnExit);
-    change(L"Auto Save scope", std::to_wstring(static_cast<int>(previous.autoSaveScope)), std::to_wstring(static_cast<int>(current.autoSaveScope)));
+    change(L"Auto Save scope", autoSaveScopeDisplayName(previous.autoSaveScope),
+        autoSaveScopeDisplayName(current.autoSaveScope));
     change(L"Auto Save exclusions", previous.autoSaveExclusions, current.autoSaveExclusions);
     boolean(L"History enabled", previous.historyEnabled, current.historyEnabled);
     boolean(L"Revision before save", previous.historyBeforeSave, current.historyBeforeSave);
     boolean(L"Revision after save", previous.historyAfterSave, current.historyAfterSave);
     boolean(L"Revision before restore", previous.historyBeforeRestore, current.historyBeforeRestore);
-    change(L"History location", std::to_wstring(static_cast<int>(previous.historyLocationMode)), std::to_wstring(static_cast<int>(current.historyLocationMode)));
+    change(L"History location", historyLocationDisplayName(previous.historyLocationMode),
+        historyLocationDisplayName(current.historyLocationMode));
     change(L"Custom history root", previous.customHistoryRoot.wstring(), current.customHistoryRoot.wstring());
     change(L"History exclusions", previous.historyExclusions, current.historyExclusions);
     boolean(L"Logging enabled", previous.loggingEnabled, current.loggingEnabled);
-    change(L"Log level", std::to_wstring(static_cast<int>(previous.logLevel)), std::to_wstring(static_cast<int>(current.logLevel)));
-    change(L"Log location", std::to_wstring(static_cast<int>(previous.logLocationMode)), std::to_wstring(static_cast<int>(current.logLocationMode)));
+    change(L"Log level", logLevelDisplayName(previous.logLevel),
+        logLevelDisplayName(current.logLevel));
+    change(L"Log location", logLocationDisplayName(previous.logLocationMode),
+        logLocationDisplayName(current.logLocationMode));
     change(L"Custom log file", previous.customLogFile.wstring(), current.customLogFile.wstring());
     change(L"Log maximum size MB", std::to_wstring(previous.logMaximumSizeMb), std::to_wstring(current.logMaximumSizeMb));
-    change(L"Log rollover", std::to_wstring(static_cast<int>(previous.logRolloverMode)), std::to_wstring(static_cast<int>(current.logRolloverMode)));
+    change(L"Log rollover", logRolloverDisplayName(previous.logRolloverMode),
+        logRolloverDisplayName(current.logRolloverMode));
     change(L"Log archives", std::to_wstring(previous.logArchivesToRetain), std::to_wstring(current.logArchivesToRetain));
     boolean(L"Automatic update checks", previous.autoUpdateEnabled, current.autoUpdateEnabled);
-    change(L"Update frequency", std::to_wstring(static_cast<int>(previous.updateFrequency)), std::to_wstring(static_cast<int>(current.updateFrequency)));
+    change(L"Update frequency", updateFrequencyDisplayName(previous.updateFrequency),
+        updateFrequencyDisplayName(current.updateFrequency));
     boolean(L"Include prereleases", previous.includePrereleaseUpdates, current.includePrereleaseUpdates);
-    if (changed) pluginLogger().write(LogLevel::informational, L"Settings changed");
+    if (changedCount > 0)
+        pluginLogger().write(LogLevel::informational, L"Settings changed",
+            std::to_wstring(changedCount) + L" option(s) updated");
 }
 
 void editSettings()

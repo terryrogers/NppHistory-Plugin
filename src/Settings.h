@@ -60,6 +60,13 @@ enum class RevisionTrigger
     manual
 };
 
+std::wstring autoSaveScopeDisplayName(AutoSaveScope value);
+std::wstring updateFrequencyDisplayName(UpdateFrequency value);
+std::wstring logLevelDisplayName(LogLevel value);
+std::wstring logLocationDisplayName(LogLocationMode value);
+std::wstring logRolloverDisplayName(LogRolloverMode value);
+std::wstring historyLocationDisplayName(HistoryLocationMode value);
+
 struct HotkeySetting
 {
     bool enabled = false;

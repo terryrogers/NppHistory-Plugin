@@ -1,5 +1,5 @@
 param(
-    [string]$NotepadExe = "C:\Program Files\Notepad++\notepad++.exe",
+    [string]$NotepadExe = '',
     [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll",
     [switch]$SkipAutomaticUpdateWait,
     [switch]$SettingsOnly,
@@ -7,6 +7,20 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($NotepadExe)) {
+    $runningNotepad = Get-Process -Name 'notepad++' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and (Test-Path -LiteralPath $_.Path) } |
+        Select-Object -First 1
+    $notepadCandidates = @(
+        if ($runningNotepad) { $runningNotepad.Path }
+        'C:\Program Files\Notepad++\notepad++.exe'
+        'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe'
+    )
+    $NotepadExe = $notepadCandidates | Where-Object {
+        $_ -and (Test-Path -LiteralPath $_)
+    } | Select-Object -First 1
+}
+if (-not $NotepadExe) { throw 'A Notepad++ executable could not be located.' }
 $testRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ('..\build\runtime-autosave-test-' + [Guid]::NewGuid().ToString('N'))))
 [IO.Directory]::CreateDirectory($testRoot) | Out-Null
 [IO.File]::WriteAllText((Join-Path $testRoot 'doLocalConf.xml'), '<!-- isolated portable test -->')
@@ -14,6 +28,11 @@ $notePath = Join-Path $testRoot ("test-note-{0}.txt" -f [Guid]::NewGuid().ToStri
 $initialText = "common line`r`nrevision only`r`nanchor line`r`nold wording`r`n"
 $initialText += (1..120 | ForEach-Object { "unchanged line {0:D3}`r`n" -f $_ }) -join ''
 [IO.File]::WriteAllText($notePath, $initialText)
+$normalTabPaths = 1..8 | ForEach-Object {
+    $normalTabPath = Join-Path $testRoot ("normal-tab-{0:D2}.md" -f $_)
+    [IO.File]::WriteAllText($normalTabPath, "Normal non-excluded tab $_")
+    $normalTabPath
+}
 Copy-Item -LiteralPath $NotepadExe -Destination (Join-Path $testRoot 'notepad++.exe') -Force
 Copy-Item -Path (Join-Path (Split-Path $NotepadExe) '*.xml') -Destination $testRoot -Force
 
@@ -419,7 +438,10 @@ public static class NppHistoryNative {
 }
 '@
 
-$notepadArguments = '-multiInst -nosession "' + $notePath.Replace('"', '\"') + '"'
+$startupDocuments = @($normalTabPaths) + $notePath
+$notepadArguments = '-multiInst -nosession ' + (($startupDocuments | ForEach-Object {
+    '"' + $_.Replace('"', '\"') + '"'
+}) -join ' ')
 $process = Start-Process -FilePath (Join-Path $testRoot 'notepad++.exe') -ArgumentList $notepadArguments -PassThru -WindowStyle Hidden
 try {
     $deadline = [DateTime]::UtcNow.AddSeconds(10)
@@ -1344,17 +1366,27 @@ try {
     $disabledRefreshTooltipPassed = $disabledRefreshTooltipActive -eq 1003 -and
         $disabledRefreshTooltip -ne [IntPtr]::Zero -and
         [NppHistoryNative]::IsWindowVisible($disabledRefreshTooltip)
+    Start-Sleep -Milliseconds 750
     $autoSaveTabIndicatorCount = [NppHistoryNative]::GetProp(
         $process.MainWindowHandle, 'NppHistoryAutoSaveTabIndicatorCount').ToInt64()
     $historyTabIndicatorCount = [NppHistoryNative]::GetProp(
         $process.MainWindowHandle, 'NppHistoryHistoryTabIndicatorCount').ToInt64()
-    $tabIndicatorPadding = [NppHistoryNative]::GetProp(
-        $process.MainWindowHandle, 'NppHistoryTabIndicatorPadding').ToInt64()
+    $excludedDocumentTabCount = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryExcludedDocumentTabCount').ToInt64()
+    $normalDocumentTabCount = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryNormalDocumentTabCount').ToInt64()
+    $documentTabCount = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryDocumentTabCount').ToInt64()
     $tabIndicatorIconCount = [NppHistoryNative]::GetProp(
         $process.MainWindowHandle, 'NppHistoryTabIndicatorIconCount').ToInt64()
+    $tabIndicatorSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\src\NppHistory.cpp'))
+    $tabLayoutUntouched = -not $tabIndicatorSource.Contains('TCM_SETPADDING') -and
+        -not $tabIndicatorSource.Contains('TCM_SETMINTABWIDTH') -and
+        -not $tabIndicatorSource.Contains('TabCtrl_SetItem')
     $exclusionTabIndicatorsPassed = $autoSaveTabIndicatorCount -ge 1 -and
-        $historyTabIndicatorCount -ge 1 -and $tabIndicatorPadding -eq 50 -and
-        $tabIndicatorIconCount -eq 2
+        $historyTabIndicatorCount -ge 1 -and $excludedDocumentTabCount -eq 1 -and
+        $normalDocumentTabCount -ge 8 -and $documentTabCount -ge 9 -and
+        $tabIndicatorIconCount -eq 2 -and $tabLayoutUntouched
     $exclusionIndicatorsScreenshot = Join-Path $testRoot 'exclusion-indicators.png'
     $exclusionRectangle = [NppHistoryNative+RECT]::new()
     if ([NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$exclusionRectangle)) {
@@ -1481,6 +1513,14 @@ try {
         $logText.Contains('[DEBUG] Settings control | Plugin logging enabled') -and
         $logText.Contains('[DEBUG] Settings control | OK') -and
         -not ($logText -match '\[DEBUG\] Settings control \| \d+')
+    $settingsChangeLoggingPassed =
+        $logText.Contains('[DEBUG] Setting change | Auto Save exclusions: (not set) -> *.txt  *.log') -and
+        $logText.Contains('[DEBUG] Setting change | History exclusions: (not set) -> *.txt  *.tmp') -and
+        $logText.Contains('[INFO] Settings changed | 3 option(s) updated')
+    $singleRouteButtonLoggingPassed =
+        [regex]::Matches($logText, '(?m)\[DEBUG\] Button click \| Capture\r?$').Count -eq 1 -and
+        [regex]::Matches($logText, '(?m)\[DEBUG\] Button click \| Settings\r?$').Count -eq 1 -and
+        [regex]::Matches($logText, '(?m)\[DEBUG\] Button click \| About\r?$').Count -eq 1
     $popupCenteringPassed = $editDialogCentered -and $deleteDialogCentered -and
         $restoreDialogCentered -and $comparisonCentered -and $settingsCentered -and
         $aboutCentered
@@ -1488,7 +1528,7 @@ try {
         $logText.Contains($expectedUpdateStatus)
 
     $autoSaveCorrect = $savedText.Contains('new wording') -and $savedText.Contains('current only') -and $savedText.Contains('changed middle 060') -and -not $savedText.Contains('revision only') -and -not $savedText.Contains('unchanged line 100')
-    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $pluginMenuIconsPassed -and $hiddenCaptureStatePassed -and $hiddenCompareStatePassed -and $hiddenPaneComparePassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $visibleUnselectedCommandStatePassed -and $selectedPaneActionsPassed -and $visibleSelectedCommandStatePassed -and $unsavedPaneStatePassed -and $unsavedCommandStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $panelButtonTooltipsPassed -and $disabledRefreshTooltipPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsHotkeysPassed -and $settingsHotkeyConflictValidationPassed -and $toolbarHotkeySettingsPersisted -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsControlLoggingPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsTooltipsPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $excludedCommandStatePassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed -and $popupCenteringPassed
+    $passed = $autoSaveCorrect -and $revisions.Count -eq 2 -and $reasonsCaptured -and $hiddenHistoryRoot -and $automaticUpdateCheckPassed -and $pluginMenuPassed -and $pluginMenuIconsPassed -and $hiddenCaptureStatePassed -and $hiddenCompareStatePassed -and $hiddenPaneComparePassed -and $panelButtonsPassed -and $panelButtonWidthsPassed -and $savedPaneStatePassed -and $visibleUnselectedCommandStatePassed -and $selectedPaneActionsPassed -and $visibleSelectedCommandStatePassed -and $unsavedPaneStatePassed -and $unsavedCommandStatePassed -and $panelButtonIconsPassed -and $panelButtonHoverPassed -and $panelButtonTooltipsPassed -and $disabledRefreshTooltipPassed -and $revisionActionsPassed -and $captureButtonPassed -and $commentUpdatePassed -and $commentUpdateLogged -and $revisionDeletionPassed -and $revisionDeletionLogged -and $restoreActionPassed -and $restoreSafetyPassed -and $restoreLogged -and $mainToolbarButtonsRegistered -eq 3 -and $dockIconPassed -and $responsiveButtonsPassed -and $comparisonOpened -and $comparisonCentered -and $comparisonIconsPassed -and $sharedScrollPassed -and $lineNumbersRendered -and $differenceNavigationPassed -and $currentDifferencePassed -and $revisionToolbarNavigationPassed -and $allToolbarHintsRegistered -and $tooltipHoverPassed -and $headerDoubleClickPassed -and $winMergePaletteRendered -and $locationPaneCollapsePassed -and $settingsCentered -and $settingsIconPassed -and $settingsTabsPassed -and $settingsGeneralPassed -and $settingsHotkeysPassed -and $settingsHotkeyConflictValidationPassed -and $toolbarHotkeySettingsPersisted -and $settingsUpdateEnablementPassed -and $settingsLoggingPassed -and $settingsLoggingEnablementPassed -and $loggingEventsPassed -and $settingsControlLoggingPassed -and $settingsChangeLoggingPassed -and $singleRouteButtonLoggingPassed -and $displayVersionLoggingPassed -and $settingsAutoSavePassed -and $autoSaveConflictNoticeHidden -and $settingsAutoSaveEnablementPassed -and $settingsTooltipsPassed -and $settingsHistoryPassed -and $settingsHistoryEnablementPassed -and $exclusionSettingsPersisted -and $exclusionPanelIndicatorPassed -and $excludedCommandStatePassed -and $exclusionTabIndicatorsPassed -and $autoSaveExclusionEnforced -and $historyExclusionEnforced -and $manualSaveAllowedForExcludedFile -and $manualUpdateCheckPassed -and $updatePopupSuppressed -and $updateTimestampPersisted -and $aboutCentered -and $aboutWindowPassed -and $popupCenteringPassed
     [pscustomobject]@{
         AutoSaveUpdatedFile = $autoSaveCorrect
         EditorLengthBefore = $lengthBefore
@@ -1587,6 +1627,8 @@ try {
         SettingsLoggingEnablementPassed = $settingsLoggingEnablementPassed
         LoggingEventsPassed = $loggingEventsPassed
         SettingsControlLoggingPassed = $settingsControlLoggingPassed
+        SettingsChangeLoggingPassed = $settingsChangeLoggingPassed
+        SingleRouteButtonLoggingPassed = $singleRouteButtonLoggingPassed
         DisplayVersionLoggingPassed = $displayVersionLoggingPassed
         LogPath = $logPath
         ManualUpdateCheckPassed = $manualUpdateCheckPassed
@@ -1613,7 +1655,10 @@ try {
         ExclusionTabIndicatorsPassed = $exclusionTabIndicatorsPassed
         AutoSaveTabIndicatorCount = $autoSaveTabIndicatorCount
         HistoryTabIndicatorCount = $historyTabIndicatorCount
-        TabIndicatorPadding = $tabIndicatorPadding
+        ExcludedDocumentTabCount = $excludedDocumentTabCount
+        DocumentTabLayoutUntouched = $tabLayoutUntouched
+        NormalDocumentTabCount = $normalDocumentTabCount
+        DocumentTabCount = $documentTabCount
         TabIndicatorIconCount = $tabIndicatorIconCount
         ExclusionIndicatorsScreenshot = if (Test-Path $exclusionIndicatorsScreenshot) {
             $exclusionIndicatorsScreenshot

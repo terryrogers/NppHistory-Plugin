@@ -12,7 +12,7 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 | Area | Evidence | Status |
 |---|---|---|
-| Core behavioural suite | 334 checks, 0 failures | PASS |
+| Core behavioural suite | 340 checks, 0 failures | PASS |
 | Plugin build | Release x64 | PASS |
 | Restart-installer build | Release x64 | PASS |
 | Core-test build | Release x64 | PASS |
@@ -27,13 +27,15 @@ The embedded release date is intentionally empty during candidate testing. It wi
 | Revision size display | Dynamic B, KB, MB and GB formatting with direct boundary checks | PASS |
 | History pane button hover | All six buttons register and clear pointer hover state | PASS |
 | Independent exclusions | Multiline wildcard persistence, matching, Auto Save suppression, manual-save allowance and History suppression | PASS |
-| Exclusion indicators | Supplied Auto Save-disabled and History-disabled icons embedded at 16 px; live two-resource loading, 50 px two-icon padding, screenshot, feature gating and wrapping red pane status | PASS |
+| Exclusion indicators | Supplied Auto Save-disabled and History-disabled icons embedded at 16 px; live two-resource loading, ten-document screenshot, feature gating, wrapping red pane status, and a source/runtime guard rejecting shared tab padding, minimum-width or caption changes | PASS |
 | Excluded-file actions and help | Capture, Refresh, Compare and Restore disabled; all six pane tooltips registered and disabled Refresh tooltip visibly activated | PASS |
 | Settings contextual help | 51 targets registered; disabled interval input selected and tooltip popup visibly activated | PASS |
 | External AutoSave conflict | Direct absent/conventional/recursive discovery, all-trigger suppression, hidden non-conflict notice and installed-plugin UAT | PASS |
 | Revision capture/comment/delete/restore | Live unsaved-edit restore creates a forced `Before restore` safety revision containing the unsaved text; UI and audit-log evidence | PASS — automated; corrected build awaits repeat manual UAT |
 | Log severity labels | Emitted informational records use `[INFO]`; ERROR, WARNING and DEBUG remain unchanged | PASS |
 | Settings debug records | Friendly tab/control names are emitted for genuine user actions; raw numeric IDs and focus/init noise are rejected | PASS |
+| Settings value records | Enum values use readable choices, booleans use Enabled/Disabled, empty values use `(not set)`, and the INFO summary includes the changed-option count | PASS |
+| Button-click records | Capture, Settings and About each produce one Debug click record per invocation | PASS |
 | Popup positioning | Edit Comment, Delete, Restore, Compare, Settings and About are live-verified centrally against the main Notepad++ window; all plugin message boxes use the same explicit centring helper | PASS |
 | Comparison interface | Live rendering, navigation, shared scrolling, tooltips and pane behavior | PASS |
 | Settings and About | Five tabs, dependent controls, numeric version and blank candidate release date | PASS |
@@ -42,8 +44,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `9E5D4AD1E2538E8AD62A4AC13189B5B4066BB3D7922BA93DEF5168829B388CD5`
-- Candidate updater SHA-256: `F3DCB59050998D9487E96A0BA5F6D3122A94C2904A81ED2A631A2178186D5276`
+- Candidate DLL SHA-256: `6826A346507B26C613813E0DB4F69DE805B9C8C9C4D3D92DFD88C3F0DDB71DDB`
+- Candidate updater SHA-256: `ED0017D4F20AD45C509853A5E0CB4F34C1243976563126A3495849D46B0E7B40`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 
@@ -66,11 +68,13 @@ Manual menu UAT also exposed that Notepad++ could later discard the initially as
 
 Manual log review exposed that Settings debug records included raw Windows control IDs and initialization/focus traffic. Settings logging now records only genuine clicks, tab changes and dropdown selections, and maps each event to a stable friendly name. The live test verifies representative tab, checkbox and OK records and rejects any numeric Settings-control record.
 
+A second log review exposed internal enum numbers and duplicate pane-button records. Setting-change output now uses readable choices and option counts, while each pane action has one Debug click route. The ten-document tab regression also rejects any plugin change to shared tab padding, minimum width or captions; this prevents filenames, pin controls and close controls being compressed or overlaid.
+
 A popup-position audit found that assigning the main Notepad++ owner was insufficient to centre standard Windows message boxes. NppHistory now explicitly positions every plugin message box when it activates. The live workflow measures Edit Comment, Delete, Restore, Compare, Settings and About centres against the main Notepad++ window.
 
 ## CI and publication gates
 
-- Normal pushes and pull requests now build the plugin, updater and core tests, run the 334-check suite, run updater replacement/rollback smoke tests and upload both binaries.
+- Normal pushes and pull requests now build the plugin, updater and core tests, run the 340-check suite, run updater replacement/rollback smoke tests and upload both binaries.
 - Tagged releases repeat the core and updater tests.
 - Publication rejects mismatched semantic tags, numeric plugin versions, missing/invalid publication dates and missing version-specific release notes.
 - The manual ZIP is structured as `NppHistory\NppHistory.dll`.
@@ -83,7 +87,7 @@ Completed in Terry Rogers' installed Notepad++ environment on 30 August 2026:
 - With the History pane open and no revision selected, pane Compare/Restore, the Plugins menu Compare command and the main-toolbar Compare command were disabled.
 - Selecting a revision enabled all corresponding Compare controls and pane Restore.
 - Closing the History pane left Compare enabled and successfully compared the current file with its latest revision.
-- The verified DLL was installed over the previous candidate with a recoverable backup and its installed SHA-256 matched the candidate hash above.
+- An earlier verified beta 25 candidate was installed with a recoverable backup; the newer candidate identified by the hashes above still requires installed-environment UAT.
 
 The following remain release gates rather than automated claims:
 

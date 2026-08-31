@@ -1525,17 +1525,22 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
             panel->restoreSelected();
             return TRUE;
         }
-        wchar_t buttonLabel[64]{};
-        GetDlgItemTextW(dialog, LOWORD(wParam), buttonLabel,
-            static_cast<int>(std::size(buttonLabel)));
-        if (buttonLabel[0]) pluginLogger().write(LogLevel::debug, L"Button click", buttonLabel);
         if (LOWORD(wParam) == IDC_REFRESH)
         {
+            pluginLogger().write(LogLevel::debug, L"Button click", L"Refresh");
             panel->refresh(panel->_currentFile);
             pluginLogger().write(LogLevel::informational, L"Refresh", panel->_currentFile.wstring());
         }
-        if (LOWORD(wParam) == IDC_COMPARE) panel->compareSelected();
-        if (LOWORD(wParam) == IDC_RESTORE) panel->restoreSelected();
+        if (LOWORD(wParam) == IDC_COMPARE)
+        {
+            pluginLogger().write(LogLevel::debug, L"Button click", L"Compare");
+            panel->compareSelected();
+        }
+        if (LOWORD(wParam) == IDC_RESTORE)
+        {
+            pluginLogger().write(LogLevel::debug, L"Button click", L"Restore");
+            panel->restoreSelected();
+        }
         if (LOWORD(wParam) == IDC_CAPTURE)
         {
             if (panel->_captureCallback) panel->_captureCallback();

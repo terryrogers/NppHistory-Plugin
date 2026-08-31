@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Replaced the temporary AS/H exclusion badges with the supplied crossed-out Auto Save and Revision History artwork, embedded at tab-native size, and expanded document-tab padding for one or two icons without covering filenames or Notepad++ controls.
+- Replaced the temporary AS/H exclusion badges with the supplied crossed-out Auto Save and Revision History artwork at tab-native size; indicator painting no longer changes shared tab padding, captions, widths or ordering, preventing compressed filenames and pin/close overlap when many documents are open.
+- Replaced numeric setting values in Debug change records with readable choices such as `Common folder`, `Debug` and `Daily`, renders booleans as `Enabled`/`Disabled`, identifies empty values as `(not set)`, and reports the number of options changed.
+- Removed duplicate pane-button Debug records by giving each action one logging route.
 - Replaced opaque numeric Settings debug records with friendly tab/control names and suppressed non-user initialization and focus notifications.
 - Explicitly centred every NppHistory message box on the main Notepad++ window; update prompts, Settings, About, Compare and Edit Comment retain the same main-window centring rule.
 - Fixed restore safety for modified editors so the internal save does not create a misleading `Saved` revision; one forced `Before restore` revision now retains the exact pre-restore content.
