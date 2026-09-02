@@ -1,4 +1,5 @@
 #include "HistoryPanel.h"
+#include "DocumentTabIndicators.h"
 #include "HistoryCatalog.h"
 #include "HistoryStore.h"
 #include "Logger.h"
@@ -126,7 +127,6 @@ struct ToolbarAsset
 std::array<ToolbarAsset, 3> toolbarAssets{};
 std::array<HBITMAP, 5> pluginMenuBitmaps{};
 std::array<ShortcutKey, 3> commandShortcuts{};
-std::unordered_map<HWND, std::vector<unsigned char>> documentTabIndicatorCache;
 
 fs::path pathForBuffer(UINT_PTR bufferId)
 {
@@ -170,101 +170,28 @@ std::vector<HWND> documentTabControls()
     return controls;
 }
 
-void drawDocumentTabIndicators(HWND tabs, int view)
-{
-    (void)view;
-    const auto cached = documentTabIndicatorCache.find(tabs);
-    if (cached == documentTabIndicatorCache.end())
-        return;
-    const HDC dc = GetDC(tabs);
-    if (!dc)
-        return;
-    const HICON autoSaveDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
-        MAKEINTRESOURCEW(IDI_AUTOSAVE_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
-    const HICON historyDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
-        MAKEINTRESOURCEW(IDI_HISTORY_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
-    const int tabCount = TabCtrl_GetItemCount(tabs);
-    const int cachedCount = static_cast<int>(cached->second.size());
-    const int count = tabCount < cachedCount ? tabCount : cachedCount;
-    for (int index = 0; index < count; ++index)
-    {
-        RECT item{};
-        if (!TabCtrl_GetItemRect(tabs, index, &item))
-            continue;
-        const auto drawIndicator = [&](int x, HICON icon) {
-            if (!icon)
-                return;
-            const int size = 16;
-            const int y = item.top + ((item.bottom - item.top) - size) / 2;
-            DrawIconEx(dc, x, y, icon, size, size, 0, nullptr, DI_NORMAL);
-        };
-        const bool autoSaveExcluded = (cached->second[index] & 1U) != 0;
-        const bool historyExcluded = (cached->second[index] & 2U) != 0;
-        // Paint only: never change the shared tab control's padding, minimum width, or
-        // item captions. Notepad++ must retain sole control of tab sizing and ordering.
-        if (autoSaveExcluded)
-            drawIndicator(item.right - (historyExcluded ? 70 : 52), autoSaveDisabledIcon);
-        if (historyExcluded)
-            drawIndicator(item.right - 52, historyDisabledIcon);
-    }
-    ReleaseDC(tabs, dc);
-}
-
-LRESULT CALLBACK documentTabSubclass(HWND tabs, UINT message, WPARAM wParam, LPARAM lParam,
-    UINT_PTR subclassId, DWORD_PTR referenceData)
-{
-    if (message == WM_NCDESTROY)
-    {
-        documentTabIndicatorCache.erase(tabs);
-        RemoveWindowSubclass(tabs, documentTabSubclass, subclassId);
-        return DefSubclassProc(tabs, message, wParam, lParam);
-    }
-    const LRESULT result = DefSubclassProc(tabs, message, wParam, lParam);
-    if (message == WM_PAINT)
-        drawDocumentTabIndicators(tabs, static_cast<int>(referenceData));
-    return result;
-}
-
 void refreshDocumentTabIndicators()
 {
     if (!nppData._nppHandle)
         return;
     auto controls = documentTabControls();
-    std::array<HWND, 2> viewTabs{};
     int autoSaveIndicatorCount = 0;
     int historyIndicatorCount = 0;
     int excludedItemCount = 0;
     int normalItemCount = 0;
     int documentTabCount = 0;
-    std::vector<bool> used(controls.size(), false);
-    for (int view = 0; view < 2; ++view)
+    int reservedTabCount = 0;
+    for (HWND tabs : controls)
     {
-        const int expected = static_cast<int>(SendMessageW(nppData._nppHandle,
-            NPPM_GETNBOPENFILES, 0, view == 0 ? PRIMARY_VIEW : SECOND_VIEW));
-        for (std::size_t index = 0; index < controls.size(); ++index)
-        {
-            if (!used[index] && TabCtrl_GetItemCount(controls[index]) == expected)
-            {
-                viewTabs[view] = controls[index];
-                used[index] = true;
-                break;
-            }
-        }
-    }
-    for (int view = 0; view < 2; ++view)
-    {
-        const HWND tabs = viewTabs[view];
-        if (!tabs)
-            continue;
-        SetWindowSubclass(tabs, documentTabSubclass, static_cast<UINT_PTR>(view + 1),
-            static_cast<DWORD_PTR>(view));
         const int count = TabCtrl_GetItemCount(tabs);
-        std::vector<unsigned char> indicators(static_cast<std::size_t>(count), 0);
+        std::unordered_map<LPARAM, unsigned> indicators;
         documentTabCount += count;
         for (int index = 0; index < count; ++index)
         {
-            const UINT_PTR bufferId = static_cast<UINT_PTR>(SendMessageW(nppData._nppHandle,
-                NPPM_GETBUFFERIDFROMPOS, index, view));
+            TCITEMW item{};
+            item.mask = TCIF_PARAM;
+            if (!SendMessageW(tabs, TCM_GETITEMW, index, reinterpret_cast<LPARAM>(&item))) continue;
+            const UINT_PTR bufferId = static_cast<UINT_PTR>(item.lParam);
             const fs::path path = pathForBuffer(bufferId);
             const bool autoSaveExcluded = settings.autoSaveEnabled
                 && !settings.externalAutoSavePluginDetected
@@ -281,16 +208,22 @@ void refreshDocumentTabIndicators()
             }
             const int indicatorCount = static_cast<int>(autoSaveExcluded)
                 + static_cast<int>(historyExcluded);
-            indicators[static_cast<std::size_t>(index)] =
-                static_cast<unsigned char>((autoSaveExcluded ? 1U : 0U)
-                    | (historyExcluded ? 2U : 0U));
+            indicators[static_cast<LPARAM>(bufferId)] = (autoSaveExcluded ? 1U : 0U)
+                | (historyExcluded ? 2U : 0U);
             if (indicatorCount > 0)
                 ++excludedItemCount;
             else
                 ++normalItemCount;
         }
-        documentTabIndicatorCache[tabs] = std::move(indicators);
-        InvalidateRect(tabs, nullptr, FALSE);
+        updateDocumentTabDecorations(tabs, indicators, moduleInstance);
+        for (int index = 0; index < count; ++index)
+        {
+            DocumentTabDecorationMetrics metrics;
+            if (documentTabDecorationMetrics(tabs, index, metrics)
+                && metrics.reservedWidth > 0 && metrics.iconsLeft > metrics.textRight
+                && metrics.iconsRight < metrics.buttonsLeft)
+                ++reservedTabCount;
+        }
     }
     SetPropW(nppData._nppHandle, L"NppHistoryAutoSaveTabIndicatorCount",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(autoSaveIndicatorCount)));
@@ -302,6 +235,8 @@ void refreshDocumentTabIndicators()
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(normalItemCount)));
     SetPropW(nppData._nppHandle, L"NppHistoryDocumentTabCount",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(documentTabCount)));
+    SetPropW(nppData._nppHandle, L"NppHistoryReservedDocumentTabCount",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(reservedTabCount)));
     const HICON autoSaveDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
         MAKEINTRESOURCEW(IDI_AUTOSAVE_DISABLED), IMAGE_ICON, 16, 16, LR_SHARED));
     const HICON historyDisabledIcon = static_cast<HICON>(LoadImageW(moduleInstance,
@@ -1353,6 +1288,7 @@ void initialise()
     nextUpdateStatusRefreshTick = now;
     SetWindowSubclass(nppData._nppHandle, mainWindowSubclass, 1, 0);
     ready = true;
+    refreshDocumentTabIndicators();
     configurePluginMenuIcons();
     syncCommandStates();
     updateShuttingDown = false;
@@ -1530,6 +1466,7 @@ void handleNotification(SCNotification* notification)
     }
     else if (code == NPPN_SHUTDOWN)
     {
+        for (HWND tabs : documentTabControls()) removeDocumentTabDecorations(tabs);
         updateShuttingDown = true;
         if (updateThreadHandle)
         {

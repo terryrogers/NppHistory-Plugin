@@ -1379,14 +1379,13 @@ try {
         $process.MainWindowHandle, 'NppHistoryDocumentTabCount').ToInt64()
     $tabIndicatorIconCount = [NppHistoryNative]::GetProp(
         $process.MainWindowHandle, 'NppHistoryTabIndicatorIconCount').ToInt64()
-    $tabIndicatorSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\src\NppHistory.cpp'))
-    $tabLayoutUntouched = -not $tabIndicatorSource.Contains('TCM_SETPADDING') -and
-        -not $tabIndicatorSource.Contains('TCM_SETMINTABWIDTH') -and
-        -not $tabIndicatorSource.Contains('TabCtrl_SetItem')
+    $reservedDocumentTabCount = [NppHistoryNative]::GetProp(
+        $process.MainWindowHandle, 'NppHistoryReservedDocumentTabCount').ToInt64()
+    $tabReservationPassed = $reservedDocumentTabCount -eq $excludedDocumentTabCount
     $exclusionTabIndicatorsPassed = $autoSaveTabIndicatorCount -ge 1 -and
         $historyTabIndicatorCount -ge 1 -and $excludedDocumentTabCount -eq 1 -and
         $normalDocumentTabCount -ge 8 -and $documentTabCount -ge 9 -and
-        $tabIndicatorIconCount -eq 2 -and $tabLayoutUntouched
+        $tabIndicatorIconCount -eq 2 -and $tabReservationPassed
     $exclusionIndicatorsScreenshot = Join-Path $testRoot 'exclusion-indicators.png'
     $exclusionRectangle = [NppHistoryNative+RECT]::new()
     if ([NppHistoryNative]::GetWindowRect($process.MainWindowHandle, [ref]$exclusionRectangle)) {
@@ -1656,7 +1655,8 @@ try {
         AutoSaveTabIndicatorCount = $autoSaveTabIndicatorCount
         HistoryTabIndicatorCount = $historyTabIndicatorCount
         ExcludedDocumentTabCount = $excludedDocumentTabCount
-        DocumentTabLayoutUntouched = $tabLayoutUntouched
+        DocumentTabReservedSpacePassed = $tabReservationPassed
+        ReservedDocumentTabCount = $reservedDocumentTabCount
         NormalDocumentTabCount = $normalDocumentTabCount
         DocumentTabCount = $documentTabCount
         TabIndicatorIconCount = $tabIndicatorIconCount

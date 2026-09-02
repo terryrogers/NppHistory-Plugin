@@ -59,6 +59,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\NppHistory.cpp" />
+    <ClCompile Include="..\src\DocumentTabIndicators.cpp" />
     <ClCompile Include="..\src\HistoryCatalog.cpp" />
     <ClCompile Include="..\src\HistoryPanel.cpp" />
     <ClCompile Include="..\src\HistoryStore.cpp" />

@@ -92,11 +92,29 @@ try {
         throw 'Live Notepad++ verification failed.'
     }
 
+    $tabResults = @(
+        & '.\tests\tab_indicators_smoke.ps1'
+        & '.\tests\tab_indicators_smoke.ps1' -LargeTabs
+        & '.\tests\tab_indicators_smoke.ps1' -DarkMode
+        & '.\tests\tab_indicators_smoke.ps1' -LargeTabs -DarkMode
+        & '.\tests\tab_indicators_smoke.ps1' -Vertical
+        & '.\tests\tab_indicators_smoke.ps1' -Vertical -LargeTabs
+        & '.\tests\tab_indicators_smoke.ps1' -Vertical -DarkMode
+        & '.\tests\tab_indicators_smoke.ps1' -Vertical -LargeTabs -DarkMode
+    )
+    $tabResults | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath (Join-Path $outputRoot 'tab-layout-tests.json') -Encoding utf8
+    if ($tabResults.Count -ne 8 -or @($tabResults | Where-Object { -not $_.Passed }).Count) {
+        throw 'Per-document tab spacing verification failed.'
+    }
+
     $hash = Get-FileHash $dll -Algorithm SHA256
     $summary = [pscustomobject]@{
         Passed = $true
         CoreChecks = $coreChecks
         CoreFailures = $coreFailures
+        DocumentTabLayoutConfigurations = $tabResults.Count
+        DocumentTabReservedSpace = $runtimeObject.DocumentTabReservedSpacePassed
         RequiredExports = $requiredExports.Count
         LiveNotepadVerification = $runtimeObject.Passed
         AutomaticUpdateCheck = $runtimeObject.AutomaticUpdateCheckPassed

@@ -8,11 +8,11 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Automated result
 
-**Status: PASS — manual UAT remains required.**
+**Status: PASS — full local verification rerun 2 September 2026; installed-environment manual UAT remains required.**
 
 | Area | Evidence | Status |
 |---|---|---|
-| Core behavioural suite | 340 checks, 0 failures | PASS |
+| Core behavioural suite | 370 checks, 0 failures | PASS |
 | Plugin build | Release x64 | PASS |
 | Restart-installer build | Release x64 | PASS |
 | Core-test build | Release x64 | PASS |
@@ -27,7 +27,7 @@ The embedded release date is intentionally empty during candidate testing. It wi
 | Revision size display | Dynamic B, KB, MB and GB formatting with direct boundary checks | PASS |
 | History pane button hover | All six buttons register and clear pointer hover state | PASS |
 | Independent exclusions | Multiline wildcard persistence, matching, Auto Save suppression, manual-save allowance and History suppression | PASS |
-| Exclusion indicators | Supplied Auto Save-disabled and History-disabled icons embedded at 16 px; live two-resource loading, ten-document screenshot, feature gating, wrapping red pane status, and a source/runtime guard rejecting shared tab padding, minimum-width or caption changes | PASS |
+| Exclusion indicators | Supplied icons, feature gating, wrapping pane status, positive reserved geometry; native-control identity/rename/reorder/orientation tests and eight real horizontal/vertical/small/large/light/dark combinations verify separate filename/icon/pin/close space | PASS for tested configurations |
 | Excluded-file actions and help | Capture, Refresh, Compare and Restore disabled; all six pane tooltips registered and disabled Refresh tooltip visibly activated | PASS |
 | Settings contextual help | 51 targets registered; disabled interval input selected and tooltip popup visibly activated | PASS |
 | External AutoSave conflict | Direct absent/conventional/recursive discovery, all-trigger suppression, hidden non-conflict notice and installed-plugin UAT | PASS |
@@ -44,8 +44,8 @@ The embedded release date is intentionally empty during candidate testing. It wi
 
 ## Verified hashes
 
-- Candidate DLL SHA-256: `6826A346507B26C613813E0DB4F69DE805B9C8C9C4D3D92DFD88C3F0DDB71DDB`
-- Candidate updater SHA-256: `ED0017D4F20AD45C509853A5E0CB4F34C1243976563126A3495849D46B0E7B40`
+- Candidate DLL SHA-256: `D809B48A6CF44B8D3352B425C16BBFE60EEE1C0951A00540885D7C1260A39B07`
+- Candidate updater SHA-256: `DDE133C95FCC1C4F7B6B644CBB1AB259CDA151A96C7915BAC958B15E7D7B273E`
 
 These hashes identify this local candidate build only. The publication workflow will rebuild the release assets independently and publish its own SHA-256 manifest.
 
@@ -68,13 +68,17 @@ Manual menu UAT also exposed that Notepad++ could later discard the initially as
 
 Manual log review exposed that Settings debug records included raw Windows control IDs and initialization/focus traffic. Settings logging now records only genuine clicks, tab changes and dropdown selections, and maps each event to a stable friendly name. The live test verifies representative tab, checkbox and OK records and rejects any numeric Settings-control record.
 
-A second log review exposed internal enum numbers and duplicate pane-button records. Setting-change output now uses readable choices and option counts, while each pane action has one Debug click route. The ten-document tab regression also rejects any plugin change to shared tab padding, minimum width or captions; this prevents filenames, pin controls and close controls being compressed or overlaid.
+A second log review exposed internal enum numbers and duplicate pane-button records. Setting-change output now uses readable choices and option counts, while each pane action has one Debug click route.
+
+Further installed UAT showed that paint-only indicators still overlapped filenames. The new implementation reserves native length separately for each affected tab using an internal display-only suffix. Native callers still receive the canonical filename and unchanged buffer pointer; shared tab padding/minimum width and tab order are not changed. A dedicated native-control suite adds 30 checks across both orientations, including rename, reorder, repeated refresh, orientation round trips, removal and detach. The isolated real-Notepad++ harness compares feature-off and feature-on geometry, verifies the actual native orientation and reserved slots, cycles document activation, and creates/closes a new tab. Small/large and light/dark combinations are tested in both orientations. At the tested small-tab configuration, one icon adds 36 px, two add 54 px, and ordinary tabs add 0 px along the text axis. These are observed values, not fixed layout constants.
+
+Vertical tabs now reserve space along the bottom-to-top text axis. Icons stay upright, stacked after the filename and before pin/close. Fixed-width styles still safely omit indicators rather than paint over text or native controls; the pane notice remains. Multiple-monitor DPI transitions and the user's installed environment remain UAT gates.
 
 A popup-position audit found that assigning the main Notepad++ owner was insufficient to centre standard Windows message boxes. NppHistory now explicitly positions every plugin message box when it activates. The live workflow measures Edit Comment, Delete, Restore, Compare, Settings and About centres against the main Notepad++ window.
 
 ## CI and publication gates
 
-- Normal pushes and pull requests now build the plugin, updater and core tests, run the 340-check suite, run updater replacement/rollback smoke tests and upload both binaries.
+- Normal pushes and pull requests now build the plugin, updater and core tests, run the 370-check suite, run updater replacement/rollback smoke tests and upload both binaries.
 - Tagged releases repeat the core and updater tests.
 - Publication rejects mismatched semantic tags, numeric plugin versions, missing/invalid publication dates and missing version-specific release notes.
 - The manual ZIP is structured as `NppHistory\NppHistory.dll`.
@@ -108,4 +112,4 @@ Run:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\full_verification.ps1
 ```
 
-Build logs and summaries are written to `build\verification-beta25-rc`. Each live run reports its unique `build\runtime-autosave-test-*` evidence directory.
+Build logs and summaries are written to `build\verification-beta25-rc`. The 2 September live workflow evidence is in `build\runtime-autosave-test-111c63edb52a42f590a48eb8b07ebbd1`. The eight tab-layout runs, measured lengths and screenshot directories are recorded in `build\verification-beta25-rc\tab-layout-tests.json`. All three builds completed with zero warnings and errors; 370 core checks, the live workflow, updater replacement/rollback protection and all eight tab configurations passed. All eight excluded-tab screenshots were visually reviewed. No installed DLL was replaced by this verification.

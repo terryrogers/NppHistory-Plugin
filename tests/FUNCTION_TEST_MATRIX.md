@@ -225,7 +225,21 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `reconcileFile` | Live active file plus direct catalogue outcomes | PASS |
 | `detectMissingBuffers` | Notification/timer wiring built; disappearing-open-file alert remains manual UAT | PARTIAL |
 | `refreshPanel` | Live list refresh | PASS |
-| `drawDocumentTabIndicators` / `documentTabControls` / `refreshDocumentTabIndicators` | Live supplied 16 px Auto Save/History disabled icons, stable cached paint data, both embedded resources, ten-document screenshot evidence, feature gating, external AutoSave conflict and a regression guard that rejects shared tab padding/minimum-width/caption mutation | PASS |
+| `documentTabControls` / `refreshDocumentTabIndicators` | Live supplied Auto Save/History disabled resources, feature gating, external AutoSave conflict, startup initialization and positive per-tab reserved geometry | PASS |
+
+## DocumentTabIndicators.cpp
+
+| Function | Evidence | Status |
+|---|---|---|
+| `updateDocumentTabDecorations` / `layout` | Native-control tests in both orientations and real Notepad++ baseline/excluded comparisons: normal length unchanged, one/two icons expand individually, repeated activation stable | PASS |
+| `identity` / `caption` / `writeNativeCaption` / `subclass` | Native-control checks preserve canonical text and buffer identity through rename/reorder; live New/Close preserves existing names, identities, widths and order | PASS |
+| `displayCaption` / `scaled` / `length` / `thickness` | Ampersand-label native tests, both axes and orientation round trips; real small/large tabs; multiple-monitor DPI transitions remain manual UAT | PARTIAL |
+| `queueLayout` | Native rename/reorder message pumping; live startup and repeated document activation | PASS |
+| `paint` | Eight real horizontal/vertical, light/dark, small/large configurations; screenshot inspection for filename/icon/pin/close separation; stale-axis painting suppressed during orientation change | PASS for tested configurations |
+| `documentTabDecorationMetrics` | Native geometry assertions and live reserved-space guard | PASS |
+| `removeDocumentTabDecorations` | Native detach restores original widths/text; isolated Notepad++ shutdown | PASS |
+
+Fixed-width native tab styles still deliberately omit indicators rather than draw over other content; vertical variable-length tabs are supported. The pane exclusion notice remains available. Installed-environment UAT is still required.
 | `saveBuffer` | Live actual after-edit save | PASS |
 | `saveConfiguredScope` | Live current test file and direct scope persistence; multi-file live path not automated | PARTIAL |
 | `mainWindowSubclass` | Live main-window timer/toolbar lifecycle; shutdown/focus details remain manual UAT | PARTIAL |
