@@ -53,6 +53,66 @@ bool sameSettings(const Settings& left, const Settings& right)
 void runSettingsTests(TestContext& context)
 {
     TestDirectory directory(L"settings");
+    std::wstring order;
+    for (const Command command : commandOrder)
+        order += std::wstring(commands[static_cast<int>(command)].name) + L"|";
+    context.expect(order == L"Capture|Compare|Restore|History|Refresh|Settings|About|",
+        "all command surfaces share the requested order");
+    Settings placements;
+    for (const Command command : commandOrder)
+    {
+        context.expect(placements.commandVisible(command, CommandSurface::pane)
+            && placements.commandVisible(command, CommandSurface::plugins)
+            && !placements.commandVisible(command, CommandSurface::toolbar)
+            && !placements.commandVisible(command, CommandSurface::context),
+            "all seven commands have safe default placements");
+        placements.setCommandVisible(command, CommandSurface::plugins, false);
+        context.expect(placements.commandVisible(command, CommandSurface::plugins),
+            "all seven Plugins menu items are permanently available");
+        for (const CommandSurface surface : {CommandSurface::pane, CommandSurface::toolbar,
+            CommandSurface::context})
+        {
+            placements.setCommandVisible(command, surface, true);
+            context.expect(placements.commandVisible(command, surface), "placement can be enabled");
+            placements.setCommandVisible(command, surface, false);
+            context.expect(!placements.commandVisible(command, surface), "placement can be disabled");
+            placements.setCommandVisible(command, surface, surface != CommandSurface::pane);
+        }
+        placements.commandHotkey(command) = {true, true, true, true,
+            static_cast<unsigned>(VK_F1 + static_cast<int>(command))};
+    }
+    placements.contextSubmenu = false;
+    const auto commandsPath = directory.path() / L"commands.ini";
+    context.expect(placements.save(commandsPath), "seven-command placements and shortcuts save");
+    Settings placementReload;
+    placementReload.load(commandsPath);
+    context.expect(!placementReload.contextSubmenu, "inline context mode persists");
+    for (const Command command : commandOrder)
+    {
+        context.expect(placementReload.commandHotkey(command) == placements.commandHotkey(command),
+            "each command shortcut round-trips independently");
+        context.expect(!placementReload.commandVisible(command, CommandSurface::pane)
+            && placementReload.commandVisible(command, CommandSurface::toolbar)
+            && placementReload.commandVisible(command, CommandSurface::context)
+            && placementReload.commandVisible(command, CommandSurface::plugins),
+            "each command placement round-trips independently");
+    }
+    for (int bits = 0; bits < 64; ++bits)
+    {
+        const bool saved = bits & 1, excluded = bits & 2, enabled = bits & 4,
+            revisions = bits & 8, selected = bits & 16, visible = bits & 32;
+        context.expect(commandAvailable(Command::capture, saved, excluded, enabled, revisions, selected, visible)
+            == (saved && !excluded && enabled), "Capture state matrix");
+        context.expect(commandAvailable(Command::compare, saved, excluded, enabled, revisions, selected, visible)
+            == (saved && !excluded && revisions && (!visible || selected)), "Compare state matrix");
+        context.expect(commandAvailable(Command::restore, saved, excluded, enabled, revisions, selected, visible)
+            == (saved && !excluded && visible && selected), "Restore state matrix");
+        context.expect(commandAvailable(Command::refresh, saved, excluded, enabled, revisions, selected, visible)
+            == (saved && !excluded), "Refresh state matrix");
+        for (const Command command : {Command::history, Command::settings, Command::about})
+            context.expect(commandAvailable(command, saved, excluded, enabled, revisions, selected, visible),
+                "navigation commands remain available in every file state");
+    }
     context.expect(autoSaveScopeDisplayName(AutoSaveScope::currentFile) == L"Current file only"
         && autoSaveScopeDisplayName(AutoSaveScope::allOpenFiles) == L"All open files",
         "Auto Save scope log names describe both choices");

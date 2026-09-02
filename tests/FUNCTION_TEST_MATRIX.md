@@ -2,6 +2,19 @@
 
 This inventory covers the project-defined functions in `src`. “Indirect” means a private helper is reached through a public operation and its observable result is asserted. “Live” means the rebuilt DLL is exercised in an isolated real Notepad++ process. PASS means the intended behaviour represented by that function has automated evidence; PARTIAL means its core behaviour is tested but a modal, destructive, lifecycle or external side effect remains manual UAT.
 
+## Seven-command configuration (3 September 2026)
+
+See `TEST_REPORT-COMMANDS.md` for the latest scoped results and manual UAT boundary.
+
+| Function/model | Evidence | Status |
+|---|---|---|
+| `commandOrder` / `placementLocked` | Exact order and permanent seven-item Plugins menu | PASS |
+| `commandAvailable` | 64 combinations of file/exclusion/history/revision/selection/pane state for all seven commands | PASS |
+| `Settings::commandVisible` / `setCommandVisible` / `commandHotkey` | Per-command defaults, toggles and persistence | PASS |
+| `actionAvailable` | Native selected/unselected/unsaved states shared by menu/toolbar | PASS |
+| `findCommandMenu` / `configureCommandMenu` | Native menu retains IDs, icons, shortcuts and exact visual order | PASS |
+| `appendDocumentContextMenu` | Real popup structure, inline separators, icons, shortcuts, filters and repeated-open cleanup; physical mouse selection pending | PARTIAL |
+
 ## Utilities.cpp
 
 | Function | Evidence | Status |
@@ -27,9 +40,9 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 
 ## Settings.cpp / Settings
 
-| `configureSettingsTooltips` | Live registration of all 51 actionable Settings targets | PASS |
+| `configureSettingsTooltips` | Live registration of all 85 Settings tooltip targets, including command placements and hotkeys | PASS |
 | `updateSettingsTooltip` | Live visible tooltip activation for a disabled Auto Save interval input | PASS |
-| `populateHotkeyControls` / `hotkeyFromControls` | Live native Capture/Compare/History hotkey population, mutation and persistence | PASS |
+| `populateHotkeyControls` / `hotkeyFromControls` | Seven live command rows; core round-trip of seven independent shortcuts; live duplicate rejection | PASS |
 | `validateHotkeys` | Live duplicate rejection and successful recovery; existing Notepad++ menu shortcuts are scanned before save | PASS |
 
 | Function | Evidence | Status |
@@ -201,7 +214,7 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 | `showRevisionPicker` | Live picker position and revision count | PASS |
 | `restoreSelected` | Live centred confirmation, forced `Before restore` safety revision, internal-save suppression, file reload and INFO audit | PASS |
 | `layout` | Live normal, resized, wrapped, collapsed and dynamically wrapped status layouts | PASS |
-| `configureButtonIcons` | Live all six pane icons and tooltip registrations | PASS |
+| `configureButtonIcons` | Live all seven pane icons and tooltip registrations | PASS |
 | `updateButtonTooltip` | Live active and visible tooltip over disabled Refresh | PASS |
 | `panelButtonSubclass` | Live enabled-button hover entry and leave state | PASS |
 | `dialogProc` | Live pane init, resize, commands and context menu | PASS |
@@ -263,8 +276,8 @@ Fixed-width native tab styles still deliberately omit indicators rather than dra
 | `showAbout` | Live centred About window | PASS |
 | `setMenuItem` | Live exact Capture, Compare, History, Settings and About menu entries with icon registration | PASS |
 | `ensureConfigurationLoaded` | Live isolated INI/catalogue initialization | PASS |
-| `createToolbarBitmap` | Live three main-toolbar icons | PASS |
-| `registerConfiguredToolbarButtons` | Live three configured toolbar buttons | PASS |
+| `createToolbarBitmap` | Live seven main-toolbar icons | PASS |
+| `registerConfiguredToolbarButtons` | Live seven configurable toolbar commands; legacy three-command preferences retained | PASS |
 | `initialise` | Live plugin initialization/dock/menu/timer | PASS |
 | `DllMain` | DLL loads in real Notepad++ | PASS |
 | `setInfo` | ABI present and live Notepad++ initialization | PASS |

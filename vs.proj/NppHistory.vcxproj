@@ -46,6 +46,7 @@
     <ClInclude Include="..\src\Logger.h" />
     <ClInclude Include="..\src\Settings.h" />
     <ClInclude Include="..\src\TextDiff.h" />
+    <ClInclude Include="..\src\Commands.h" />
     <ClInclude Include="..\src\Utilities.h" />
     <ClInclude Include="..\src\UpdateChecker.h" />
     <ClInclude Include="..\src\UpdateInstaller.h" />

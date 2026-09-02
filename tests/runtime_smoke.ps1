@@ -138,6 +138,26 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 public static class NppHistoryNative {
+    [DllImport("kernel32.dll")] private static extern IntPtr OpenProcess(uint access,bool inherit,uint pid);
+    [DllImport("kernel32.dll")] private static extern IntPtr VirtualAllocEx(IntPtr process,IntPtr address,UIntPtr size,uint type,uint protection);
+    [DllImport("kernel32.dll")] private static extern bool ReadProcessMemory(IntPtr process,IntPtr address,byte[] bytes,int size,out IntPtr read);
+    [DllImport("kernel32.dll")] private static extern bool VirtualFreeEx(IntPtr process,IntPtr address,UIntPtr size,uint type);
+    [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr handle);
+    public static void ClickTab(IntPtr tabs,int index) {
+        uint pid;GetWindowThreadProcessId(tabs,out pid);
+        var process=OpenProcess(0x438,false,pid);
+        var remote=VirtualAllocEx(process,IntPtr.Zero,(UIntPtr)16,0x3000,4);
+        if(process==IntPtr.Zero||remote==IntPtr.Zero)throw new Exception("Tab probe allocation failed");
+        try {
+            if(SendMessage(tabs,0x130A,(IntPtr)index,remote)==IntPtr.Zero)throw new Exception("Tab rectangle unavailable");
+            byte[] bytes=new byte[16];IntPtr read;
+            if(!ReadProcessMemory(process,remote,bytes,16,out read))throw new Exception("Tab rectangle read failed");
+            int x=(BitConverter.ToInt32(bytes,0)+BitConverter.ToInt32(bytes,8))/2;
+            int y=(BitConverter.ToInt32(bytes,4)+BitConverter.ToInt32(bytes,12))/2;
+            var point=(IntPtr)(x|(y<<16));
+            SendMessage(tabs,0x201,(IntPtr)1,point);SendMessage(tabs,0x202,IntPtr.Zero,point);
+        } finally {VirtualFreeEx(process,remote,UIntPtr.Zero,0x8000);CloseHandle(process);}
+    }
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] public struct MENUITEMINFO {
@@ -588,15 +608,15 @@ try {
     $settingsMenuCommand = [NppHistoryNative]::FindPluginMenuCommand($mainWindow, 'NppHistory', 'Settings')
     $aboutMenuCommand = [NppHistoryNative]::FindPluginMenuCommand($mainWindow, 'NppHistory', 'About')
     $pluginMenuLabels = [NppHistoryNative]::PluginMenuLabels($mainWindow, 'NppHistory')
-    $pluginMenuPassed = $pluginMenuLabels -eq 'Capture|Compare|History|Settings|About' -and
+    $pluginMenuPassed = $pluginMenuLabels -eq 'Capture|Compare|Restore|History|Refresh|Settings|About' -and
         $captureMenuCommand -ne 0 -and $compareMenuCommand -ne 0 -and
         $historyMenuCommand -ne 0 -and $settingsMenuCommand -ne 0 -and
         $aboutMenuCommand -ne 0
     $pluginMenuBitmapCount = [NppHistoryNative]::PluginMenuBitmapCount(
         $mainWindow, 'NppHistory')
-    $pluginMenuIconsPassed = $pluginMenuBitmapCount -eq 5 -and
+    $pluginMenuIconsPassed = $pluginMenuBitmapCount -eq 7 -and
         [NppHistoryNative]::GetProp(
-            $mainWindow, 'NppHistoryPluginMenuIconsReady').ToInt64() -eq 6
+            $mainWindow, 'NppHistoryPluginMenuIconsReady').ToInt64() -eq 8
     $hiddenCaptureStatePassed = [NppHistoryNative]::MenuCommandEnabled(
         $mainWindow, $captureMenuCommand) -and
         [NppHistoryNative]::ToolbarCommandEnabled($mainWindow, $captureMenuCommand)
@@ -627,8 +647,8 @@ try {
     $compareButton = [NppHistoryNative]::FindControlByText($mainWindow, 'Button', 'Compare')
     $historyPanel = [NppHistoryNative]::GetParent($compareButton)
     $historyList = [NppHistoryNative]::FindControl($historyPanel, 1002)
-    $panelButtonLabels = @('Capture','Refresh','Compare','Restore','Settings','About')
-    $panelButtonIds = @(1006,1003,1004,1005,1007,1008)
+    $panelButtonLabels = @('Capture','Compare','Restore','History','Refresh','Settings','About')
+    $panelButtonIds = @(1006,1004,1005,1153,1003,1007,1008)
     $panelButtonsPassed = $historyPanel -ne [IntPtr]::Zero
     $panelButtonWidths = @()
     for ($buttonIndex = 0; $buttonIndex -lt $panelButtonIds.Count; $buttonIndex++) {
@@ -657,10 +677,10 @@ try {
     $panelButtonIconsPassed = [NppHistoryNative]::GetProp($historyPanel, 'NppHistoryPanelButtonIconsReady') -ne [IntPtr]::Zero
     $panelButtonHoverRegistrationCount = [NppHistoryNative]::GetProp(
         $historyPanel, 'NppHistoryPanelButtonHoverReady').ToInt64()
-    $panelButtonHoverReady = $panelButtonHoverRegistrationCount -eq 6
+    $panelButtonHoverReady = $panelButtonHoverRegistrationCount -eq 7
     $panelButtonTooltipCount = [NppHistoryNative]::GetProp(
         $historyPanel, 'NppHistoryPanelButtonTooltipsReady').ToInt64()
-    $panelButtonTooltipsPassed = $panelButtonTooltipCount -eq 6
+    $panelButtonTooltipsPassed = $panelButtonTooltipCount -eq 7
     $panelHoverButton = [NppHistoryNative]::FindControl($historyPanel, 1006)
     $panelButtonHotOnEnter = 0
     for ($hoverAttempt = 0; $hoverAttempt -lt 5 -and $panelButtonHotOnEnter -ne 1006; $hoverAttempt++) {
@@ -1068,12 +1088,12 @@ try {
             $settingsTabs = [NppHistoryNative]::FindControl($settingsWindow, 1070)
             $settingsTabsPassed = $settingsTabs -ne [IntPtr]::Zero -and
                 [NppHistoryNative]::SendMessage($settingsTabs, 0x1304, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64() -eq 5
-            $settingsGeneralPassed = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1071)) -eq 'Capture' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1072)) -eq 'Compare' -and
-                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1073)) -eq 'History' -and
+            $settingsGeneralPassed = [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1200)) -eq 'Capture' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1210)) -eq 'Compare' -and
+                [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1260)) -eq 'History' -and
                 -not [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1074))
             $settingsHotkeysPassed = [NppHistoryNative]::IsWindowVisible(
-                [NppHistoryNative]::FindControl($settingsWindow, 1134)) -and
+                [NppHistoryNative]::FindControl($settingsWindow, 1135)) -and
                 [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($settingsWindow, 1136)) -and
                 [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($settingsWindow, 1139)) -and
                 [NppHistoryNative]::IsWindowEnabled([NppHistoryNative]::FindControl($settingsWindow, 1142)) -and
@@ -1111,9 +1131,7 @@ try {
             finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
             $bitmap.Save($settingsGeneralScreenshot, [Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
-            $autoTabPoint = [IntPtr](155 -bor (10 -shl 16))
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $autoTabPoint)
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $autoTabPoint)
+            [NppHistoryNative]::ClickTab($settingsTabs,1)
             Start-Sleep -Milliseconds 150
             $autoSaveConflictNotice = [NppHistoryNative]::FindControl($settingsWindow, 1133)
             $autoSaveConflictNoticeText = [NppHistoryNative]::Text($autoSaveConflictNotice)
@@ -1151,7 +1169,7 @@ try {
                 $settingsWindow, 'NppHistorySettingsTooltipWindow')
             $settingsTooltipActive = [NppHistoryNative]::GetProp(
                 $settingsWindow, 'NppHistorySettingsTooltipActive').ToInt64()
-            $settingsTooltipsPassed = $settingsTooltipCount -eq 51 -and
+            $settingsTooltipsPassed = $settingsTooltipCount -eq 85 -and
                 $settingsTooltipWindow -ne [IntPtr]::Zero
             [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $intervalEnabledOnSelection = [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)
@@ -1175,9 +1193,7 @@ try {
             finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
             $bitmap.Save($settingsScreenshot, [Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
-            $historyTabPoint = [IntPtr](215 -bor (10 -shl 16))
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $historyTabPoint)
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $historyTabPoint)
+            [NppHistoryNative]::ClickTab($settingsTabs,2)
             Start-Sleep -Milliseconds 100
             $settingsHistoryPassed = [NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($settingsWindow, 1087)) -and
                 [NppHistoryNative]::Text([NppHistoryNative]::FindControl($settingsWindow, 1096)) -eq 'Enable revision history' -and
@@ -1223,9 +1239,7 @@ try {
             finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
             $bitmap.Save($settingsHistoryScreenshot, [Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
-            $loggingTabPoint = [IntPtr](267 -bor (10 -shl 16))
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $loggingTabPoint)
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $loggingTabPoint)
+            [NppHistoryNative]::ClickTab($settingsTabs,3)
             Start-Sleep -Milliseconds 100
             $loggingMaster = [NppHistoryNative]::FindControl($settingsWindow, 1107)
             $loggingLevel = [NppHistoryNative]::FindControl($settingsWindow, 1110)
@@ -1262,9 +1276,7 @@ try {
             finally { $graphics.ReleaseHdc($deviceContext); $graphics.Dispose() }
             $bitmap.Save($settingsLoggingScreenshot, [Drawing.Imaging.ImageFormat]::Png)
             $bitmap.Dispose()
-            $updatesTabPoint = [IntPtr](322 -bor (10 -shl 16))
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0201, [IntPtr]1, $updatesTabPoint)
-            [void][NppHistoryNative]::SendMessage($settingsTabs, 0x0202, [IntPtr]::Zero, $updatesTabPoint)
+            [NppHistoryNative]::ClickTab($settingsTabs,4)
             Start-Sleep -Milliseconds 100
             $updateMaster = [NppHistoryNative]::FindControl($settingsWindow, 1074)
             $updateFrequency = [NppHistoryNative]::FindControl($settingsWindow, 1075)

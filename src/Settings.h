@@ -1,6 +1,7 @@
 #pragma once
 
 #include "HistoryCatalog.h"
+#include "Commands.h"
 
 #include <array>
 #include <filesystem>
@@ -102,7 +103,14 @@ struct Settings
     HotkeySetting hotkeyCapture{false, true, true, false, 'C'};
     HotkeySetting hotkeyCompare{false, true, true, false, 'M'};
     HotkeySetting hotkeyHistory{false, true, true, false, 'H'};
-    std::array<int, 3> hotkeyCommandIds{};
+    std::array<int, commandCount> hotkeyCommandIds{};
+    std::array<CommandPlacement, commandCount> commandPlacement{};
+    std::array<HotkeySetting, 4> additionalHotkeys{};
+    bool contextSubmenu = true;
+    bool commandVisible(Command command, CommandSurface surface) const noexcept;
+    void setCommandVisible(Command command, CommandSurface surface, bool visible) noexcept;
+    HotkeySetting& commandHotkey(Command command) noexcept;
+    const HotkeySetting& commandHotkey(Command command) const noexcept;
     bool autoUpdateEnabled = false;
     UpdateFrequency updateFrequency = UpdateFrequency::weekly;
     bool includePrereleaseUpdates = true;

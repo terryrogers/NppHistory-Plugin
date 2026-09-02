@@ -105,6 +105,6 @@ private:
     PFUNCPLUGINCMD _stateChangedCallback = nullptr;
     PFUNCPLUGINCMD _prepareRestoreSaveCallback = nullptr;
     PFUNCPLUGINCMD _cancelRestoreSaveCallback = nullptr;
-    std::array<HIMAGELIST, 6> _buttonImages{};
+    std::array<HIMAGELIST, 7> _buttonImages{};
 };
 }

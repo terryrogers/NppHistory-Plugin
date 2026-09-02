@@ -24,10 +24,10 @@ constexpr UINT_PTR settingsTooltipTimer = 0x4E51;
 struct SettingsTooltipEntry
 {
     int id;
-    const wchar_t* text;
+    std::wstring text;
 };
 
-const SettingsTooltipEntry settingsTooltips[] = {
+std::vector<SettingsTooltipEntry> settingsTooltips = {
     {IDC_TOOLBAR_CAPTURE, L"Add or remove the NppHistory Capture command on the main Notepad++ toolbar after restart."},
     {IDC_TOOLBAR_COMPARE, L"Add or remove the NppHistory Compare command on the main Notepad++ toolbar after restart."},
     {IDC_TOOLBAR_HISTORY, L"Add or remove the NppHistory History command on the main Notepad++ toolbar after restart."},
@@ -78,11 +78,38 @@ const SettingsTooltipEntry settingsTooltips[] = {
     {IDC_UPDATE_STATUS, L"Shows the latest update result, last successful check and next scheduled check."},
     {IDOK, L"Save all Settings changes and close this window."},
     {IDCANCEL, L"Discard unsaved Settings changes and close this window."},
-    {IDC_SETTINGS_TABS, L"Choose the Toolbar & Hotkeys, Auto Save, History, Logging or Updates settings page."}
+    {IDC_SETTINGS_TABS, L"Choose the Commands & Hotkeys, Auto Save, History, Logging or Updates settings page."}
 };
 
 void configureSettingsTooltips(HWND dialog)
 {
+    // Generate semantic hints for every command cell, including locked choices.
+    settingsTooltips.erase(std::remove_if(settingsTooltips.begin(), settingsTooltips.end(),
+        [](const auto& entry) { return entry.id >= 1200 || entry.id == IDC_CONTEXT_SUBMENU; }),
+        settingsTooltips.end());
+    const wchar_t* surfaces[] = {L"NppHistory pane", L"Plugins > NppHistory menu",
+        L"Notepad++ toolbar (after restart)", L"document right-click menu"};
+    for (int row = 0; row < commandCount; ++row)
+    {
+        for (int column = 0; column < 4; ++column)
+        {
+            const int id = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
+            std::wstring hint = std::wstring(commands[row].name) + L": show in the " + surfaces[column] + L".";
+            if (placementLocked(static_cast<Command>(row), static_cast<CommandSurface>(column)))
+                hint += column == 0 ? L" Not applicable: History opens this pane."
+                    : L" Always available so this command cannot become inaccessible.";
+            if (std::none_of(settingsTooltips.begin(), settingsTooltips.end(),
+                [=](const auto& entry) { return entry.id == id; }))
+                settingsTooltips.push_back({id, hint});
+        }
+        for (const int id : {hotkeyEnableIds[row], hotkeyInputIds[row]})
+            if (std::none_of(settingsTooltips.begin(), settingsTooltips.end(),
+                [=](const auto& entry) { return entry.id == id; }))
+                settingsTooltips.push_back({id, std::wstring(commands[row].name)
+                    + L": enable a shortcut and press the complete key combination; applies after restart."});
+    }
+    settingsTooltips.push_back({IDC_CONTEXT_SUBMENU,
+        L"Checked: place selected right-click commands inside NppHistory. Unchecked: surround them with separator lines."});
     const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog,
         GWLP_HINSTANCE));
     const HWND tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
@@ -101,7 +128,7 @@ void configureSettingsTooltips(HWND dialog)
         tool.uFlags = TTF_TRACK | TTF_ABSOLUTE;
         tool.hwnd = dialog;
         tool.uId = static_cast<UINT_PTR>(entry.id);
-        tool.lpszText = const_cast<wchar_t*>(entry.text);
+        tool.lpszText = const_cast<wchar_t*>(entry.text.c_str());
         if (SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)))
             ++added;
     }
@@ -239,11 +266,7 @@ bool ensureUnicodeIni(const std::filesystem::path& file)
     return writeAllBytesAtomic(file, unicode);
 }
 
-constexpr int hotkeyEnableIds[] = {IDC_HOTKEY_CAPTURE_ENABLED,
-    IDC_HOTKEY_COMPARE_ENABLED, IDC_HOTKEY_HISTORY_ENABLED};
-constexpr int hotkeyInputIds[] = {IDC_HOTKEY_CAPTURE_INPUT,
-    IDC_HOTKEY_COMPARE_INPUT, IDC_HOTKEY_HISTORY_INPUT};
-constexpr const wchar_t* hotkeyNames[] = {L"Capture", L"Compare", L"History"};
+// Command row/control mappings are shared with the placement model.
 
 void populateHotkeyControls(HWND dialog, int row, const HotkeySetting& hotkey)
 {
@@ -272,7 +295,7 @@ HotkeySetting hotkeyFromControls(HWND dialog, int row)
 
 void updateHotkeyControls(HWND dialog)
 {
-    for (int row = 0; row < 3; ++row)
+    for (int row = 0; row < commandCount; ++row)
     {
         const BOOL enabled = IsDlgButtonChecked(dialog, hotkeyEnableIds[row]) == BST_CHECKED;
         EnableWindow(GetDlgItem(dialog, hotkeyInputIds[row]), enabled);
@@ -321,15 +344,15 @@ void collectMenuShortcuts(HMENU menu, std::vector<MenuShortcut>& shortcuts)
 
 bool validateHotkeys(HWND dialog, const Settings& settings, bool showMessage)
 {
-    const std::array<HotkeySetting, 3> selected = {hotkeyFromControls(dialog, 0),
-        hotkeyFromControls(dialog, 1), hotkeyFromControls(dialog, 2)};
+    std::array<HotkeySetting, commandCount> selected{};
+    for (int row = 0; row < commandCount; ++row) selected[row] = hotkeyFromControls(dialog, row);
     std::wstring issue;
-    for (int row = 0; row < 3 && issue.empty(); ++row)
+    for (int row = 0; row < commandCount && issue.empty(); ++row)
     {
         if (!selected[row].enabled)
             continue;
         if (!selected[row].key)
-            issue = std::wstring(hotkeyNames[row]) + L" needs a key.";
+            issue = std::wstring(commands[row].name) + L" needs a key.";
         for (int previous = 0; previous < row && issue.empty(); ++previous)
         {
             if (selected[previous].enabled
@@ -352,7 +375,7 @@ bool validateHotkeys(HWND dialog, const Settings& settings, bool showMessage)
         {
             if (ownCommands.count(shortcut.command) != 0)
                 continue;
-            for (int row = 0; row < 3 && issue.empty(); ++row)
+            for (int row = 0; row < commandCount && issue.empty(); ++row)
             {
                 if (selected[row].enabled
                     && _wcsicmp(shortcut.text.c_str(), hotkeyText(selected[row]).c_str()) == 0)
@@ -526,13 +549,16 @@ void updateLoggingControls(HWND dialog, const Settings& settings)
 
 void showSettingsPage(HWND dialog, int page)
 {
-    const int general[] = {IDC_GENERAL_TOOLBAR_GROUP, IDC_TOOLBAR_CAPTURE,
-        IDC_TOOLBAR_COMPARE, IDC_TOOLBAR_HISTORY, IDC_TOOLBAR_DESCRIPTION,
-        IDC_TOOLBAR_RESTART_NOTE, IDC_HOTKEYS_GROUP, IDC_HOTKEY_CAPTURE_ENABLED,
-        IDC_HOTKEY_CAPTURE_INPUT, IDC_HOTKEY_COMPARE_ENABLED,
-        IDC_HOTKEY_COMPARE_INPUT, IDC_HOTKEY_HISTORY_ENABLED,
-        IDC_HOTKEY_HISTORY_INPUT,
-        IDC_HOTKEY_NOTE, IDC_HOTKEY_STATUS};
+    std::vector<int> general{IDC_GENERAL_TOOLBAR_GROUP, IDC_TOOLBAR_DESCRIPTION,
+        IDC_CONTEXT_GROUP, IDC_CONTEXT_SUBMENU, IDC_CONTEXT_NOTE, IDC_HOTKEY_NOTE, IDC_HOTKEY_STATUS};
+    for (int row = 0; row < commandCount; ++row)
+    {
+        for (int column : {0, 1, 2, 4}) general.push_back(placementControl(row, column));
+        general.push_back(toolbarControlIds[row]);
+        general.push_back(hotkeyEnableIds[row]);
+        general.push_back(hotkeyInputIds[row]);
+    }
+    for (int id = 1270; id <= 1275; ++id) general.push_back(id);
     const int autoSave[] = {IDC_ENABLED, IDC_AUTOSAVE_WHEN_GROUP, IDC_AFTER_EDIT,
         IDC_AFTER_EDIT_SECONDS, IDC_AFTER_EDIT_LABEL, IDC_AUTOSAVE_FOCUS_LOSS,
         IDC_AUTOSAVE_INTERVAL, IDC_AUTOSAVE_INTERVAL_MINUTES, IDC_INTERVAL_LABEL,
@@ -560,7 +586,7 @@ void showSettingsPage(HWND dialog, int page)
         for (std::size_t index = 0; index < count; ++index)
             ShowWindow(GetDlgItem(dialog, controls[index]), visible ? SW_SHOW : SW_HIDE);
     };
-    setVisibility(general, std::size(general), page == 0);
+    setVisibility(general.data(), general.size(), page == 0);
     setVisibility(autoSave, std::size(autoSave), page == 1);
     ShowWindow(GetDlgItem(dialog, IDC_AUTOSAVE_CONFLICT_NOTICE),
         page == 1 && activeSettings && activeSettings->externalAutoSavePluginDetected
@@ -602,8 +628,28 @@ void browseForLogFile(HWND dialog)
 
 const wchar_t* settingsCommandName(int id)
 {
+    static std::wstring commandName;
+    for (int row = 0; row < commandCount; ++row)
+    {
+        const wchar_t* surfaces[] = {L"Pane", L"Plugins menu", L"Toolbar", L"Document context menu"};
+        for (int column = 0; column < 4; ++column)
+        {
+            const int control = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
+            if (id == control)
+            {
+                commandName = std::wstring(surfaces[column]) + L": " + commands[row].name;
+                return commandName.c_str();
+            }
+        }
+        if (id == hotkeyEnableIds[row] || id == hotkeyInputIds[row])
+        {
+            commandName = std::wstring(L"Hotkey: ") + commands[row].name;
+            return commandName.c_str();
+        }
+    }
     switch (id)
     {
+    case IDC_CONTEXT_SUBMENU: return L"Document context menu: Group in submenu";
     case IDC_TOOLBAR_CAPTURE: return L"Toolbar: Capture";
     case IDC_TOOLBAR_COMPARE: return L"Toolbar: Compare";
     case IDC_TOOLBAR_HISTORY: return L"Toolbar: History";
@@ -669,7 +715,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         SendMessageW(dialog, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(icon));
 
         const HWND tabs = GetDlgItem(dialog, IDC_SETTINGS_TABS);
-        for (const wchar_t* label : {L"Toolbar & Hotkeys", L"Auto Save", L"History", L"Logging", L"Updates"})
+        for (const wchar_t* label : {L"Commands && Hotkeys", L"Auto Save", L"History", L"Logging", L"Updates"})
         {
             TCITEMW item{};
             item.mask = TCIF_TEXT;
@@ -678,21 +724,46 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         }
         TabCtrl_SetCurSel(tabs, 0);
 
+        // Keep persisted/control identities stable while presenting the shared order.
+        HWND previousCommandControl = GetDlgItem(dialog, 1275);
+        for (int position = 0; position < commandCount; ++position)
+        {
+            const int row = static_cast<int>(commandOrder[position]);
+            for (const int id : {placementControl(row, 0), placementControl(row, 1),
+                placementControl(row, 2), toolbarControlIds[row], placementControl(row, 4),
+                hotkeyEnableIds[row], hotkeyInputIds[row]})
+            {
+                const HWND control = GetDlgItem(dialog, id);
+                RECT bounds{};
+                GetWindowRect(control, &bounds);
+                MapWindowPoints(nullptr, dialog, reinterpret_cast<POINT*>(&bounds), 2);
+                RECT offset{0, (position - row) * 17, 0, 0};
+                MapDialogRect(dialog, &offset);
+                SetWindowPos(control, previousCommandControl, bounds.left, bounds.top + offset.top,
+                    0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+                previousCommandControl = control;
+            }
+        }
+
         const COLORREF pageColour = GetSysColor(COLOR_WINDOW);
         SetPropW(dialog, L"NppHistorySettingsPageBrush",
             CreateSolidBrush(pageColour));
         SetPropW(dialog, L"NppHistorySettingsPageColour",
             reinterpret_cast<HANDLE>(static_cast<ULONG_PTR>(pageColour) + 1));
 
-        CheckDlgButton(dialog, IDC_TOOLBAR_CAPTURE,
-            settings->toolbarCapture ? BST_CHECKED : BST_UNCHECKED);
-        CheckDlgButton(dialog, IDC_TOOLBAR_COMPARE,
-            settings->toolbarCompare ? BST_CHECKED : BST_UNCHECKED);
-        CheckDlgButton(dialog, IDC_TOOLBAR_HISTORY,
-            settings->toolbarHistory ? BST_CHECKED : BST_UNCHECKED);
-        populateHotkeyControls(dialog, 0, settings->hotkeyCapture);
-        populateHotkeyControls(dialog, 1, settings->hotkeyCompare);
-        populateHotkeyControls(dialog, 2, settings->hotkeyHistory);
+        for (int row = 0; row < commandCount; ++row)
+        {
+            const auto command = static_cast<Command>(row);
+            for (int column = 0; column < 4; ++column)
+            {
+                const auto surface = static_cast<CommandSurface>(column);
+                const int id = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
+                CheckDlgButton(dialog, id, settings->commandVisible(command, surface) ? BST_CHECKED : BST_UNCHECKED);
+                EnableWindow(GetDlgItem(dialog, id), !placementLocked(command, surface));
+            }
+            populateHotkeyControls(dialog, row, settings->commandHotkey(command));
+        }
+        CheckDlgButton(dialog, IDC_CONTEXT_SUBMENU, settings->contextSubmenu ? BST_CHECKED : BST_UNCHECKED);
         updateHotkeyControls(dialog);
         validateHotkeys(dialog, *settings, false);
         CheckDlgButton(dialog, IDC_AUTO_UPDATE,
@@ -782,7 +853,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
     {
         const int page = TabCtrl_GetCurSel(GetDlgItem(dialog, IDC_SETTINGS_TABS));
         showSettingsPage(dialog, page);
-        const wchar_t* pages[] = {L"Toolbar & Hotkeys", L"Auto Save", L"History",
+        const wchar_t* pages[] = {L"Commands & Hotkeys", L"Auto Save", L"History",
             L"Logging", L"Updates"};
         if (page >= 0 && page < static_cast<int>(std::size(pages)))
             pluginLogger().write(LogLevel::debug, L"Settings tab", pages[page]);
@@ -849,12 +920,8 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
         return TRUE;
     }
     if (message == WM_COMMAND
-        && ((LOWORD(wParam) == IDC_HOTKEY_CAPTURE_ENABLED
-            || LOWORD(wParam) == IDC_HOTKEY_COMPARE_ENABLED
-            || LOWORD(wParam) == IDC_HOTKEY_HISTORY_ENABLED)
-            || LOWORD(wParam) == IDC_HOTKEY_CAPTURE_INPUT
-            || LOWORD(wParam) == IDC_HOTKEY_COMPARE_INPUT
-            || LOWORD(wParam) == IDC_HOTKEY_HISTORY_INPUT))
+        && (std::find(hotkeyEnableIds.begin(), hotkeyEnableIds.end(), LOWORD(wParam)) != hotkeyEnableIds.end()
+            || std::find(hotkeyInputIds.begin(), hotkeyInputIds.end(), LOWORD(wParam)) != hotkeyInputIds.end()))
     {
         updateHotkeyControls(dialog);
         validateHotkeys(dialog, *settings, false);
@@ -902,12 +969,18 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             showSettingsPage(dialog, 0);
             return TRUE;
         }
-        settings->toolbarCapture = IsDlgButtonChecked(dialog, IDC_TOOLBAR_CAPTURE) == BST_CHECKED;
-        settings->toolbarCompare = IsDlgButtonChecked(dialog, IDC_TOOLBAR_COMPARE) == BST_CHECKED;
-        settings->toolbarHistory = IsDlgButtonChecked(dialog, IDC_TOOLBAR_HISTORY) == BST_CHECKED;
-        settings->hotkeyCapture = hotkeyFromControls(dialog, 0);
-        settings->hotkeyCompare = hotkeyFromControls(dialog, 1);
-        settings->hotkeyHistory = hotkeyFromControls(dialog, 2);
+        for (int row = 0; row < commandCount; ++row)
+        {
+            const auto command = static_cast<Command>(row);
+            for (int column = 0; column < 4; ++column)
+            {
+                const int id = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
+                settings->setCommandVisible(command, static_cast<CommandSurface>(column),
+                    IsDlgButtonChecked(dialog, id) == BST_CHECKED);
+            }
+            settings->commandHotkey(command) = hotkeyFromControls(dialog, row);
+        }
+        settings->contextSubmenu = IsDlgButtonChecked(dialog, IDC_CONTEXT_SUBMENU) == BST_CHECKED;
         settings->autoUpdateEnabled = IsDlgButtonChecked(dialog, IDC_AUTO_UPDATE) == BST_CHECKED;
         const LRESULT frequency = SendDlgItemMessageW(dialog, IDC_UPDATE_FREQUENCY,
             CB_GETCURSEL, 0, 0);
@@ -1181,6 +1254,23 @@ void Settings::load(const std::filesystem::path& file)
     hotkeyCapture = readHotkey(L"HotkeyCapture", 'C');
     hotkeyCompare = readHotkey(L"HotkeyCompare", 'M');
     hotkeyHistory = readHotkey(L"HotkeyHistory", 'H');
+    contextSubmenu = readBoolean(file, L"ContextSubmenu", true);
+    for (int row = 0; row < commandCount; ++row)
+    {
+        const auto command = static_cast<Command>(row);
+        const std::wstring name(commands[row].name);
+        for (int column = 0; column < 4; ++column)
+        {
+            const wchar_t* prefixes[] = {L"Pane", L"PluginMenu", L"Toolbar", L"Context"};
+            const auto surface = static_cast<CommandSurface>(column);
+            const bool fallback = column == 0 || column == 1 ? true
+                : column == 2 ? commandVisible(command, surface) : false;
+            setCommandVisible(command, surface, readBoolean(file,
+                (prefixes[column] + name).c_str(), fallback));
+        }
+        if (row >= 2 && row <= 5)
+            commandHotkey(command) = readHotkey((L"Hotkey" + name).c_str(), 0);
+    }
     autoUpdateEnabled = readBoolean(file, L"AutoUpdateEnabled", false);
     const int frequency = GetPrivateProfileIntW(L"NppHistory", L"UpdateFrequency", 1,
         file.c_str());
@@ -1246,6 +1336,23 @@ bool Settings::save(const std::filesystem::path& file) const
     const auto write = [&](const wchar_t* key, const std::wstring& value) {
         return WritePrivateProfileStringW(L"NppHistory", key, value.c_str(), file.c_str()) != FALSE;
     };
+    if (!write(L"ContextSubmenu", contextSubmenu ? L"1" : L"0")) return false;
+    for (int row = 0; row < commandCount; ++row)
+    {
+        const auto command = static_cast<Command>(row);
+        const std::wstring name(commands[row].name);
+        const wchar_t* prefixes[] = {L"Pane", L"PluginMenu", L"Toolbar", L"Context"};
+        for (int column = 0; column < 4; ++column)
+            if (!write((prefixes[column] + name).c_str(),
+                commandVisible(command, static_cast<CommandSurface>(column)) ? L"1" : L"0")) return false;
+        const auto& key = commandHotkey(command);
+        const std::wstring prefix = L"Hotkey" + name;
+        if (!write((prefix + L"Enabled").c_str(), key.enabled ? L"1" : L"0")
+            || !write((prefix + L"Ctrl").c_str(), key.ctrl ? L"1" : L"0")
+            || !write((prefix + L"Alt").c_str(), key.alt ? L"1" : L"0")
+            || !write((prefix + L"Shift").c_str(), key.shift ? L"1" : L"0")
+            || !write((prefix + L"Key").c_str(), std::to_wstring(key.key))) return false;
+    }
     return write(L"AutoSaveEnabled", autoSaveEnabled ? L"1" : L"0")
         && write(L"AutoSaveAfterEdit", autoSaveAfterEdit ? L"1" : L"0")
         && write(L"AfterEditSeconds", std::to_wstring(afterEditSeconds))
@@ -1297,6 +1404,55 @@ bool Settings::save(const std::filesystem::path& file) const
         && write(L"HistoryLocationMode", historyLocationMode == HistoryLocationMode::customRoot ? L"1" : L"0")
         && write(L"CustomHistoryRoot", customHistoryRoot.wstring())
         && write(L"HistoryExclusions", encodePatternSetting(historyExclusions));
+}
+
+bool Settings::commandVisible(Command command, CommandSurface surface) const noexcept
+{
+    if (placementLocked(command, surface)) return surface == CommandSurface::plugins;
+    const auto& placement = commandPlacement[static_cast<int>(command)];
+    switch (surface)
+    {
+    case CommandSurface::pane: return placement.pane;
+    case CommandSurface::plugins: return placement.plugins;
+    case CommandSurface::context: return placement.context;
+    case CommandSurface::toolbar:
+        if (command == Command::capture) return toolbarCapture;
+        if (command == Command::compare) return toolbarCompare;
+        if (command == Command::history) return toolbarHistory;
+        return placement.toolbar;
+    }
+    return false;
+}
+
+void Settings::setCommandVisible(Command command, CommandSurface surface, bool visible) noexcept
+{
+    if (placementLocked(command, surface)) return;
+    auto& placement = commandPlacement[static_cast<int>(command)];
+    switch (surface)
+    {
+    case CommandSurface::pane: placement.pane = visible; break;
+    case CommandSurface::plugins: placement.plugins = visible; break;
+    case CommandSurface::context: placement.context = visible; break;
+    case CommandSurface::toolbar:
+        if (command == Command::capture) toolbarCapture = visible;
+        else if (command == Command::compare) toolbarCompare = visible;
+        else if (command == Command::history) toolbarHistory = visible;
+        else placement.toolbar = visible;
+        break;
+    }
+}
+
+HotkeySetting& Settings::commandHotkey(Command command) noexcept
+{
+    if (command == Command::capture) return hotkeyCapture;
+    if (command == Command::compare) return hotkeyCompare;
+    if (command == Command::history) return hotkeyHistory;
+    return additionalHotkeys[static_cast<int>(command) - 2];
+}
+
+const HotkeySetting& Settings::commandHotkey(Command command) const noexcept
+{
+    return const_cast<Settings*>(this)->commandHotkey(command);
 }
 
 bool Settings::edit(HWND owner, HINSTANCE instance)

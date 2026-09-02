@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added Commands & Hotkeys: all seven commands have independent pane, toolbar and document right-click placements plus configurable shortcuts. All Plugins menu commands remain present. Shared order is Capture, Compare, Restore, History, Refresh, Settings, About; right-click entries support a submenu or two inline separators, icons and native shortcut labels. Exported command indices remain stable for existing Shortcut Mapper entries.
 - Removed the redundant fixed pin/close allowance from document-tab indicators. Tab growth now preserves the measured native trailing area and adds only the actual indicator span, with less than one spacer character of rounding. Added upper-bound spacing regressions for one/two icons, `NppHistory.log`, and both/pin-only/close-only/no native buttons in both orientations.
 - Replaced the temporary AS/H exclusion badges with the supplied crossed-out Auto Save and Revision History artwork. Each affected tab now reserves its own native length for one or two icons after the filename and before the pin/close buttons, including bottom-to-top vertical tabs. Public captions, buffer identities, tab order and shared native padding are preserved; ordinary tabs retain their original size.
 - Added orientation-change regression tests and eight live tab-layout configurations covering horizontal/vertical, small/large and light/dark combinations. Vertical icons remain upright and stack between the rotated filename and native pin/close buttons.

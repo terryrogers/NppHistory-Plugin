@@ -273,7 +273,7 @@ void HistoryPanel::updateActionButtons()
 {
     if (!_dialog)
         return;
-    const bool historyExcluded = _fileSaved && _settings && _settings->historyEnabled
+    const bool historyExcluded = _fileSaved && _settings
         && _settings->isHistoryExcluded(_currentFile);
     const bool captureAllowed = _fileSaved && !historyExcluded && _settings
         && _settings->shouldCreateRevision(RevisionTrigger::manual)
@@ -303,7 +303,7 @@ void HistoryPanel::showRevisionActions(int index, POINT anchor)
     AppendMenuW(menu, MF_STRING, ID_REVISION_EDIT, L"Edit");
     AppendMenuW(menu, MF_STRING, ID_REVISION_COMPARE, L"Compare");
     AppendMenuW(menu, MF_STRING, ID_REVISION_RESTORE, L"Restore");
-    const int commands[] = {ID_REVISION_DELETE, ID_REVISION_EDIT,
+    const int revisionCommands[] = {ID_REVISION_DELETE, ID_REVISION_EDIT,
         ID_REVISION_COMPARE, ID_REVISION_RESTORE};
     const int resources[] = {IDI_DELETE, IDI_EDIT, IDI_COMPARE, IDI_RESTORE};
     HBITMAP bitmaps[4]{};
@@ -313,7 +313,7 @@ void HistoryPanel::showRevisionActions(int index, POINT anchor)
         bitmaps[actionIndex] = createMenuBitmap(_instance, resources[actionIndex]);
         if (bitmaps[actionIndex])
         {
-            applyMenuBitmap(menu, commands[actionIndex], bitmaps[actionIndex]);
+            applyMenuBitmap(menu, revisionCommands[actionIndex], bitmaps[actionIndex]);
             ++iconsAdded;
         }
     }
@@ -1160,11 +1160,18 @@ void HistoryPanel::layout()
     GetClientRect(_dialog, &area);
     const int margin = 8;
     MoveWindow(GetDlgItem(_dialog, IDC_CURRENT_FILE), margin, margin, area.right - margin * 2, 22, TRUE);
-    const int buttonIds[] = {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE,
-        IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT};
+    std::vector<int> buttonIds;
+    for (const Command command : commandOrder)
+    {
+        const int row = static_cast<int>(command);
+        const bool visible = !_settings || _settings->commandVisible(
+            static_cast<Command>(row), CommandSurface::pane);
+        ShowWindow(GetDlgItem(_dialog, commands[row].paneControl), visible ? SW_SHOW : SW_HIDE);
+        if (visible) buttonIds.push_back(commands[row].paneControl);
+    }
     std::vector<int> minimumWidths;
     minimumWidths.reserve(std::size(buttonIds));
-    const HWND firstButton = GetDlgItem(_dialog, buttonIds[0]);
+    const HWND firstButton = GetDlgItem(_dialog, IDC_CAPTURE);
     HDC dc = GetDC(firstButton);
     HGDIOBJ previousFont = SelectObject(dc,
         reinterpret_cast<HFONT>(SendMessageW(firstButton, WM_GETFONT, 0, 0)));
@@ -1181,7 +1188,8 @@ void HistoryPanel::layout()
 
     const int gap = 5;
     const int available = (std::max)(1, static_cast<int>(area.right) - margin * 2);
-    const int widestMinimum = *std::max_element(minimumWidths.begin(), minimumWidths.end());
+    const int widestMinimum = minimumWidths.empty() ? 58
+        : *std::max_element(minimumWidths.begin(), minimumWidths.end());
     int columns = 1;
     for (int candidate = static_cast<int>(std::size(buttonIds)); candidate >= 1; --candidate)
     {
@@ -1200,7 +1208,7 @@ void HistoryPanel::layout()
         rows.back().push_back(index);
     }
     const int buttonHeight = 24;
-    const int buttonsHeight = static_cast<int>(rows.size()) * buttonHeight
+    const int buttonsHeight = rows.empty() ? 0 : static_cast<int>(rows.size()) * buttonHeight
         + (static_cast<int>(rows.size()) - 1) * gap;
     SetPropW(_dialog, L"NppHistoryResponsiveButtonRows",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(rows.size())));
@@ -1249,7 +1257,7 @@ void HistoryPanel::updateButtonTooltip()
     if (!_buttonTooltip || !_dialog)
         return;
     const int buttonIds[] = {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE,
-        IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT};
+        IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT, IDC_PANEL_HISTORY};
     POINT cursor{};
     GetCursorPos(&cursor);
     int hovered = 0;
@@ -1257,7 +1265,7 @@ void HistoryPanel::updateButtonTooltip()
     {
         RECT bounds{};
         GetWindowRect(GetDlgItem(_dialog, id), &bounds);
-        if (PtInRect(&bounds, cursor))
+        if (IsWindowVisible(GetDlgItem(_dialog, id)) && PtInRect(&bounds, cursor))
         {
             hovered = id;
             break;
@@ -1295,16 +1303,17 @@ void HistoryPanel::updateButtonTooltip()
 void HistoryPanel::configureButtonIcons()
 {
     const int buttonIds[] = {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE,
-        IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT};
+        IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT, IDC_PANEL_HISTORY};
     const int iconIds[] = {IDI_CAPTURE, IDI_REFRESH, IDI_COMPARE, IDI_RESTORE,
-        IDI_SETTINGS, IDI_ABOUT};
+        IDI_SETTINGS, IDI_ABOUT, IDI_NPPHISTORY};
     const wchar_t* hints[] = {
         L"Create a new revision of the current file now.",
         L"Reload this file's revision list from history storage.",
         L"Compare the current file with the selected revision.",
         L"Replace the current file with the selected revision.",
         L"Open NppHistory settings.",
-        L"Show NppHistory version and author information."
+        L"Show NppHistory version and author information.",
+        L"Show the revision history pane for the current file."
     };
     _buttonTooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
         WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX,
@@ -1343,7 +1352,7 @@ void HistoryPanel::configureButtonIcons()
         }
     }
     SetPropW(_dialog, L"NppHistoryPanelButtonIconsReady", reinterpret_cast<HANDLE>(2));
-    SetPropW(_dialog, L"NppHistoryPanelButtonHoverReady", reinterpret_cast<HANDLE>(6));
+    SetPropW(_dialog, L"NppHistoryPanelButtonHoverReady", reinterpret_cast<HANDLE>(7));
     SetPropW(_dialog, L"NppHistoryPanelButtonTooltipsReady",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(tooltipsAdded)));
 }
@@ -1440,7 +1449,7 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
     {
         const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
         const int buttonIds[] = {IDC_CAPTURE, IDC_REFRESH, IDC_COMPARE, IDC_RESTORE,
-            IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT};
+            IDC_PANEL_SETTINGS, IDC_PANEL_ABOUT, IDC_PANEL_HISTORY};
         for (int index = 0; index < static_cast<int>(std::size(buttonIds)); ++index)
         {
             if (item->CtlID != static_cast<UINT>(buttonIds[index]))
@@ -1505,6 +1514,17 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
     }
     if (message == WM_COMMAND)
     {
+        for (const auto& command : commands)
+            if (LOWORD(wParam) == command.paneControl
+                && !IsWindowEnabled(GetDlgItem(dialog, command.paneControl))) return TRUE;
+        if (LOWORD(wParam) == IDC_PANEL_HISTORY)
+        {
+            if (panel->_settings)
+                SendMessageW(panel->_nppData._nppHandle, WM_COMMAND,
+                    panel->_settings->hotkeyCommandIds[static_cast<int>(Command::history)], 0);
+            SetFocus(GetDlgItem(dialog, IDC_REVISIONS));
+            return TRUE;
+        }
         if (LOWORD(wParam) == ID_REVISION_DELETE)
         {
             panel->deleteSelected();

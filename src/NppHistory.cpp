@@ -38,7 +38,10 @@ constexpr UINT updateCompleteMessage = WM_APP + 240;
 constexpr UINT installCompleteMessage = WM_APP + 243;
 
 enum MenuIndex { captureIndex, compareIndex, historyIndex, settingsIndex, aboutIndex,
-    menuCount };
+    restoreIndex, refreshIndex, menuCount };
+// Keep exported indices stable for existing Notepad++ shortcut configuration.
+constexpr int commandMenuIndices[] = {captureIndex, compareIndex, restoreIndex,
+    refreshIndex, settingsIndex, aboutIndex, historyIndex};
 
 struct DirtyState
 {
@@ -76,6 +79,10 @@ std::atomic_bool installDownloadInProgress = false;
 HANDLE installThreadHandle = nullptr;
 ReleaseInfo availableUpdate;
 void syncCommandStates();
+bool actionAvailable(Command command);
+void configureCommandMenu();
+void appendDocumentContextMenu(HMENU menu);
+bool documentContextPending = false;
 UINT_PTR currentBuffer();
 
 void prepareRestoreSave()
@@ -124,9 +131,11 @@ struct ToolbarAsset
     HBITMAP bitmap = nullptr;
 };
 
-std::array<ToolbarAsset, 3> toolbarAssets{};
-std::array<HBITMAP, 5> pluginMenuBitmaps{};
-std::array<ShortcutKey, 3> commandShortcuts{};
+std::array<ToolbarAsset, commandCount> toolbarAssets{};
+std::array<HBITMAP, commandCount> pluginMenuBitmaps{};
+std::array<ShortcutKey, commandCount> commandShortcuts{};
+HMENU pluginCommandMenu = nullptr;
+constexpr ULONG_PTR contextMenuMarker = 0x4E504843;
 
 fs::path pathForBuffer(UINT_PTR bufferId)
 {
@@ -687,6 +696,32 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
 LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
     UINT_PTR, DWORD_PTR)
 {
+    if (ready && message == WM_CONTEXTMENU
+        && (reinterpret_cast<HWND>(wParam) == nppData._scintillaMainHandle
+            || reinterpret_cast<HWND>(wParam) == nppData._scintillaSecondHandle))
+    {
+        // Let Notepad++ build its normal editor menu and switch the active split view.
+        const bool previous = documentContextPending;
+        documentContextPending = true;
+        const LRESULT result = DefSubclassProc(window, message, wParam, lParam);
+        documentContextPending = previous;
+        return result;
+    }
+    if (ready && message == WM_INITMENUPOPUP && documentContextPending)
+    {
+        documentContextPending = false; // Only the root editor popup, never its child menus.
+        const LRESULT result = DefSubclassProc(window, message, wParam, lParam);
+        appendDocumentContextMenu(reinterpret_cast<HMENU>(wParam));
+        return result;
+    }
+    if (ready && message == WM_INITMENUPOPUP
+        && reinterpret_cast<HMENU>(wParam) == pluginCommandMenu)
+    {
+        const LRESULT result = DefSubclassProc(window, message, wParam, lParam);
+        configureCommandMenu();
+        syncCommandStates();
+        return result;
+    }
     if (message == installCompleteMessage)
     {
         std::unique_ptr<InstallCompletion> completion(
@@ -818,10 +853,26 @@ void captureNow()
 
 void compareCurrent()
 {
+    if (!actionAvailable(Command::compare)) return;
     pluginLogger().write(LogLevel::debug, L"Button click", L"Compare");
     if (!historyPanel.visible())
         historyPanel.refresh(currentPath());
     historyPanel.compare();
+}
+
+void restoreCurrent()
+{
+    if (!actionAvailable(Command::restore)) return;
+    pluginLogger().write(LogLevel::debug, L"Button click", L"Restore");
+    historyPanel.restore();
+}
+
+void refreshCurrent()
+{
+    if (!actionAvailable(Command::refresh)) return;
+    pluginLogger().write(LogLevel::debug, L"Button click", L"Refresh");
+    historyPanel.refresh(currentPath());
+    pluginLogger().write(LogLevel::informational, L"Refresh", currentPath().wstring());
 }
 
 std::wstring boolText(bool value) { return value ? L"Enabled" : L"Disabled"; }
@@ -852,9 +903,15 @@ void logSettingsChanges(const Settings& previous, const Settings& current)
     const auto boolean = [&](std::wstring_view name, bool before, bool after) {
         change(name, boolText(before), boolText(after));
     };
-    boolean(L"Toolbar Capture", previous.toolbarCapture, current.toolbarCapture);
-    boolean(L"Toolbar Compare", previous.toolbarCompare, current.toolbarCompare);
-    boolean(L"Toolbar History", previous.toolbarHistory, current.toolbarHistory);
+    boolean(L"Context menu submenu", previous.contextSubmenu, current.contextSubmenu);
+    for (int row = 0; row < commandCount; ++row)
+    {
+        const wchar_t* surfaces[] = {L"Pane", L"Plugins menu", L"Toolbar", L"Document context menu"};
+        for (int column = 0; column < 4; ++column)
+            boolean(std::wstring(surfaces[column]) + L": " + commands[row].name,
+                previous.commandVisible(static_cast<Command>(row), static_cast<CommandSurface>(column)),
+                current.commandVisible(static_cast<Command>(row), static_cast<CommandSurface>(column)));
+    }
     const auto hotkeyValue = [](const HotkeySetting& value) {
         if (!value.enabled) return std::wstring(L"disabled");
         std::wstring text;
@@ -871,9 +928,9 @@ void logSettingsChanges(const Settings& previous, const Settings& current)
         if (!(before == after))
             change(name, hotkeyValue(before), hotkeyValue(after));
     };
-    hotkey(L"Capture hotkey", previous.hotkeyCapture, current.hotkeyCapture);
-    hotkey(L"Compare hotkey", previous.hotkeyCompare, current.hotkeyCompare);
-    hotkey(L"History hotkey", previous.hotkeyHistory, current.hotkeyHistory);
+    for (const Command command : commandOrder)
+        hotkey(std::wstring(commands[static_cast<int>(command)].name) + L" hotkey",
+            previous.commandHotkey(command), current.commandHotkey(command));
     boolean(L"Auto Save enabled", previous.autoSaveEnabled, current.autoSaveEnabled);
     boolean(L"After editing stops", previous.autoSaveAfterEdit, current.autoSaveAfterEdit);
     change(L"After edit seconds", std::to_wstring(previous.afterEditSeconds), std::to_wstring(current.afterEditSeconds));
@@ -925,6 +982,7 @@ void editSettings()
         settings.installUpdateNow = false;
         pluginLogger().configure(settings, pluginConfigPath);
         logSettingsChanges(previous, settings);
+        configureCommandMenu();
         if (!settings.save(settingsFile))
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
@@ -1120,8 +1178,7 @@ void configurePluginMenuIcons()
         }
         return nullptr;
     };
-    const int indices[] = {captureIndex, compareIndex, historyIndex, settingsIndex, aboutIndex};
-    const int resources[] = {IDI_CAPTURE, IDI_COMPARE, IDI_NPPHISTORY, IDI_SETTINGS, IDI_ABOUT};
+    const auto& indices = commandMenuIndices;
     int configured = 0;
     bool changed = false;
     for (int index = 0; index < static_cast<int>(std::size(indices)); ++index)
@@ -1132,7 +1189,7 @@ void configurePluginMenuIcons()
         if (!menu)
             continue;
         if (!pluginMenuBitmaps[index])
-            pluginMenuBitmaps[index] = createPluginMenuBitmap(resources[index]);
+            pluginMenuBitmaps[index] = createPluginMenuBitmap(commands[index].icon);
         if (!pluginMenuBitmaps[index])
             continue;
         MENUITEMINFOW current{sizeof(current)};
@@ -1188,17 +1245,10 @@ void syncCommandStates()
 {
     if (!ready || !nppData._nppHandle)
         return;
-    const fs::path path = currentPath();
-    const bool saved = isSavableFile(path);
-    const bool excluded = saved && settings.historyEnabled
-        && settings.isHistoryExcluded(path);
-    const bool captureEnabled = saved && !excluded
-        && settings.shouldCreateRevision(RevisionTrigger::manual);
-    const bool compareEnabled = saved && !excluded && historyPanel.hasRevisions()
-        && (!historyPanel.visible() || historyPanel.hasSelectedRevision());
-    setCommandEnabled(captureIndex, captureEnabled);
-    setCommandEnabled(compareIndex, compareEnabled);
-    setCommandEnabled(historyIndex, true);
+    const bool captureEnabled = actionAvailable(Command::capture);
+    const bool compareEnabled = actionAvailable(Command::compare);
+    for (int row = 0; row < commandCount; ++row)
+        setCommandEnabled(commandMenuIndices[row], actionAvailable(static_cast<Command>(row)));
     configurePluginMenuIcons();
     SetPropW(nppData._nppHandle, L"NppHistoryCaptureCommandEnabled",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(captureEnabled ? 2 : 1)));
@@ -1206,25 +1256,121 @@ void syncCommandStates()
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(compareEnabled ? 2 : 1)));
 }
 
+bool actionAvailable(Command command)
+{
+    const fs::path path = currentPath();
+    return commandAvailable(command, isSavableFile(path), settings.isHistoryExcluded(path),
+        settings.historyEnabled, historyPanel.hasRevisions(), historyPanel.hasSelectedRevision(),
+        historyPanel.visible());
+}
+
+HMENU findCommandMenu(HMENU menu, UINT id)
+{
+    for (int index = 0; index < GetMenuItemCount(menu); ++index)
+    {
+        if (GetMenuItemID(menu, index) == id) return menu;
+        if (const HMENU child = GetSubMenu(menu, index))
+            if (const HMENU result = findCommandMenu(child, id)) return result;
+    }
+    return nullptr;
+}
+
+void configureCommandMenu()
+{
+    pluginCommandMenu = findCommandMenu(GetMenu(nppData._nppHandle), menuItems[captureIndex]._cmdID);
+    if (!pluginCommandMenu) return;
+    // Reorder native items without changing exported indices/IDs or the shortcut
+    // strings maintained by Notepad++ (including Shortcut Mapper changes).
+    std::array<MENUITEMINFOW, commandCount> items{};
+    std::array<std::array<wchar_t, 256>, commandCount> labels{};
+    for (int row = 0; row < commandCount; ++row)
+    {
+        auto& item = items[row];
+        item.cbSize = sizeof(item);
+        item.fMask = MIIM_ID | MIIM_STRING | MIIM_STATE | MIIM_FTYPE | MIIM_BITMAP | MIIM_DATA;
+        item.dwTypeData = labels[row].data();
+        item.cch = static_cast<UINT>(labels[row].size());
+        if (!GetMenuItemInfoW(pluginCommandMenu, menuItems[commandMenuIndices[row]]._cmdID, FALSE, &item))
+            return;
+    }
+    for (int row = 0; row < commandCount; ++row)
+        RemoveMenu(pluginCommandMenu, items[row].wID, MF_BYCOMMAND);
+    int position = 0;
+    for (const Command command : commandOrder)
+        InsertMenuItemW(pluginCommandMenu, position++, TRUE, &items[static_cast<int>(command)]);
+}
+
+void appendDocumentContextMenu(HMENU menu)
+{
+    if (!menu || !pluginCommandMenu) return;
+    // The host may reuse its popup. Remove only entries tagged by this plugin.
+    for (int index = GetMenuItemCount(menu) - 1; index >= 0; --index)
+    {
+        MENUITEMINFOW item{sizeof(item)};
+        item.fMask = MIIM_DATA | MIIM_SUBMENU;
+        if (GetMenuItemInfoW(menu, index, TRUE, &item) && item.dwItemData == contextMenuMarker)
+        {
+            RemoveMenu(menu, index, MF_BYPOSITION);
+            if (item.hSubMenu) DestroyMenu(item.hSubMenu);
+        }
+    }
+    bool any = false;
+    for (const Command command : commandOrder)
+        any = any || settings.commandVisible(command, CommandSurface::context);
+    if (!any) return;
+    syncCommandStates();
+    const HMENU target = settings.contextSubmenu ? CreatePopupMenu() : menu;
+    if (!target) return;
+    const auto separator = [&]() {
+        MENUITEMINFOW item{sizeof(item)};
+        item.fMask = MIIM_FTYPE | MIIM_DATA;
+        item.fType = MFT_SEPARATOR;
+        item.dwItemData = contextMenuMarker;
+        InsertMenuItemW(menu, GetMenuItemCount(menu), TRUE, &item);
+    };
+    if (!settings.contextSubmenu) separator();
+    for (const Command command : commandOrder)
+    {
+        if (!settings.commandVisible(command, CommandSurface::context)) continue;
+        const int row = static_cast<int>(command);
+        wchar_t label[256]{};
+        MENUITEMINFOW item{sizeof(item)};
+        item.fMask = MIIM_ID | MIIM_STRING | MIIM_STATE | MIIM_BITMAP | MIIM_DATA;
+        item.dwTypeData = label;
+        item.cch = static_cast<UINT>(std::size(label));
+        if (!GetMenuItemInfoW(pluginCommandMenu, menuItems[commandMenuIndices[row]]._cmdID, FALSE, &item))
+            continue;
+        item.dwItemData = contextMenuMarker;
+        InsertMenuItemW(target, GetMenuItemCount(target), TRUE, &item);
+    }
+    if (settings.contextSubmenu)
+    {
+        MENUITEMINFOW item{sizeof(item)};
+        item.fMask = MIIM_SUBMENU | MIIM_STRING | MIIM_DATA;
+        item.hSubMenu = target;
+        item.dwTypeData = const_cast<wchar_t*>(pluginName);
+        item.dwItemData = contextMenuMarker;
+        if (!InsertMenuItemW(menu, GetMenuItemCount(menu), TRUE, &item)) DestroyMenu(target);
+    }
+    else separator();
+}
+
 void registerConfiguredToolbarButtons()
 {
     ensureConfigurationLoaded();
-    const bool enabled[] = {settings.toolbarCapture, settings.toolbarCompare,
-        settings.toolbarHistory};
-    const int commands[] = {captureIndex, compareIndex, historyIndex};
-    const int resources[] = {IDI_CAPTURE, IDI_COMPARE, IDI_NPPHISTORY};
     int registered = 0;
-    for (int index = 0; index < 3; ++index)
+    for (const Command command : commandOrder)
     {
-        if (!enabled[index])
+        const int index = static_cast<int>(command);
+        if (!settings.commandVisible(static_cast<Command>(index), CommandSurface::toolbar))
             continue;
         toolbarAssets[index].icon = static_cast<HICON>(LoadImageW(moduleInstance,
-            MAKEINTRESOURCEW(resources[index]), IMAGE_ICON, 16, 16, LR_SHARED));
+            MAKEINTRESOURCEW(commands[index].icon), IMAGE_ICON, 16, 16, LR_SHARED));
         toolbarAssets[index].bitmap = createToolbarBitmap(toolbarAssets[index].icon);
         toolbarIconsWithDarkMode icons{toolbarAssets[index].bitmap,
             toolbarAssets[index].icon, toolbarAssets[index].icon};
         if (SendMessageW(nppData._nppHandle, NPPM_ADDTOOLBARICON_FORDARKMODE,
-            menuItems[commands[index]]._cmdID, reinterpret_cast<LPARAM>(&icons)) != FALSE)
+            menuItems[commandMenuIndices[index]]._cmdID, reinterpret_cast<LPARAM>(&icons)) != FALSE)
             ++registered;
     }
     SetPropW(nppData._nppHandle, L"NppHistoryToolbarButtonsRegistered",
@@ -1271,8 +1417,8 @@ void initialise()
     historyStore.setCatalog(&historyCatalog);
     reconcileFile(currentBuffer(), currentPath());
 
-    settings.hotkeyCommandIds = {menuItems[captureIndex]._cmdID,
-        menuItems[compareIndex]._cmdID, menuItems[historyIndex]._cmdID};
+    for (int row = 0; row < commandCount; ++row)
+        settings.hotkeyCommandIds[row] = menuItems[commandMenuIndices[row]]._cmdID;
     historyPanel.create(moduleInstance, nppData, historyStore, settings,
         menuItems[historyIndex]._cmdID, captureNow, editSettings, showAbout,
         syncCommandStates, prepareRestoreSave, cancelRestoreSave);
@@ -1288,6 +1434,7 @@ void initialise()
     nextUpdateStatusRefreshTick = now;
     SetWindowSubclass(nppData._nppHandle, mainWindowSubclass, 1, 0);
     ready = true;
+    configureCommandMenu();
     refreshDocumentTabIndicators();
     configurePluginMenuIcons();
     syncCommandStates();
@@ -1316,20 +1463,19 @@ extern "C" __declspec(dllexport) void setInfo(NppData data)
         target._isShift = source.shift;
         target._key = static_cast<UCHAR>(source.key);
     };
-    shortcut(commandShortcuts[0], settings.hotkeyCapture);
-    shortcut(commandShortcuts[1], settings.hotkeyCompare);
-    shortcut(commandShortcuts[2], settings.hotkeyHistory);
     setMenuItem(captureIndex, L"Capture", captureNow);
     setMenuItem(compareIndex, L"Compare", compareCurrent);
     setMenuItem(historyIndex, L"History", showHistory);
     setMenuItem(settingsIndex, L"Settings", editSettings);
     setMenuItem(aboutIndex, L"About", showAbout);
-    menuItems[captureIndex]._pShKey = settings.hotkeyCapture.enabled
-        ? &commandShortcuts[0] : nullptr;
-    menuItems[compareIndex]._pShKey = settings.hotkeyCompare.enabled
-        ? &commandShortcuts[1] : nullptr;
-    menuItems[historyIndex]._pShKey = settings.hotkeyHistory.enabled
-        ? &commandShortcuts[2] : nullptr;
+    setMenuItem(restoreIndex, L"Restore", restoreCurrent);
+    setMenuItem(refreshIndex, L"Refresh", refreshCurrent);
+    for (int row = 0; row < commandCount; ++row)
+    {
+        const auto& key = settings.commandHotkey(static_cast<Command>(row));
+        shortcut(commandShortcuts[row], key);
+        menuItems[commandMenuIndices[row]]._pShKey = key.enabled ? &commandShortcuts[row] : nullptr;
+    }
 }
 
 extern "C" __declspec(dllexport) const wchar_t* getName() { return pluginName; }

@@ -92,6 +92,11 @@ try {
         throw 'Live Notepad++ verification failed.'
     }
 
+    $commandResult = & '.\tests\commands_smoke.ps1'
+    $commandResult | ConvertTo-Json -Depth 5 |
+        Set-Content -LiteralPath (Join-Path $outputRoot 'commands-tests.json') -Encoding utf8
+    if (-not $commandResult.Passed) { throw 'Command placement/menu verification failed.' }
+
     $tabResults = @(
         & '.\tests\tab_indicators_smoke.ps1'
         & '.\tests\tab_indicators_smoke.ps1' -LargeTabs
@@ -119,6 +124,8 @@ try {
         Passed = $true
         CoreChecks = $coreChecks
         CoreFailures = $coreFailures
+        CommandMenuChecks = $commandResult.Checks
+        CommandMenusPassed = $commandResult.Passed
         DocumentTabLayoutConfigurations = $tabResults.Count
         CompactIndicatorSpacing = @($tabResults | Where-Object { -not $_.CompactSpacing }).Count -eq 0
         DocumentTabReservedSpace = $runtimeObject.DocumentTabReservedSpacePassed

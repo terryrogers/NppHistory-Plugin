@@ -4,6 +4,7 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 
 ## Highlights
 
+- Adds **Commands & Hotkeys** for Capture, Compare, Restore, History, Refresh, Settings and About. Configure pane, toolbar and document right-click placements independently, use inline or submenu context commands, and assign shortcuts to all seven actions. Plugins menu access remains permanent.
 - Tightens exclusion-icon spacing by reusing Notepad++'s measured native trailing space rather than reserving the pin/close area twice, while retaining horizontal and vertical support.
 - Adds verified download, restart, plugin replacement and Notepad++ relaunch for future NppHistory updates.
 - Offers **Download, restart and install**, **View release** and **Later** when an automatic or manual check finds a compatible newer release.

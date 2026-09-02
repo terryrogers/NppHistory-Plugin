@@ -1,5 +1,7 @@
 # NppHistory 0.2.0 beta 25 release-candidate verification
 
+For the subsequent seven-command settings/context-menu changes, see [Commands verification](TEST_REPORT-COMMANDS.md). The hashes and run evidence below identify the earlier compact-tab-spacing candidate, not that newer build.
+
 ## Scope and release boundary
 
 This report covers the beta 25 candidate at numeric plugin version `0.2.0.25` and semantic prerelease version `0.2.0-beta.25`. It validates the candidate source and locally built x64 binaries. It does not claim that beta 25 has been published, manually accepted, installed over beta 24, or validated through a real beta-25-to-beta-26 automatic update.
