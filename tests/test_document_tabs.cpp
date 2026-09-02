@@ -69,8 +69,18 @@ void runDocumentTabTests(TestContext& context)
     DocumentTabDecorationMetrics metrics;
     context.expect(documentTabDecorationMetrics(tabs, 2, metrics)
         && metrics.vertical == vertical
-        && metrics.iconsLeft > metrics.textRight && metrics.iconsRight < metrics.buttonsLeft,
+        && metrics.iconsLeft > metrics.textRight && metrics.iconsRight <= metrics.nativeTrailingStart,
         "icons have separate space after filename and before native buttons");
+    for (int index : {1, 2})
+    {
+        context.expect(documentTabDecorationMetrics(tabs, index, metrics)
+            && metrics.nativeTrailingStart - metrics.iconsRight >= 0
+            && metrics.nativeTrailingStart - metrics.iconsRight < metrics.spacerUnit,
+            "one and two icons preserve native trailing space with less than one spacer of extra gap");
+        context.expect(metrics.reservedWidth >= metrics.iconsRight - metrics.textRight
+            && metrics.reservedWidth < metrics.iconsRight - metrics.textRight + metrics.spacerUnit,
+            "tab growth is bounded by actual indicator span, not a redundant button allowance");
+    }
     for (int i = 0; i < 20; ++i)
         updateDocumentTabDecorations(tabs, {{101, 0}, {102, 1}, {103, 3}}, nullptr);
     context.expect(width(tabs, 1) == one && width(tabs, 2) == two,
@@ -80,7 +90,7 @@ void runDocumentTabTests(TestContext& context)
     pump();
     context.expect(documentTabDecorationMetrics(tabs, 2, metrics)
         && metrics.vertical != vertical && metrics.iconsLeft > metrics.textRight
-        && metrics.iconsRight < metrics.buttonsLeft && text(tabs, 2) == L"A && B.txt",
+        && metrics.iconsRight <= metrics.nativeTrailingStart && text(tabs, 2) == L"A && B.txt",
         "changing orientation recomputes icon geometry and preserves canonical captions");
     SetWindowLongPtrW(tabs, GWL_STYLE, originalStyle);
     pump();

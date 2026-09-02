@@ -19,7 +19,10 @@ struct DocumentTabDecorationMetrics
     int textRight = 0;
     int iconsLeft = 0;
     int iconsRight = 0;
-    int buttonsLeft = 0;
+    // Start of the original native trailing area (including its own button gap).
+    int nativeTrailingStart = 0;
+    int nativeTrailingSpace = 0;
+    int spacerUnit = 0;
     unsigned mask = 0;
 };
 bool documentTabDecorationMetrics(HWND tabs, int index, DocumentTabDecorationMetrics& metrics);

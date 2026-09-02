@@ -112,8 +112,6 @@ void layout(TabState& state)
     const int gap = scaled(tabs, 6);
     const int iconSize = scaled(tabs, 16);
     const int stride = iconSize + scaled(tabs, 4);
-    // Includes both native buttons and the light/dark theme edge and inter-button gaps.
-    const int buttonReserve = scaled(tabs, 48);
     const auto style = GetWindowLongPtrW(tabs, GWL_STYLE);
     const bool vertical = (style & TCS_VERTICAL) != 0;
     const bool supported = (style & TCS_FIXEDWIDTH) == 0;
@@ -167,16 +165,22 @@ void layout(TabState& state)
         entry.metrics.textRight = imageInset + ordinarySpace.cx + textSize.cx;
         entry.metrics.iconsLeft = entry.metrics.textRight + gap;
         entry.metrics.iconsRight = entry.metrics.iconsLeft + icons * stride - scaled(tabs, 4);
-        const int required = entry.metrics.iconsRight + gap + buttonReserve;
-        const int extra = (std::max)(icons * stride, required - entry.metrics.originalWidth);
+        // Notepad++ exposes the item rectangle, not individual pin/close rectangles.
+        // Preserve the *measured* native trailing area, including its existing gap,
+        // instead of reserving another fixed allowance for buttons already accounted for.
+        entry.metrics.nativeTrailingSpace = entry.metrics.originalWidth - entry.metrics.textRight;
+        entry.metrics.spacerUnit = unit;
+        const int extra = entry.metrics.iconsRight - entry.metrics.textRight;
         entry.nativeCaption = label + std::wstring((extra + unit - 1) / unit, L'\x00A0');
         if (!writeNativeCaption(state, index, entry.nativeCaption)) continue;
         RECT widened{};
         TabCtrl_GetItemRect(tabs, index, &widened);
         entry.metrics.reservedWidth = length(widened, vertical) - entry.metrics.originalWidth;
-        entry.metrics.buttonsLeft = length(widened, vertical) - buttonReserve;
+        entry.metrics.nativeTrailingStart = length(widened, vertical) - entry.metrics.nativeTrailingSpace;
         entry.metrics.mask = mask;
-        if (entry.metrics.iconsRight + gap > entry.metrics.buttonsLeft)
+        if (entry.metrics.nativeTrailingSpace < 0
+            || entry.metrics.iconsRight > entry.metrics.nativeTrailingStart
+            || entry.metrics.nativeTrailingStart - entry.metrics.iconsRight >= unit)
         {
             // Unsupported/clamped native geometry: never fall back to painting over text/buttons.
             writeNativeCaption(state, index, label);

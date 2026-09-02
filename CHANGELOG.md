@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Removed the redundant fixed pin/close allowance from document-tab indicators. Tab growth now preserves the measured native trailing area and adds only the actual indicator span, with less than one spacer character of rounding. Added upper-bound spacing regressions for one/two icons, `NppHistory.log`, and both/pin-only/close-only/no native buttons in both orientations.
 - Replaced the temporary AS/H exclusion badges with the supplied crossed-out Auto Save and Revision History artwork. Each affected tab now reserves its own native length for one or two icons after the filename and before the pin/close buttons, including bottom-to-top vertical tabs. Public captions, buffer identities, tab order and shared native padding are preserved; ordinary tabs retain their original size.
 - Added orientation-change regression tests and eight live tab-layout configurations covering horizontal/vertical, small/large and light/dark combinations. Vertical icons remain upright and stack between the rotated filename and native pin/close buttons.
 - Replaced numeric setting values in Debug change records with readable choices such as `Common folder`, `Debug` and `Daily`, renders booleans as `Enabled`/`Disabled`, identifies empty values as `(not set)`, and reports the number of options changed.

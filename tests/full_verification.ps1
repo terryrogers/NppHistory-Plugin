@@ -101,10 +101,16 @@ try {
         & '.\tests\tab_indicators_smoke.ps1' -Vertical -LargeTabs
         & '.\tests\tab_indicators_smoke.ps1' -Vertical -DarkMode
         & '.\tests\tab_indicators_smoke.ps1' -Vertical -LargeTabs -DarkMode
+        & '.\tests\tab_indicators_smoke.ps1' -NativeButtons Pin
+        & '.\tests\tab_indicators_smoke.ps1' -NativeButtons Close
+        & '.\tests\tab_indicators_smoke.ps1' -NativeButtons None
+        & '.\tests\tab_indicators_smoke.ps1' -Vertical -NativeButtons Pin
+        & '.\tests\tab_indicators_smoke.ps1' -Vertical -NativeButtons Close
+        & '.\tests\tab_indicators_smoke.ps1' -Vertical -NativeButtons None
     )
     $tabResults | ConvertTo-Json -Depth 5 |
         Set-Content -LiteralPath (Join-Path $outputRoot 'tab-layout-tests.json') -Encoding utf8
-    if ($tabResults.Count -ne 8 -or @($tabResults | Where-Object { -not $_.Passed }).Count) {
+    if ($tabResults.Count -ne 14 -or @($tabResults | Where-Object { -not $_.Passed }).Count) {
         throw 'Per-document tab spacing verification failed.'
     }
 
@@ -114,6 +120,7 @@ try {
         CoreChecks = $coreChecks
         CoreFailures = $coreFailures
         DocumentTabLayoutConfigurations = $tabResults.Count
+        CompactIndicatorSpacing = @($tabResults | Where-Object { -not $_.CompactSpacing }).Count -eq 0
         DocumentTabReservedSpace = $runtimeObject.DocumentTabReservedSpacePassed
         RequiredExports = $requiredExports.Count
         LiveNotepadVerification = $runtimeObject.Passed

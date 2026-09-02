@@ -3,7 +3,8 @@ param(
     [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll",
     [switch]$LargeTabs,
     [switch]$DarkMode,
-    [switch]$Vertical
+    [switch]$Vertical,
+    [ValidateSet('Both','Pin','Close','None')][string]$NativeButtons = 'Both'
 )
 $ErrorActionPreference = 'Stop'
 if (!(Test-Path -LiteralPath $NotepadExe)) { $NotepadExe = 'C:\Program Files\Notepad++\notepad++.exe' }
@@ -16,12 +17,21 @@ using System.Text;
 public static class TabProbe {
     public delegate bool EnumProc(IntPtr h, IntPtr p);
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
+    [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr h, EnumProc p, IntPtr v);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc p, IntPtr v);
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
     [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
     [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] static extern IntPtr GetStyle(IntPtr h,int index);
     public static bool IsVertical(IntPtr tabs) { return (GetStyle(tabs,-16).ToInt64() & 0x80)!=0; }
+    public static int[] GrowthBounds(IntPtr tabs,int icons) {
+        int dpi=(int)GetDpiForWindow(tabs); if(dpi==0)dpi=96;
+        Func<int,int> scale=x=>(x*dpi+48)/96;
+        // Independent visual budget: at most 8 logical pixels of text-sizing rounding.
+        // The in-process core test also enforces the tighter actual-font spacer bound.
+        int minimum=scale(6)+icons*scale(16)+(icons-1)*scale(4);
+        return new[]{minimum,minimum+scale(8)};
+    }
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h,StringBuilder s,int n);
     [DllImport("user32.dll",EntryPoint="SendMessageW")] public static extern IntPtr Send(IntPtr h,uint m,IntPtr w,IntPtr l);
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h,out Rect r);
@@ -73,7 +83,7 @@ public static class TabProbe {
 '@
 }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ('..\build\tab-layout-' + [guid]::NewGuid().ToString('N'))))
-$names = @('ordinary.md', 'sample.log', 'sample.tmp', 'sample.txt')
+$names = @('ordinary.md', 'sample.log', 'NppHistory.log', 'sample.txt')
 $results = @{}
 foreach ($mode in @('baseline','excluded')) {
     $folder = Join-Path $root $mode
@@ -90,7 +100,9 @@ foreach ($mode in @('baseline','excluded')) {
     [xml]$config = [IO.File]::ReadAllText($configPath)
     $tabConfig = $config.SelectSingleNode('//GUIConfig[@name="TabBar"]')
     if ($tabConfig) {
-        $tabConfig.SetAttribute('closeButton','yes'); $tabConfig.SetAttribute('pinButton','yes')
+        $tabConfig.SetAttribute('closeButton',$(if($NativeButtons -in @('Both','Close')){'yes'}else{'no'}))
+        $tabConfig.SetAttribute('pinButton',$(if($NativeButtons -in @('Both','Pin')){'yes'}else{'no'}))
+        $tabConfig.SetAttribute('buttonsOninactiveTabs','yes'); $tabConfig.SetAttribute('showOnlyPinnedButton','no')
         $tabConfig.SetAttribute('vertical',$(if($Vertical){'yes'}else{'no'})); $tabConfig.SetAttribute('multiLine','no')
         $tabConfig.SetAttribute('reduce',$(if($LargeTabs){'no'}else{'yes'}))
         $darkConfig = $config.SelectSingleNode('//GUIConfig[@name="DarkMode"]')
@@ -109,8 +121,8 @@ AutoSaveOnExit=0
 HistoryEnabled=$enabled
 HistoryBeforeSave=0
 HistoryAfterSave=0
-AutoSaveExclusions=*.log|*.txt
-HistoryExclusions=*.tmp|*.txt
+AutoSaveExclusions=sample.log|*.txt
+HistoryExclusions=NppHistory.log|*.txt
 AutoUpdateEnabled=0
 LoggingEnabled=0
 "@)
@@ -133,6 +145,8 @@ LoggingEnabled=0
         $expectedReserved = if($mode -eq 'excluded'){3}else{0}
         if([TabProbe]::GetProp($main,'NppHistoryReservedDocumentTabCount').ToInt64() -ne $expectedReserved){throw 'Reserved indicator geometry does not match excluded tabs'}
         $before = [TabProbe]::Items($process.Id,$tabs)
+        $oneIconBounds = [TabProbe]::GrowthBounds($tabs,1)
+        $twoIconBounds = [TabProbe]::GrowthBounds($tabs,2)
         for($cycle=0;$cycle -lt 4;$cycle++) { for($i=0;$i -lt 4;$i++) {
             [void][TabProbe]::Send($main,0x804,[IntPtr]::Zero,[IntPtr]$i)
         }}
@@ -163,5 +177,9 @@ $deltas = for($i=0;$i -lt 4;$i++) {
     [pscustomobject]@{Name=$names[$i];Baseline=$results.baseline[$i].Width;Excluded=$results.excluded[$i].Width;Extra=$results.excluded[$i].Width-$results.baseline[$i].Width}
 }
 $passed = $deltas[0].Extra -eq 0 -and $deltas[1].Extra -gt 0 -and $deltas[2].Extra -gt 0 -and $deltas[3].Extra -gt [Math]::Max($deltas[1].Extra,$deltas[2].Extra)
-[pscustomobject]@{Passed=$passed;Tabs=$deltas;EvidenceDirectory=$root;StableRefreshAndNewDocument=$true;LargeTabs=[bool]$LargeTabs;DarkMode=[bool]$DarkMode;Vertical=[bool]$Vertical}
+$compact = $deltas[1].Extra -ge $oneIconBounds[0] -and $deltas[1].Extra -le $oneIconBounds[1] -and
+    $deltas[2].Extra -ge $oneIconBounds[0] -and $deltas[2].Extra -le $oneIconBounds[1] -and
+    $deltas[3].Extra -ge $twoIconBounds[0] -and $deltas[3].Extra -le $twoIconBounds[1]
+$passed = $passed -and $compact
+[pscustomobject]@{Passed=$passed;Tabs=$deltas;CompactSpacing=$compact;OneIconGrowthBounds=$oneIconBounds;TwoIconGrowthBounds=$twoIconBounds;EvidenceDirectory=$root;StableRefreshAndNewDocument=$true;LargeTabs=[bool]$LargeTabs;DarkMode=[bool]$DarkMode;Vertical=[bool]$Vertical;NativeButtons=$NativeButtons}
 if(!$passed){throw 'Per-tab indicator width test failed'}

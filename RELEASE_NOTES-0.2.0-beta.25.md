@@ -4,6 +4,7 @@ This is a controlled prerelease candidate for 64-bit Notepad++ on Windows. It is
 
 ## Highlights
 
+- Tightens exclusion-icon spacing by reusing Notepad++'s measured native trailing space rather than reserving the pin/close area twice, while retaining horizontal and vertical support.
 - Adds verified download, restart, plugin replacement and Notepad++ relaunch for future NppHistory updates.
 - Offers **Download, restart and install**, **View release** and **Later** when an automatic or manual check finds a compatible newer release.
 - Keeps update checks active during long-running Notepad++ sessions, including scheduled checks after Windows resumes from sleep.

@@ -231,11 +231,11 @@ This inventory covers the project-defined functions in `src`. “Indirect” mea
 
 | Function | Evidence | Status |
 |---|---|---|
-| `updateDocumentTabDecorations` / `layout` | Native-control tests in both orientations and real Notepad++ baseline/excluded comparisons: normal length unchanged, one/two icons expand individually, repeated activation stable | PASS |
+| `updateDocumentTabDecorations` / `layout` | Native-control tests in both orientations; one/two-icon growth bounded by actual span plus less than one spacer of rounding; native trailing area preserved without a second button allowance; live `NppHistory.log` regression | PASS |
 | `identity` / `caption` / `writeNativeCaption` / `subclass` | Native-control checks preserve canonical text and buffer identity through rename/reorder; live New/Close preserves existing names, identities, widths and order | PASS |
 | `displayCaption` / `scaled` / `length` / `thickness` | Ampersand-label native tests, both axes and orientation round trips; real small/large tabs; multiple-monitor DPI transitions remain manual UAT | PARTIAL |
 | `queueLayout` | Native rename/reorder message pumping; live startup and repeated document activation | PASS |
-| `paint` | Eight real horizontal/vertical, light/dark, small/large configurations; screenshot inspection for filename/icon/pin/close separation; stale-axis painting suppressed during orientation change | PASS for tested configurations |
+| `paint` | Fourteen real configurations: eight horizontal/vertical, light/dark, small/large combinations plus both orientations with pin-only/close-only/no native buttons; screenshot inspection for separation and compactness; stale-axis painting suppressed during orientation change | PASS for tested configurations |
 | `documentTabDecorationMetrics` | Native geometry assertions and live reserved-space guard | PASS |
 | `removeDocumentTabDecorations` | Native detach restores original widths/text; isolated Notepad++ shutdown | PASS |
 

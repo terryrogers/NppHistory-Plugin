@@ -221,7 +221,7 @@ void refreshDocumentTabIndicators()
             DocumentTabDecorationMetrics metrics;
             if (documentTabDecorationMetrics(tabs, index, metrics)
                 && metrics.reservedWidth > 0 && metrics.iconsLeft > metrics.textRight
-                && metrics.iconsRight < metrics.buttonsLeft)
+                && metrics.iconsRight <= metrics.nativeTrailingStart)
                 ++reservedTabCount;
         }
     }
