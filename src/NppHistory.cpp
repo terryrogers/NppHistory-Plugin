@@ -1328,21 +1328,17 @@ void setToolbarCommandEnabled(int commandId, bool enabled)
         if (wcscmp(className, TOOLBARCLASSNAMEW) != 0)
             return TRUE;
         const auto* state = reinterpret_cast<const std::pair<int, bool>*>(value);
-        if (SendMessageW(window, TB_COMMANDTOINDEX, state->first, 0) >= 0)
+        if (static_cast<int>(SendMessageW(window, TB_COMMANDTOINDEX, state->first, 0)) >= 0)
         {
-            SendMessageW(window, TB_ENABLEBUTTON, state->first,
-                MAKELPARAM(state->second ? TRUE : FALSE, 0));
-            LRESULT buttonState = SendMessageW(window, TB_GETSTATE, state->first, 0);
-            if (buttonState >= 0)
+            const int buttonState = static_cast<int>(SendMessageW(window, TB_GETSTATE, state->first, 0));
+            if (buttonState >= 0 && ((buttonState & TBSTATE_ENABLED) != 0) != state->second)
             {
-                if (state->second)
-                    buttonState |= TBSTATE_ENABLED;
-                else
-                    buttonState &= ~TBSTATE_ENABLED;
-                SendMessageW(window, TB_SETSTATE, state->first,
-                    MAKELPARAM(buttonState, 0));
+                // TB_ENABLEBUTTON preserves all unrelated state bits and repaints
+                // the changed button. Do not erase a transparent host toolbar on
+                // every one-second state poll, especially while it is painting.
+                SendMessageW(window, TB_ENABLEBUTTON, state->first,
+                    MAKELPARAM(state->second ? TRUE : FALSE, 0));
             }
-            InvalidateRect(window, nullptr, FALSE);
         }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&state));
@@ -1574,7 +1570,7 @@ void appendCommandContextMenu(HMENU menu, CommandSurface surface)
 void syncToolbarVisibility()
 {
     if (!nppData._nppHandle) return;
-    struct Result { bool changed = false; int visible = 0; } result;
+    struct Result { int visible = 0; } result;
     EnumChildWindows(nppData._nppHandle, [](HWND toolbar, LPARAM parameter) -> BOOL {
         wchar_t name[64]{};
         GetClassNameW(toolbar, name, 64);
@@ -1584,8 +1580,9 @@ void syncToolbarVisibility()
         for (int row = 0; row < commandCount; ++row)
         {
             const int id = menuItems[commandMenuIndices[row]]._cmdID;
-            const LRESULT state = SendMessageW(toolbar, TB_GETSTATE, id, 0);
-            if (!id || state < 0) continue;
+            if (id <= 0 || static_cast<int>(SendMessageW(toolbar, TB_COMMANDTOINDEX, id, 0)) < 0) continue;
+            const int state = static_cast<int>(SendMessageW(toolbar, TB_GETSTATE, id, 0));
+            if (state < 0) continue;
             const bool visible = settings.commandVisible(static_cast<Command>(row), CommandSurface::toolbar);
             if (((state & TBSTATE_HIDDEN) == 0) != visible)
                 changed = (SendMessageW(toolbar, TB_HIDEBUTTON, id, MAKELPARAM(!visible, 0)) != FALSE) || changed;
@@ -1593,18 +1590,16 @@ void syncToolbarVisibility()
         }
         if (changed)
         {
-            SendMessageW(toolbar, TB_AUTOSIZE, 0, 0);
-            InvalidateRect(toolbar, nullptr, TRUE);
-            result.changed = true;
+            // Notepad++ owns the rebar band and its child bounds. Hiding an item
+            // already rearranges toolbar buttons; TB_AUTOSIZE plus a synthetic
+            // main-window WM_SIZE interferes with native rebar layout. Repaint
+            // the background owner together with its transparent toolbar instead.
+            const HWND parent = GetParent(toolbar);
+            RedrawWindow(parent ? parent : toolbar, nullptr, nullptr,
+                RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
         }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&result));
-    if (result.changed)
-    {
-        RECT area{};
-        GetClientRect(nppData._nppHandle, &area);
-        SendMessageW(nppData._nppHandle, WM_SIZE, SIZE_RESTORED, MAKELPARAM(area.right, area.bottom));
-    }
     SetPropW(nppData._nppHandle, L"NppHistoryToolbarButtonsVisible",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(result.visible + 1)));
 }

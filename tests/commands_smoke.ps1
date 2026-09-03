@@ -1,4 +1,4 @@
-param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe')
+param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe', [switch]$LayoutOnly)
 $ErrorActionPreference = 'Stop'
 # Reuse the established read-only Win32 test helpers without running that workflow.
 if (-not ('NppHistoryNative' -as [type])) {
@@ -14,6 +14,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class CommandProbe {
+    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window,int x,int y,int width,int height,bool repaint);
     [StructLayout(LayoutKind.Sequential)] struct MENUITEMINFO {
         public uint cbSize,fMask,fType,fState,wID;
         public IntPtr hSubMenu,hbmpChecked,hbmpUnchecked,dwItemData,dwTypeData;
@@ -138,6 +139,8 @@ try {
     Assert (@($entries | Where-Object {$_.Text.Contains("`t")}).Count -eq 7) 'all seven native shortcuts displayed'
     Assert (([NppHistoryNative]::GetProp($main,'NppHistoryToolbarButtonsRegistered')).ToInt64() -eq 8) 'all seven toolbar commands registered'
     $toolbar=[NppHistoryNative]::FindDescendant($main,'ToolbarWindow32')
+    $initialToolbarRect=[NppHistoryNative+RECT]::new()
+    [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$initialToolbarRect)
     $positions=@($ids | ForEach-Object {[NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$_,[IntPtr]::Zero).ToInt32()})
     Assert (@($positions | Where-Object {$_ -lt 0}).Count -eq 0 -and ($positions -join ',') -eq (($positions | Sort-Object) -join ',')) 'toolbar common order'
     Assert ([NppHistoryNative]::GetProp($main,'NppHistoryLiveHotkeysReady').ToInt64() -eq 2) 'live keyboard handler ready and native duplicates removed'
@@ -147,6 +150,12 @@ try {
     [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x777,[IntPtr]::Zero)
     Click-Control $settings 1
     Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 8) 'OK hides Capture toolbar button immediately'
+    $hiddenToolbarRect=[NppHistoryNative+RECT]::new()
+    [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$hiddenToolbarRect)
+    Snapshot $main 'toolbar-after-hide.png'
+    Assert ($hiddenToolbarRect.Top -eq $initialToolbarRect.Top -and
+        $hiddenToolbarRect.Left -eq $initialToolbarRect.Left -and
+        ($hiddenToolbarRect.Bottom-$hiddenToolbarRect.Top) -eq ($initialToolbarRect.Bottom-$initialToolbarRect.Top)) 'toolbar remains in its native rebar position and height after hiding a plugin button'
     Assert (([CommandProbe]::Entries($menu))[0].Text.EndsWith('Ctrl+Alt+Shift+F8')) 'OK replaces active Capture shortcut suffix'
     $settings=Open-Settings
     Click-Control $settings 1071
@@ -160,6 +169,39 @@ try {
     Click-Control $settings 1
     Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 0) 'OK shows Capture toolbar button without restart'
     Assert (([CommandProbe]::Entries($menu))[0].Text -eq $entries[0].Text) 'OK restores original shortcut without restart'
+    if($LayoutOnly) {
+        [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]$ids[3],[IntPtr]::Zero)
+        $list=[NppHistoryNative]::FindControl($main,1002)
+        $panel=[NppHistoryNative]::GetParent($list)
+        Assert ($panel -ne [IntPtr]::Zero) 'History pane opens in layout test'
+        Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1153))) 'History button stays hidden in its own pane'
+        foreach($width in @(270,145,390,270)) {
+            $r=[NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($panel,[ref]$r)
+            [void][CommandProbe]::MoveWindow($panel,0,0,$width,600,$true)
+            Start-Sleep -Milliseconds 100
+            $rectangles=@(foreach($id in $paneIds){
+                $h=[NppHistoryNative]::FindControl($panel,$id)
+                $b=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($h,[ref]$b)
+                [pscustomobject]@{Id=$id;Left=$b.Left;Top=$b.Top;Right=$b.Right;Bottom=$b.Bottom;Visible=[NppHistoryNative]::IsWindowVisible($h)}
+            })
+            Assert (@($rectangles | Where-Object Visible).Count -eq 6) 'six pane buttons remain visible after wrapping'
+            Assert ((($rectangles | Sort-Object Top,Left).Id -join ',') -eq ($paneIds -join ',')) 'wrapped pane command order preserved'
+            $sizes=@($rectangles | ForEach-Object {"$($_.Right-$_.Left)x$($_.Bottom-$_.Top)"} | Select-Object -Unique)
+            Assert ($sizes.Count -eq 1) 'wrapped buttons have equal widths and heights'
+            $panelBounds=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($panel,[ref]$panelBounds)
+            Assert ((($rectangles | Measure-Object Bottom -Maximum).Maximum) -eq ($panelBounds.Bottom-8)) 'button rows retain the bottom margin'
+            $listBounds=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($list,[ref]$listBounds)
+            Assert ($listBounds.Bottom -le (($rectangles | Measure-Object Top -Minimum).Minimum-5)) 'revision list does not overlap button area'
+            for($a=0;$a -lt $rectangles.Count;$a++) { for($b=$a+1;$b -lt $rectangles.Count;$b++) {
+                $one=$rectangles[$a];$two=$rectangles[$b]
+                Assert (!($one.Left -lt $two.Right -and $one.Right -gt $two.Left -and $one.Top -lt $two.Bottom -and $one.Bottom -gt $two.Top)) 'pane button rectangles do not overlap'
+            }}
+            Snapshot $panel "pane-layout-$width.png"
+        }
+        [pscustomobject]@{Passed=$true;Checks=$script:checks;EvidenceDirectory=$root;Scope='Toolbar geometry and pane layout'}
+        return
+    }
     $context=@(Read-Context $true)
     Assert (($context.Text -join '|') -eq ($entries.Text -join '|')) 'submenu order and shortcuts match Plugins menu'
     Assert (@($context | Where-Object Icon).Count -eq 7) 'all context icons'
@@ -226,7 +268,7 @@ try {
     [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]$again[4].Id,[IntPtr]::Zero)
     Start-Sleep -Milliseconds 250
     $log=Get-Content "$root\plugins\Config\NppHistory\NppHistory.log" -Raw
-    Assert ($log.Contains('[INFO] Refresh')) 'Refresh ID from context popup dispatches and logs correctly'
+    Assert ($log.Contains('[INFO] History for commands.txt Refreshed.')) 'Refresh ID from context popup dispatches and logs correctly'
     [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]41001,[IntPtr]::Zero)
     $context=@(Read-Context $false)
     foreach($i in @(0,1,2,4)) {

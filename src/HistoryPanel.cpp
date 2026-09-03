@@ -1254,6 +1254,10 @@ void HistoryPanel::layout()
         }
         y += buttonHeight + gap;
     }
+    // Moving/hiding child buttons can leave their former pixels in the narrow
+    // gaps, especially with WS_CLIPCHILDREN and owner-drawn hover backgrounds.
+    // Repaint the final parent background and all children as one layout result.
+    RedrawWindow(_dialog, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
 }
 
 void HistoryPanel::updateButtonTooltip()
