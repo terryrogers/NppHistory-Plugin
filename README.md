@@ -2,7 +2,7 @@
 
 NppHistory is an open-source Notepad++ plugin that automatically saves ordinary files and keeps a local, browsable revision history.
 
-Latest local review build (3 September 2026): recovery for a toolbar clipped to four pixels; 1,203 core/native checks and focused recovery/layout runs of 104 and 103 checks pass. Not installed; see [toolbar-height regression report and current DLL hash](TOOLBAR_HEIGHT_REGRESSION-2026-09-03.md). The prior [menu-icon correction](MENU_ICON_REGRESSION-2026-09-03.md) was installed at 14:51 BST and accepted in visual UAT. The [initial build report](BUILD_REVIEW-2026-09-03.md) supersedes older source-only build status in refinement documents.
+Latest local review build (3 September 2026): the failed periodic toolbar-height repair has been removed. Disabled NppHistory toolbar commands are now removed and restored live instead of being left as hidden trailing buttons, preventing Customize Toolbar from collapsing the toolbar to four pixels. The repeatable NppHistory + Customize Toolbar + NppMenuSearch resize regression passes, together with 1,243 core/native checks and 109 focused compatibility checks. This build is not installed; the currently installed recovery build failed UAT. See [toolbar-height regression report](TOOLBAR_HEIGHT_REGRESSION-2026-09-03.md). The prior [menu-icon correction](MENU_ICON_REGRESSION-2026-09-03.md) was accepted in visual UAT.
 
 Follow-up toolbar/pane repaint correction: rebuilt plugin, 1,123 core checks and 95 focused native layout checks pass; isolated renders inspected. Installed and hash-verified on 3 September 2026 with the previous DLL backed up. User-environment visual confirmation remains pending. See [regression report and latest DLL hash](TOOLBAR_PANE_REGRESSION-2026-09-03.md).
 

@@ -27,7 +27,7 @@ Not compiled or executed; historical PASS results do not certify these changes. 
 | Area | Prepared coverage | Status |
 |---|---|---|
 | `LiveHotkeys::apply/event/resetPressed`, `safeCommandHotkey`, `commandHotkeyText` | Seven commands; exact modifiers; old/new/disabled bindings; draft isolation; repeats/releases; focus, Windows key and AltGr exclusions; reserved/typing keys; menu suffixes | Unit cases added, NOT RUN |
-| `syncToolbarVisibility`, `applyLiveCommandSettings` | Same-process hide/show on OK, unchanged on Cancel, registration versus visibility counts | Native smoke cases added, NOT RUN |
+| `syncToolbarVisibility`, `syncToolbarCommands`, `applyLiveCommandSettings` | Disabled commands are physically removed; live reinsertion preserves order/text/images/state; repeated host layouts with Customize Toolbar and NppMenuSearch | PASS: 1,243 core checks; 109 focused compatibility checks |
 | `prepareLiveHotkeys`, `commandKeyboardProc`, dispatch handler | UI-thread-only hook, native-shortcut removal/readback, generation and buffer checks, enabled-state guard, cleanup | Source reviewed; real keyboard UAT pending |
 | `processShortcutMapperChanges` | Deferred import after dialog closes, duplicate/reserved rejection, native duplicate removal and persisted settings | Source reviewed; Shortcut Mapper UAT pending |
 

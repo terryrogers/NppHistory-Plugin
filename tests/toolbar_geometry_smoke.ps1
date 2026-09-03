@@ -1,4 +1,4 @@
-param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe', [switch]$WithInstalledToolbarPlugins)
+param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe', [switch]$WithInstalledToolbarPlugins, [string]$CaseFilter = '', [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll")
 $ErrorActionPreference='Stop'
 $native=[regex]::Match((Get-Content "$PSScriptRoot\runtime_smoke.ps1" -Raw),"(?s)Add-Type @'\r?\n(.*?)\r?\n'@")
 if (-not ('NppHistoryNative' -as [type])) { Add-Type $native.Groups[1].Value }
@@ -8,6 +8,7 @@ $root=[IO.Path]::GetFullPath("$PSScriptRoot\..\build\toolbar-geometry-$([guid]::
 $results=@()
 $cases=@('History-standard','History-small','History-large','History-small2','History-large2')
 if ($WithInstalledToolbarPlugins) { $cases += @('Customize','Search','Customize-Search','History-Customize-Search') }
+if ($CaseFilter) { $cases = @($cases | Where-Object { $_ -eq $CaseFilter }) }
 foreach ($case in $cases) {
     $folder=Join-Path $root $case
     [IO.Directory]::CreateDirectory("$folder\plugins\Config\NppHistory") | Out-Null
@@ -32,7 +33,7 @@ foreach ($case in $cases) {
     [IO.File]::WriteAllText("$folder\toolbar-test.txt",'Disposable toolbar regression file.')
     if ($case.Contains('History')) {
         [IO.Directory]::CreateDirectory("$folder\plugins\NppHistory") | Out-Null
-        Copy-Item -LiteralPath "$PSScriptRoot\..\build\x64\Release\NppHistory.dll" -Destination "$folder\plugins\NppHistory\NppHistory.dll"
+        Copy-Item -LiteralPath $PluginDll -Destination "$folder\plugins\NppHistory\NppHistory.dll"
         [IO.File]::WriteAllText("$folder\plugins\Config\NppHistory\NppHistory.ini","[NppHistory]`r`nAutoSaveEnabled=0`r`nAutoUpdateEnabled=0`r`nLoggingEnabled=0`r`nHistoryBeforeSave=0`r`nHistoryAfterSave=0`r`nToolbarCapture=1`r`nToolbarCompare=1`r`nToolbarRestore=1`r`nToolbarHistory=1`r`nToolbarRefresh=0`r`nToolbarSettings=0`r`nToolbarAbout=0`r`n")
     }
     if ($case.Contains('Customize')) {
@@ -60,13 +61,21 @@ foreach ($case in $cases) {
         [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$r)
         $size=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
         $height=$r.Bottom-$r.Top
+        $minimumHeight=$height
+        # Exercise the host's layout path after startup, not only settled creation.
+        for ($iteration=0; $iteration -lt 8; $iteration++) {
+            [void][NppHistoryNative]::SendMessage($main,5,[IntPtr]::Zero,[IntPtr]::Zero)
+            Start-Sleep -Milliseconds 180
+            [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$r)
+            $minimumHeight=[Math]::Min($minimumHeight,$r.Bottom-$r.Top)
+        }
         $buttonHeight=($size -shr 16) -band 65535
         $styleMatches=$true
         if ($style -in $styles) {
             $styleMatches=[NppHistoryNative]::SendMessage($main,2142,[IntPtr]::Zero,[IntPtr]::Zero).ToInt32() -eq [array]::IndexOf($styles,$style)
         }
         $loaded=@($process.Modules | Where-Object {$_.FileName.StartsWith($folder+'\plugins\')} | ForEach-Object ModuleName)
-        $results += [pscustomobject]@{Case=$case;ToolbarHeight=$height;ButtonHeight=$buttonHeight;Fits=($buttonHeight -ge 16 -and $height -ge $buttonHeight -and $styleMatches);Loaded=$loaded;Evidence=$folder}
+        $results += [pscustomobject]@{Case=$case;ToolbarHeight=$height;MinimumHeight=$minimumHeight;ButtonHeight=$buttonHeight;Fits=($buttonHeight -ge 16 -and $minimumHeight -ge $buttonHeight -and $styleMatches);Loaded=$loaded;Evidence=$folder}
     } finally {
         if (!$process.HasExited) { Stop-Process -Id $process.Id -Force }
     }

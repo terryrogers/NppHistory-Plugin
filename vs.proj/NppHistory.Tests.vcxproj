@@ -37,6 +37,7 @@
     <ClCompile Include="..\src\Settings.cpp" />
     <ClCompile Include="..\src\TextDiff.cpp" />
     <ClCompile Include="..\src\Utilities.cpp" />
+    <ClCompile Include="..\src\ToolbarVisibility.cpp" />
     <ClCompile Include="..\src\UpdateChecker.cpp" />
     <ClCompile Include="..\src\UpdateInstaller.cpp" />
   </ItemGroup>

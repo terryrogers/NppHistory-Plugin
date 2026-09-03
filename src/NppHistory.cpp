@@ -1,4 +1,5 @@
 #include "HistoryPanel.h"
+#include "ToolbarVisibility.h"
 #include "DocumentTabIndicators.h"
 #include "LiveHotkeys.h"
 #include "HistoryCatalog.h"
@@ -147,7 +148,7 @@ bool prepareLiveHotkeys()
     {
         const DWORD threadId = GetWindowThreadProcessId(nppData._nppHandle, nullptr);
         if (threadId) commandKeyboardHook = SetWindowsHookExW(WH_GETMESSAGE, commandKeyboardProc,
-            moduleInstance, threadId); // Never pass zero (that would request a global hook).
+            nullptr, threadId); // Same-process UI thread; a module handle can trigger a needless reload.
     }
     if (!commandKeyboardHook)
     {
@@ -1564,35 +1565,13 @@ void syncToolbarVisibility()
         GetClassNameW(toolbar, name, 64);
         if (wcscmp(name, TOOLBARCLASSNAMEW) != 0) return TRUE;
         auto& result = *reinterpret_cast<Result*>(parameter);
-        bool changed = false;
-        bool containsPluginCommand = false;
+        std::vector<std::pair<int, bool>> placements;
         for (int row = 0; row < commandCount; ++row)
         {
             const int id = menuItems[commandMenuIndices[row]]._cmdID;
-            if (id <= 0 || static_cast<int>(SendMessageW(toolbar, TB_COMMANDTOINDEX, id, 0)) < 0) continue;
-            containsPluginCommand = true;
-            const int state = static_cast<int>(SendMessageW(toolbar, TB_GETSTATE, id, 0));
-            if (state < 0) continue;
-            const bool visible = settings.commandVisible(static_cast<Command>(row), CommandSurface::toolbar);
-            if (((state & TBSTATE_HIDDEN) == 0) != visible)
-                changed = (SendMessageW(toolbar, TB_HIDEBUTTON, id, MAKELPARAM(!visible, 0)) != FALSE) || changed;
-            if (!(SendMessageW(toolbar, TB_GETSTATE, id, 0) & TBSTATE_HIDDEN)) ++result.visible;
+            placements.emplace_back(id, settings.commandVisible(static_cast<Command>(row), CommandSurface::toolbar));
         }
-        if (changed)
-        {
-            // Notepad++ owns the rebar band and its child bounds. Hiding an item
-            // already rearranges toolbar buttons; TB_AUTOSIZE plus a synthetic
-            // main-window WM_SIZE interferes with native rebar layout. Repaint
-            // the background owner together with its transparent toolbar instead.
-            const HWND parent = GetParent(toolbar);
-            RedrawWindow(parent ? parent : toolbar, nullptr, nullptr,
-                RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
-        }
-        if (ready && containsPluginCommand && repairClippedToolbarBand(toolbar))
-        {
-            pluginLogger().write(LogLevel::warning, L"Toolbar layout recovered",
-                L"Reapplied the native rebar band height because the toolbar was shorter than its buttons.");
-        }
+        result.visible += syncToolbarCommands(toolbar, placements);
         return TRUE;
     }, reinterpret_cast<LPARAM>(&result));
     SetPropW(nppData._nppHandle, L"NppHistoryToolbarButtonsVisible",

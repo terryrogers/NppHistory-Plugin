@@ -1,4 +1,4 @@
-param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe', [switch]$LayoutOnly, [switch]$MixedToolbar, [switch]$MonitorTransitions, [switch]$InjectCollapsedToolbar, [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll")
+param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe', [switch]$LayoutOnly, [switch]$MixedToolbar, [switch]$MonitorTransitions, [switch]$WithInstalledToolbarPlugins, [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll")
 $ErrorActionPreference = 'Stop'
 # Reuse the established read-only Win32 test helpers without running that workflow.
 if (-not ('NppHistoryNative' -as [type])) {
@@ -69,6 +69,16 @@ Copy-Item -Path "$(Split-Path $NotepadExe)\*.xml" -Destination $root
 [IO.Directory]::CreateDirectory("$root\plugins\NppHistory") | Out-Null
 [IO.Directory]::CreateDirectory("$root\plugins\Config\NppHistory") | Out-Null
 Copy-Item -LiteralPath $PluginDll -Destination "$root\plugins\NppHistory\NppHistory.dll"
+if ($WithInstalledToolbarPlugins) {
+    $hostRoot=Split-Path $NotepadExe
+    foreach ($plugin in @('_CustomizeToolbar','NppMenuSearch')) {
+        [IO.Directory]::CreateDirectory("$root\plugins\$plugin") | Out-Null
+        Copy-Item -LiteralPath "$hostRoot\plugins\$plugin\$plugin.dll" -Destination "$root\plugins\$plugin\$plugin.dll"
+    }
+    foreach ($config in @('CustomizeToolbar.dat','NppMenuSearch.xml')) {
+        Copy-Item -LiteralPath "$hostRoot\plugins\Config\$config" -Destination "$root\plugins\Config\$config"
+    }
+}
 $names = @('Capture','Compare','Restore','History','Refresh','Settings','About')
 $paneIds = @(1006,1004,1005,1003,1007,1008)
 $ini = "[NppHistory]`r`nAutoSaveEnabled=0`r`nAutoUpdateEnabled=0`r`nHistoryBeforeSave=0`r`nHistoryAfterSave=0`r`nLoggingEnabled=1`r`nLogLevel=3`r`n"
@@ -132,7 +142,8 @@ $process=Start-Process -FilePath "$root\notepad++.exe" -ArgumentList @('-multiIn
 try {
     $main=[IntPtr]::Zero
     for($i=0;$i -lt 80;$i++){$main=[NppHistoryNative]::FindMainWindow([uint32]$process.Id);if($main -ne [IntPtr]::Zero -and [CommandProbe]::PluginMenu($main) -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 100}
-    Start-Sleep -Milliseconds 750
+    # Customize Toolbar can finish its icon-size rebuild after NPPN_READY.
+    Start-Sleep -Milliseconds $(if ($WithInstalledToolbarPlugins) {2600} else {1250})
     $editor=[NppHistoryNative]::FindScintillaWithContent($main)
     $menu=[CommandProbe]::PluginMenu($main);$entries=@([CommandProbe]::Entries($menu));$ids=@($entries | ForEach-Object {[int]$_.Id})
     $actualOrder=($entries.Text | ForEach-Object {($_ -split "`t")[0]}) -join '|'
@@ -164,34 +175,24 @@ try {
     $toolbarHeight=$initialToolbarRect.Bottom-$initialToolbarRect.Top
     Snapshot $main 'toolbar-startup.png'
     Assert ($buttonHeight -ge 16 -and $toolbarHeight -ge $buttonHeight) "startup toolbar must fit its icons/buttons (toolbar=$toolbarHeight, button=$buttonHeight)"
-    if ($InjectCollapsedToolbar) {
-        $nativeState=[NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]41001,[IntPtr]::Zero)
-        $images=[NppHistoryNative]::SendMessage($toolbar,0x431,[IntPtr]::Zero,[IntPtr]::Zero)
-        $point=[CommandProbe+Point]::new();$point.X=$initialToolbarRect.Left;$point.Y=$initialToolbarRect.Top
-        [void][CommandProbe]::ScreenToClient([NppHistoryNative]::GetParent($toolbar),[ref]$point)
-        [void][CommandProbe]::MoveWindow($toolbar,$point.X,$point.Y,($initialToolbarRect.Right-$initialToolbarRect.Left),4,$false)
-        $clipped=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$clipped)
-        Assert (($clipped.Bottom-$clipped.Top) -eq 4) 'fault injection recreates four-pixel child toolbar in isolated process'
-        Start-Sleep -Milliseconds 1600
-        $recovered=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$recovered)
-        Snapshot $main 'toolbar-recovered.png'
-        Assert (($recovered.Bottom-$recovered.Top) -ge $buttonHeight) 'plugin timer repairs clipped toolbar without restarting Notepad++'
-        Assert ([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]41001,[IntPtr]::Zero) -eq $nativeState) 'recovery preserves native New button state'
-        Assert ([NppHistoryNative]::SendMessage($toolbar,0x431,[IntPtr]::Zero,[IntPtr]::Zero) -eq $images) 'recovery preserves host image list'
-        $logFile="$root\plugins\Config\NppHistory\NppHistory.log"
-        Assert ((Get-Content -LiteralPath $logFile -Raw).Contains('[WARNING] Toolbar layout recovered')) 'actual recovery emits a descriptive warning'
-        Start-Sleep -Milliseconds 1100
-        Assert (@(Select-String -LiteralPath $logFile -SimpleMatch '[WARNING] Toolbar layout recovered').Count -eq 1) 'healthy polls do not repeat repairs or warning logs'
+    for ($repeat=0;$repeat -lt 12;$repeat++) {
+        [void][NppHistoryNative]::SendMessage($main,5,[IntPtr]::Zero,[IntPtr]::Zero)
+        Start-Sleep -Milliseconds 180
+        $settled=[NppHistoryNative+RECT]::new()
+        [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$settled)
+        Assert (($settled.Bottom-$settled.Top) -ge $buttonHeight) 'toolbar remains stable during repeated host layouts and timer polls'
     }
     $positions=@($ids | ForEach-Object {[NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$_,[IntPtr]::Zero).ToInt32()})
-    Assert (@($positions | Where-Object {$_ -lt 0}).Count -eq 0 -and ($positions -join ',') -eq (($positions | Sort-Object) -join ',')) 'toolbar common order'
+    $presentPositions=@($positions | Where-Object {$_ -ge 0})
+    $expectedToolbarCount=$(if ($MixedToolbar) {4} else {7})
+    Assert ($presentPositions.Count -eq $expectedToolbarCount -and ($WithInstalledToolbarPlugins -or ($presentPositions -join ',') -eq (($presentPositions | Sort-Object) -join ','))) 'configured toolbar commands remain present and retain native/customized order'
     Assert ([NppHistoryNative]::GetProp($main,'NppHistoryLiveHotkeysReady').ToInt64() -eq 2) 'live keyboard handler ready and native duplicates removed'
     # Immediate toolbar visibility and shortcut labels, without closing this process.
     $settings=Open-Settings
     Click-Control $settings 1071
     [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x777,[IntPtr]::Zero)
     Click-Control $settings 1
-    Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 8) 'OK hides Capture toolbar button immediately'
+    Assert ([NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt32() -lt 0) 'OK hides Capture toolbar button immediately'
     $hiddenToolbarRect=[NppHistoryNative+RECT]::new()
     [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$hiddenToolbarRect)
     $buttonSize=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
@@ -206,13 +207,13 @@ try {
     Click-Control $settings 1071
     [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x731,[IntPtr]::Zero)
     Click-Control $settings 2
-    Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 8) 'Cancel keeps toolbar visibility unchanged'
+    Assert ([NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt32() -lt 0) 'Cancel keeps toolbar visibility unchanged'
     Assert (([CommandProbe]::Entries($menu))[0].Text.EndsWith('Ctrl+Alt+Shift+F8')) 'Cancel keeps active shortcut unchanged'
     $settings=Open-Settings
     Click-Control $settings 1071
     [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x731,[IntPtr]::Zero)
     Click-Control $settings 1
-    Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 0) 'OK shows Capture toolbar button without restart'
+    Assert ([NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt32() -ge 0) 'OK shows Capture toolbar button without restart'
     Assert (([CommandProbe]::Entries($menu))[0].Text -eq $entries[0].Text) 'OK restores original shortcut without restart'
     if($LayoutOnly) {
         [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]$ids[3],[IntPtr]::Zero)

@@ -1,5 +1,29 @@
 # Four-pixel native toolbar regression
 
+## Replacement correction — 3 September 2026
+
+Installed UAT **failed** for the height-recovery build below. A user recording and live geometry sampling showed the toolbar alternating between 4 and 30 pixels while a `Toolbar layout recovered` warning was written every second. The timer was repairing a symptom and another layout participant immediately collapsed it again, causing the visible jumping.
+
+The failure is now reproducible in a disposable Notepad++ instance containing NppHistory, Customize Toolbar and NppMenuSearch. Message tracing identified the sequence: NppHistory left toolbar choices that were disabled in Settings as hidden trailing native buttons; Customize Toolbar then measured the trailing hidden item and applied 4-pixel child-height values to the main rebar band. The trace contained window geometry and module offsets only, was not retained in the product, and did not inspect document content.
+
+The replacement correction removes unselected NppHistory commands from the native toolbar instead of marking them hidden. Enabling a command in Settings reinserts its saved native button immediately in the toolbar's current host/customized order. The implementation preserves text, image index, button state and size, refreshes its snapshots when the toolbar is rebuilt, and releases its state when the toolbar window is destroyed. It performs no toolbar/rebar height repair and emits no recurring recovery warning.
+
+Verification:
+
+- The pre-correction DLL fails the repeated three-plugin host-layout test at a 4-pixel minimum toolbar height.
+- The replacement build passes all nine icon/plugin geometry cases; the three-plugin case remains 34 pixels high for 30-pixel buttons through repeated host layouts.
+- The focused mixed-placement test passes **109 checks** with NppHistory, Customize Toolbar and NppMenuSearch together, including repeated host layouts and live command removal/reinsertion.
+- The core/native suite passes **1,243 checks, 0 failures**, including ten repeated remove/reinsert cycles, idempotence, command ordering, tooltip text, enabled state, size/image preservation and same-window customization rebuilds.
+- The same-process hotkey hook no longer supplies an unnecessary module handle, which prevented the isolated copied-plugin test from loading the hook (`ERROR_MOD_NOT_FOUND`).
+
+Review artifact: `build/x64/Release/NppHistory.dll`, version **0.2.0.25**. It has not been installed or released. Visual UAT is still required after installation.
+
+## Installation update — 3 September 2026, 16:20 BST
+
+> Historical record: the installed recovery described in this section failed UAT and is superseded by the replacement correction above.
+
+Installed with user approval after verifying Notepad++ was closed. The DLL at `C:/iCloud/iCloudDrive/Filing/N/Notepad++/plugins/NppHistory/NppHistory.dll` now matches tested SHA-256 `084461D1B107CC75D6C69EF4259DFB04E6A212F78A8C476AF177FE6E84603122`; version remains **0.2.0.25**. The previous DLL was backed up and hash-verified at `build/installed-backups/20260903-162015-toolbar-height-recovery/NppHistory.dll` (SHA-256 `8029FAD791C1C31A5532F0F727F0AD15CBE61BD602E018799907A314B35FF1B0`). No settings, documents or history data were changed. Notepad++ was not launched; installed visual UAT remains pending. This supersedes the not-installed status below. No release was published.
+
 ## Observed state and verification boundary
 
 The user reported the whole toolbar becoming blank again after accepting the menu-icon correction. Read-only diagnostics of the running Notepad++ 8.9.8 instance found 47 toolbar buttons, a valid image-list handle, and an enabled native New button. The child toolbar was **4 pixels high**, although its buttons were **30 pixels high** and its rebar band recorded **34 pixels** for minimum/current/maximum child height. This is clipping/layout inconsistency, not missing icon assets.
@@ -42,5 +66,5 @@ Not installed or released. The current installation is unchanged. No OpenProject
 1. Reopen Notepad++ and confirm the whole toolbar, including its native buttons, is visible.
 2. Open NppHistory Settings > Commands & Hotkeys. Toggle one Toolbar checkbox, click OK, and confirm only that command changes visibility without collapsing the toolbar. Restore the setting.
 3. Resize/maximize/restore Notepad++; confirm the toolbar remains fully visible.
-4. If the toolbar briefly collapses again, wait two seconds. It should recover; when logging is enabled at Warning or a more detailed level, check for `Toolbar layout recovered`.
-5. Report Pass or the action that still leaves it blank. A recurrence is useful evidence for tracing the initiating host/plugin event further.
+4. Leave Notepad++ open for at least ten seconds and resize it several times. The toolbar must remain stable; no `Toolbar layout recovered` warnings should be generated.
+5. Report Pass, or report the first action after which the toolbar changes height or becomes blank.

@@ -17,58 +17,6 @@ namespace fs = std::filesystem;
 
 namespace npphistory
 {
-bool repairClippedToolbarBand(HWND toolbar)
-{
-    if (!IsWindowVisible(toolbar) || IsIconic(GetAncestor(toolbar, GA_ROOT))) return false;
-    wchar_t type[64]{};
-    if (!GetClassNameW(toolbar, type, 64) || wcscmp(type, TOOLBARCLASSNAMEW) != 0) return false;
-    const HWND rebar = GetParent(toolbar);
-    if (!GetClassNameW(rebar, type, 64) || wcscmp(type, REBARCLASSNAMEW) != 0) return false;
-    const auto size = static_cast<DWORD>(SendMessageW(toolbar, TB_GETBUTTONSIZE, 0, 0));
-    const UINT buttonHeight = HIWORD(size);
-    RECT area{};
-    if (buttonHeight < 8 || buttonHeight > 512 || !GetClientRect(toolbar, &area)
-        || area.bottom >= static_cast<int>(buttonHeight)) return false;
-    bool hasVisibleButton = false;
-    const int count = static_cast<int>(SendMessageW(toolbar, TB_BUTTONCOUNT, 0, 0));
-    for (int index = 0; index < count; ++index)
-    {
-        TBBUTTON button{};
-        if (SendMessageW(toolbar, TB_GETBUTTON, index, reinterpret_cast<LPARAM>(&button))
-            && !(button.fsState & TBSTATE_HIDDEN) && !(button.fsStyle & BTNS_SEP))
-        {
-            hasVisibleButton = true;
-            break;
-        }
-    }
-    if (!hasVisibleButton) return false;
-
-    const int bands = static_cast<int>(SendMessageW(rebar, RB_GETBANDCOUNT, 0, 0));
-    for (int index = 0; index < bands; ++index)
-    {
-        REBARBANDINFOW band{REBARBANDINFO_V6_SIZE};
-        band.fMask = RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_STYLE;
-        if (!SendMessageW(rebar, RB_GETBANDINFOW, index, reinterpret_cast<LPARAM>(&band))
-            || band.hwndChild != toolbar || (band.fStyle & RBBS_HIDDEN)) continue;
-        // Rebar metadata can still be valid while the actual child has shrunk
-        // (observed: min/current/max 34 but child height 4). Reapplying it asks
-        // the rebar to lay out its own child, instead of overriding host bounds.
-        band.fMask = RBBIM_CHILDSIZE;
-        band.cyMinChild = (std::max)(band.cyMinChild, buttonHeight);
-        band.cyChild = (std::max)(band.cyChild, band.cyMinChild);
-        band.cyMaxChild = (std::max)(band.cyMaxChild, band.cyChild);
-        if (!SendMessageW(rebar, RB_SETBANDINFOW, index, reinterpret_cast<LPARAM>(&band))) return false;
-        RECT rebarArea{};
-        GetClientRect(rebar, &rebarArea);
-        // Equal band dimensions can be optimized away, leaving a stale child
-        // rectangle. Re-run only this rebar's layout with real client dimensions.
-        // Never send a synthetic size to the main window or TB_AUTOSIZE.
-        SendMessageW(rebar, WM_SIZE, SIZE_RESTORED, MAKELPARAM(rebarArea.right, rebarArea.bottom));
-        RedrawWindow(rebar, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
-        return GetClientRect(toolbar, &area) && area.bottom >= static_cast<int>(buttonHeight);
-    }
-    return false;
-}
 
 HBITMAP createMenuIconBitmap(HICON icon, int size)
 {
