@@ -1,5 +1,9 @@
 # Native menu icon rendering regression
 
+## Installation update — 3 September 2026, 14:51 BST
+
+Installed with user approval after verifying Notepad++ was closed. The installed DLL at `C:/iCloud/iCloudDrive/Filing/N/Notepad++/plugins/NppHistory/NppHistory.dll` matches tested SHA-256 `8029FAD791C1C31A5532F0F727F0AD15CBE61BD602E018799907A314B35FF1B0`; version remains **0.2.0.25**. The previous DLL was backed up to `build/installed-backups/20260903-145133-menu-alpha-icons/NppHistory.dll` and its hash verified as `A58027E96C530AD54209CA609FBB8E04B44AB1D983C3EDEF963CF3243EFF4674` before replacement. Settings, documents and revision data were unchanged. Notepad++ was not launched. Installed-environment visual UAT remains pending; this supersedes the not-installed status below. No release was published.
+
 ## Report and correction
 
 The supplied screenshots show disabled command icons switching from an etched/outlined appearance to a pale appearance after hover. This affects Plugins > NppHistory and both document/tab-bar context menus.
