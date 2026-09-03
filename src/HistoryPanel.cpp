@@ -33,19 +33,7 @@ HBITMAP createMenuBitmap(HINSTANCE instance, int resource)
 {
     const HICON icon = static_cast<HICON>(LoadImageW(instance,
         MAKEINTRESOURCEW(resource), IMAGE_ICON, 16, 16, LR_SHARED));
-    if (!icon)
-        return nullptr;
-    HDC screen = GetDC(nullptr);
-    HDC memory = CreateCompatibleDC(screen);
-    HBITMAP bitmap = CreateCompatibleBitmap(screen, 16, 16);
-    const HGDIOBJ previous = SelectObject(memory, bitmap);
-    RECT bounds{0, 0, 16, 16};
-    FillRect(memory, &bounds, GetSysColorBrush(COLOR_MENU));
-    DrawIconEx(memory, 0, 0, icon, 16, 16, 0, nullptr, DI_NORMAL);
-    SelectObject(memory, previous);
-    DeleteDC(memory);
-    ReleaseDC(nullptr, screen);
-    return bitmap;
+    return createMenuIconBitmap(icon);
 }
 
 void applyMenuBitmap(HMENU menu, UINT command, HBITMAP bitmap)

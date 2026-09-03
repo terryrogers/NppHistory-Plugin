@@ -9,8 +9,115 @@
 namespace fs = std::filesystem;
 using namespace npphistory;
 
+namespace
+{
+void runMenuBitmapTests(TestContext& context)
+{
+    context.expect(createMenuIconBitmap(nullptr) == nullptr, "menu bitmap rejects a null icon");
+    const HICON systemIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    context.expect(createMenuIconBitmap(systemIcon, 0) == nullptr
+        && createMenuIconBitmap(systemIcon, -1) == nullptr
+        && createMenuIconBitmap(systemIcon, 257) == nullptr,
+        "menu bitmap rejects invalid or excessive dimensions");
+    for (bool legacy : {false, true})
+    {
+        BITMAPINFO info{};
+        info.bmiHeader = {sizeof(BITMAPINFOHEADER), 2, -2, 1, 32, BI_RGB};
+        std::uint32_t* pixels = nullptr;
+        HBITMAP colour = CreateDIBSection(nullptr, &info, DIB_RGB_COLORS,
+            reinterpret_cast<void**>(&pixels), nullptr, 0);
+        context.expect(colour != nullptr, "synthetic icon colour bitmap created");
+        if (!colour) continue;
+        pixels[0] = 0;
+        pixels[1] = legacy ? 0 : 0xFF000000; // Opaque black must not become transparent.
+        pixels[2] = legacy ? 0x00FF0000 : 0x80FF0000; // Icon input uses straight-alpha red.
+        pixels[3] = legacy ? 0x000000FF : 0xFF0000FF;
+        const BYTE maskBits[] = {static_cast<BYTE>(legacy ? 0x80 : 0), 0, 0, 0};
+        HBITMAP mask = CreateBitmap(2, 2, 1, 1, maskBits);
+        ICONINFO iconInfo{};
+        iconInfo.fIcon = TRUE;
+        iconInfo.hbmColor = colour;
+        iconInfo.hbmMask = mask;
+        HICON icon = CreateIconIndirect(&iconInfo);
+        context.expect(icon != nullptr, "synthetic alpha or legacy mask icon created");
+        HBITMAP result = createMenuIconBitmap(icon, 2);
+        DIBSECTION dib{};
+        const bool valid = result && GetObjectW(result, sizeof(dib), &dib) == sizeof(dib);
+        context.expect(valid && dib.dsBm.bmBitsPixel == 32 && dib.dsBm.bmWidth == 2
+            && dib.dsBm.bmHeight == 2,
+            "menu image is a 32-bit DIB, not an opaque compatible bitmap");
+        if (valid)
+        {
+            const auto* actual = static_cast<const std::uint32_t*>(dib.dsBm.bmBits);
+            context.expect(actual[0] == 0, "transparent menu pixels have no baked background");
+            context.expect(actual[1] == 0xFF000000, "opaque black icon pixels are preserved");
+            context.expect(actual[2] == (legacy ? 0xFFFF0000 : 0x80800000),
+                "menu bitmap preserves masked colours and fractional premultiplied alpha");
+            context.expect(actual[3] == 0xFF0000FF, "opaque blue icon pixels are preserved");
+        }
+        ICONINFO stillOwned{};
+        context.expect(icon && GetIconInfo(icon, &stillOwned), "conversion does not destroy caller's icon");
+        if (stillOwned.hbmColor) DeleteObject(stillOwned.hbmColor);
+        if (stillOwned.hbmMask) DeleteObject(stillOwned.hbmMask);
+        if (result) DeleteObject(result);
+        if (icon) DestroyIcon(icon);
+        if (mask) DeleteObject(mask);
+        DeleteObject(colour);
+    }
+
+    wchar_t executable[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, executable, MAX_PATH);
+    const auto resources = fs::path(executable).parent_path().parent_path().parent_path() / L"src" / L"res";
+    for (const wchar_t* file : {L"Capture.ico", L"Compare.ico", L"Restore.ico", L"NppHistory.ico",
+        L"Refresh.ico", L"Settings.ico", L"About.ico", L"Delete.ico", L"Edit.ico"})
+    {
+        HICON icon = static_cast<HICON>(LoadImageW(nullptr, (resources / file).c_str(),
+            IMAGE_ICON, 16, 16, LR_LOADFROMFILE));
+        context.expect(icon != nullptr, "actual command icon fixture loads");
+        HBITMAP bitmap = createMenuIconBitmap(icon);
+        DIBSECTION dib{};
+        const bool valid = bitmap && GetObjectW(bitmap, sizeof(dib), &dib) == sizeof(dib);
+        context.expect(valid && dib.dsBm.bmBitsPixel == 32 && dib.dsBm.bmWidth == 16,
+            "actual command icon converted to alpha menu bitmap");
+        if (valid)
+        {
+            const auto* pixels = static_cast<const std::uint32_t*>(dib.dsBm.bmBits);
+            bool transparent = false, visible = false, premultiplied = true;
+            for (int i = 0; i < 256; ++i)
+            {
+                const auto alpha = pixels[i] >> 24;
+                transparent |= alpha == 0;
+                visible |= alpha != 0;
+                for (int shift : {0, 8, 16})
+                    premultiplied &= ((pixels[i] >> shift) & 255) <= alpha;
+            }
+            context.expect(transparent && visible && premultiplied,
+                "actual menu icon has visible artwork and valid transparent/premultiplied pixels");
+            HMENU menu = CreatePopupMenu();
+            MENUITEMINFOW item{sizeof(item)};
+            item.fMask = MIIM_ID | MIIM_BITMAP | MIIM_STATE;
+            item.wID = 1;
+            item.hbmpItem = bitmap;
+            item.fState = MFS_DISABLED;
+            context.expect(InsertMenuItemW(menu, 0, TRUE, &item) != FALSE,
+                "alpha bitmap attaches to a disabled native menu item");
+            EnableMenuItem(menu, 1, MF_BYCOMMAND | MF_ENABLED);
+            MENUITEMINFOW readback{sizeof(readback)};
+            readback.fMask = MIIM_BITMAP | MIIM_STATE;
+            context.expect(GetMenuItemInfoW(menu, 1, FALSE, &readback)
+                && readback.hbmpItem == bitmap && !(readback.fState & MFS_DISABLED),
+                "native menu state changes preserve the same alpha bitmap");
+            DestroyMenu(menu);
+        }
+        if (bitmap) DeleteObject(bitmap);
+        if (icon) DestroyIcon(icon);
+    }
+}
+}
+
 void runUtilityTests(TestContext& context)
 {
+    runMenuBitmapTests(context);
     context.expect(!isTooltipInputControl(nullptr), "null controls cannot have tooltips");
     const HWND tooltipOwner = CreateWindowExW(0, L"Static", L"Tooltip test", WS_POPUP,
         0, 0, 200, 100, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);

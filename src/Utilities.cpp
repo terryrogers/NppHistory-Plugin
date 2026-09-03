@@ -17,6 +17,69 @@ namespace fs = std::filesystem;
 
 namespace npphistory
 {
+HBITMAP createMenuIconBitmap(HICON icon, int size)
+{
+    if (!icon || size <= 0 || size > 256) return nullptr;
+    BITMAPINFO info{};
+    info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    info.bmiHeader.biWidth = size;
+    info.bmiHeader.biHeight = -size;
+    info.bmiHeader.biPlanes = 1;
+    info.bmiHeader.biBitCount = 32;
+    info.bmiHeader.biCompression = BI_RGB;
+    HDC dc = CreateCompatibleDC(nullptr);
+    if (!dc) return nullptr;
+    std::uint32_t* dark = nullptr;
+    std::uint32_t* light = nullptr;
+    HBITMAP bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS,
+        reinterpret_cast<void**>(&dark), nullptr, 0);
+    HBITMAP background = CreateDIBSection(dc, &info, DIB_RGB_COLORS,
+        reinterpret_cast<void**>(&light), nullptr, 0);
+    if (!bitmap || !background)
+    {
+        if (bitmap) DeleteObject(bitmap);
+        if (background) DeleteObject(background);
+        DeleteDC(dc);
+        return nullptr;
+    }
+
+    // Rendering against black and white recovers coverage for both alpha icons
+    // and legacy AND-mask icons, without baking the current menu/theme colour in.
+    const int count = size * size;
+    std::fill_n(dark, count, 0u);
+    std::fill_n(light, count, 0x00FFFFFFu);
+    const HGDIOBJ previous = SelectObject(dc, bitmap);
+    const BOOL darkDrawn = DrawIconEx(dc, 0, 0, icon, size, size, 0, nullptr, DI_NORMAL);
+    SelectObject(dc, background);
+    const BOOL lightDrawn = DrawIconEx(dc, 0, 0, icon, size, size, 0, nullptr, DI_NORMAL);
+    SelectObject(dc, previous);
+    GdiFlush(); // Complete GDI writes before reading DIB memory directly.
+    DeleteDC(dc);
+    if (darkDrawn && lightDrawn)
+    {
+        for (int pixel = 0; pixel < count; ++pixel)
+        {
+            int transparency = 0;
+            for (int shift : {0, 8, 16})
+                transparency = (std::max)(transparency,
+                    static_cast<int>((light[pixel] >> shift) & 255)
+                    - static_cast<int>((dark[pixel] >> shift) & 255));
+            const auto alpha = static_cast<std::uint32_t>(255 - transparency);
+            std::uint32_t value = alpha << 24;
+            for (int shift : {0, 8, 16})
+                value |= (std::min)(alpha, (dark[pixel] >> shift) & 255) << shift;
+            dark[pixel] = value;
+        }
+    }
+    DeleteObject(background);
+    if (!darkDrawn || !lightDrawn)
+    {
+        DeleteObject(bitmap);
+        return nullptr;
+    }
+    return bitmap;
+}
+
 bool isTooltipInputControl(HWND control)
 {
     wchar_t name[64]{};
