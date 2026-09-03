@@ -1,6 +1,6 @@
 # Commands and hotkeys verification — 3 September 2026
 
-**Result: automated verification PASS; installation and physical-click UAT pending.**
+**Result: automated verification PASS; installed 3 September 2026; installed-environment UAT pending.**
 
 ## Scope
 
@@ -46,7 +46,7 @@ The test harness now selects settings tabs using their actual native rectangles 
 
 ## Boundaries and manual UAT
 
-This is a locally built candidate, **not installed or published**. Native popup structure and command IDs were verified automatically, but synthetic mouse/key selection in a hidden popup did not reliably generate a command. This is not counted as a passing physical-click test. Mouse selection from both context layouts remains manual UAT. The existing revision-list right-click menu is unchanged.
+This is a locally built candidate, **installed but not published**. Native popup structure and command IDs were verified automatically, but synthetic mouse/key selection in a hidden popup did not reliably generate a command. This is not counted as a passing physical-click test. Mouse selection from both context layouts remains manual UAT. The existing revision-list right-click menu is unchanged.
 
 Hotkey validation scans available Notepad++ menu shortcut labels and detects duplicates within NppHistory. It does not claim to detect every operating-system/global shortcut or another plugin's private keyboard hooks. Context menus, toolbar buttons and shortcuts use the same command IDs and file/revision guards.
 
@@ -61,4 +61,10 @@ After installation and restart:
 7. Close the History pane, select a saved disposable file with revisions and invoke Compare. Confirm it compares the current file with its latest revision. Restore must remain disabled until a revision is selected in the open pane.
 8. Repeat the right-click checks in the second editor view and with the user's usual dark-mode/DPI settings. Confirm the existing document menu and revision-list menu still work normally.
 
-No OpenProject records apply to this repository. No release or installation is authorized by this change request.
+## Authorized local installation
+
+On 3 September 2026 at 01:01:42 BST, after the user requested installation and with no Notepad++ processes running, the tested DLL was copied to `C:\iCloud\iCloudDrive\Filing\N\Notepad++\plugins\NppHistory\NppHistory.dll`. Its installed SHA-256 was verified as `0E02F5958085D412E27A38CAD265DBBDEB8FCB19748CCB6CC9FA2CB3CB4795AF` and its file version as `0.2.0.25`.
+
+The previous DLL was backed up to `build/installed-backups/20260903-010142-commands-hotkeys/NppHistory.dll`; its backup SHA-256 was verified as `D809B48A6CF44B8D3352B425C16BBFE60EEE1C0951A00540885D7C1260A39B07`. Settings, user history and the updater were not changed. Notepad++ was left closed. Startup, physical menu clicks and installed-environment UAT remain pending; no release was published.
+
+No OpenProject records apply to this repository.
