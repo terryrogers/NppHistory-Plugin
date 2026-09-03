@@ -130,7 +130,7 @@ BEGIN
     GROUPBOX "Document and tab bar right-click menus", IDC_CONTEXT_GROUP, 18, 217, 334, 47
     CONTROL "Group commands in an NppHistory submenu", IDC_CONTEXT_SUBMENU, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 231, 310, 13
     LTEXT "Unchecked: show selected commands between two separator lines.", IDC_CONTEXT_NOTE, 28, 246, 314, 12
-    LTEXT "Toolbar and hotkey changes apply after restart. Other placements apply when you click OK.", IDC_HOTKEY_NOTE, 28, 265, 314, 24
+    LTEXT "All command placements and hotkeys apply when you click OK. No restart required.", IDC_HOTKEY_NOTE, 28, 265, 314, 24
     LTEXT "No hotkey conflicts.", IDC_HOTKEY_STATUS, 28, 291, 314, 12
 
     CONTROL "Enable automatic saving", IDC_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 20, 37, 235, 13

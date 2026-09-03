@@ -1,5 +1,6 @@
 #include "HistoryPanel.h"
 #include "DocumentTabIndicators.h"
+#include "LiveHotkeys.h"
 #include "HistoryCatalog.h"
 #include "HistoryStore.h"
 #include "Logger.h"
@@ -12,6 +13,7 @@
 #include "resource.h"
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <commctrl.h>
 #include <cwctype>
@@ -87,6 +89,104 @@ bool documentContextPending = false;
 bool tabContextPending = false;
 HMENU activeCommandContextMenu = nullptr;
 UINT_PTR currentBuffer();
+void syncToolbarVisibility();
+void applyLiveCommandSettings();
+void processShortcutMapperChanges();
+HHOOK commandKeyboardHook = nullptr;
+LiveHotkeys liveHotkeys;
+bool clearingNativeShortcuts = false;
+std::array<bool, commandCount> remappedCommands{};
+std::array<ShortcutKey, commandCount> remappedShortcuts{};
+std::array<bool, commandCount> toolbarRegistered{};
+constexpr UINT liveHotkeyMessage = WM_APP + 244;
+
+bool hotkeyWindowInScope(HWND target)
+{
+    GUITHREADINFO info{sizeof(info)};
+    return ready && target && GetForegroundWindow() == nppData._nppHandle
+        && IsWindowEnabled(nppData._nppHandle)
+        && GetAncestor(target, GA_ROOT) == nppData._nppHandle
+        && GetGUIThreadInfo(GetCurrentThreadId(), &info)
+        && !(info.flags & (GUI_INMENUMODE | GUI_POPUPMENUMODE | GUI_SYSTEMMENUMODE | GUI_INMOVESIZE));
+}
+
+LRESULT CALLBACK commandKeyboardProc(int code, WPARAM removed, LPARAM value)
+{
+    if (code == HC_ACTION && removed == PM_REMOVE && value && ready)
+    {
+        auto* message = reinterpret_cast<MSG*>(value);
+        const bool down = message->message == WM_KEYDOWN || message->message == WM_SYSKEYDOWN;
+        const bool up = message->message == WM_KEYUP || message->message == WM_SYSKEYUP;
+        if (down || up)
+        {
+            const auto held = [](int key) { return (GetKeyState(key) & 0x8000) != 0; };
+            const auto result = liveHotkeys.event(static_cast<unsigned>(message->wParam), down,
+                (message->lParam & (1LL << 30)) != 0, hotkeyWindowInScope(message->hwnd),
+                held(VK_CONTROL), held(VK_MENU), held(VK_SHIFT), held(VK_LWIN) || held(VK_RWIN),
+                held(VK_RMENU) && held(VK_CONTROL));
+            if (result.command >= 0)
+                PostMessageW(nppData._nppHandle, liveHotkeyMessage,
+                    static_cast<WPARAM>(result.command) | (static_cast<WPARAM>(liveHotkeys.generation) << 8),
+                    static_cast<LPARAM>(currentBuffer()));
+            if (result.consume)
+            {
+                message->message = WM_NULL;
+                message->wParam = message->lParam = 0;
+            }
+        }
+    }
+    return CallNextHookEx(commandKeyboardHook, code, removed, value);
+}
+
+bool prepareLiveHotkeys()
+{
+    SetPropW(nppData._nppHandle, L"NppHistoryLiveHotkeysReady", reinterpret_cast<HANDLE>(1));
+    if (!commandKeyboardHook)
+    {
+        const DWORD threadId = GetWindowThreadProcessId(nppData._nppHandle, nullptr);
+        if (threadId) commandKeyboardHook = SetWindowsHookExW(WH_GETMESSAGE, commandKeyboardProc,
+            moduleInstance, threadId); // Never pass zero (that would request a global hook).
+    }
+    if (!commandKeyboardHook)
+    {
+        pluginLogger().write(LogLevel::error, L"Live hotkeys unavailable",
+            L"Could not install the Notepad++ UI-thread hook; Windows error " + std::to_wstring(GetLastError()));
+        settings.liveHotkeysAvailable = false;
+        return false;
+    }
+    bool cleared = true;
+    clearingNativeShortcuts = true;
+    for (int row = 0; row < commandCount; ++row)
+    {
+        ShortcutKey native{};
+        const int id = menuItems[commandMenuIndices[row]]._cmdID;
+        if (SendMessageW(nppData._nppHandle, NPPM_GETSHORTCUTBYCMDID, id, reinterpret_cast<LPARAM>(&native))
+            && native._key)
+        {
+            SendMessageW(nppData._nppHandle, NPPM_REMOVESHORTCUTBYCMDID, id, 0);
+            native = ShortcutKey{};
+            if (SendMessageW(nppData._nppHandle, NPPM_GETSHORTCUTBYCMDID, id,
+                    reinterpret_cast<LPARAM>(&native)) && native._key) cleared = false;
+        }
+    }
+    clearingNativeShortcuts = false;
+    settings.liveHotkeysAvailable = cleared;
+    SetPropW(nppData._nppHandle, L"NppHistoryLiveHotkeysReady",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(cleared ? 2 : 1)));
+    if (!cleared)
+        pluginLogger().write(LogLevel::error, L"Live hotkeys unavailable", L"A previous native shortcut could not be removed.");
+    return cleared;
+}
+
+void applyLiveCommandSettings()
+{
+    liveHotkeys.apply(settings);
+    for (auto& key : liveHotkeys.keys)
+        if (!settings.liveHotkeysAvailable || !safeCommandHotkey(key)) key.enabled = false;
+    configureCommandMenu();
+    syncToolbarVisibility();
+    syncCommandStates();
+}
 
 void prepareRestoreSave()
 {
@@ -136,7 +236,6 @@ struct ToolbarAsset
 
 std::array<ToolbarAsset, commandCount> toolbarAssets{};
 std::array<HBITMAP, commandCount> pluginMenuBitmaps{};
-std::array<ShortcutKey, commandCount> commandShortcuts{};
 HMENU pluginCommandMenu = nullptr;
 constexpr ULONG_PTR contextMenuMarker = 0x4E504843;
 
@@ -699,6 +798,20 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
 LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
     UINT_PTR, DWORD_PTR)
 {
+    if (message == liveHotkeyMessage)
+    {
+        const unsigned row = static_cast<unsigned>(wParam & 0xFF);
+        if (row < commandCount && static_cast<unsigned>(wParam >> 8) == liveHotkeys.generation
+            && static_cast<UINT_PTR>(lParam) == currentBuffer()
+            && hotkeyWindowInScope(GetFocus()) && actionAvailable(static_cast<Command>(row)))
+        {
+            // Leave the hook before entering modal command handlers. Check availability
+            // again here so a queued key cannot restore/capture a newly excluded file.
+            const auto callback = menuItems[commandMenuIndices[row]]._pFunc;
+            if (callback) callback();
+        }
+        return 0;
+    }
     if (ready && message == WM_NOTIFY && lParam)
     {
         const auto* notification = reinterpret_cast<const NMHDR*>(lParam);
@@ -787,8 +900,13 @@ LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LP
     if (message == WM_ACTIVATEAPP && wParam == FALSE && ready
         && settings.shouldAutoSave(AutoSaveTrigger::focusLoss))
         saveConfiguredScope();
+    if (message == WM_ACTIVATEAPP && !wParam) liveHotkeys.resetPressed();
     if (message == WM_NCDESTROY)
+    {
+        if (commandKeyboardHook) UnhookWindowsHookEx(commandKeyboardHook);
+        commandKeyboardHook = nullptr;
         RemoveWindowSubclass(window, mainWindowSubclass, 1);
+    }
     return DefSubclassProc(window, message, wParam, lParam);
 }
 
@@ -797,6 +915,8 @@ void CALLBACK timerProc(HWND, UINT, UINT_PTR, DWORD)
     try
     {
         detectMissingBuffers();
+        processShortcutMapperChanges();
+        syncToolbarVisibility();
         syncCommandStates();
         const ULONGLONG now = GetTickCount64();
         if (now >= nextUpdateStatusRefreshTick)
@@ -1002,9 +1122,55 @@ void logSettingsChanges(const Settings& previous, const Settings& current)
             std::to_wstring(changedCount) + L" option(s) updated");
 }
 
+void processShortcutMapperChanges()
+{
+    if (!IsWindowEnabled(nppData._nppHandle)
+        || std::none_of(remappedCommands.begin(), remappedCommands.end(), [](bool value) { return value; })) return;
+    const Settings previous = settings;
+    Settings candidate = settings;
+    bool valid = true;
+    for (int row = 0; row < commandCount; ++row)
+    {
+        if (remappedCommands[row])
+        {
+            const auto& key = remappedShortcuts[row];
+            candidate.commandHotkey(static_cast<Command>(row)) =
+                {key._key != 0, key._isCtrl, key._isAlt, key._isShift, key._key};
+        }
+        valid = valid && safeCommandHotkey(candidate.commandHotkey(static_cast<Command>(row)));
+    }
+    for (int row = 0; row < commandCount; ++row)
+        for (int earlier = 0; earlier < row; ++earlier)
+        {
+            const auto& key = candidate.commandHotkey(static_cast<Command>(row));
+            if (key.enabled && key == candidate.commandHotkey(static_cast<Command>(earlier))) valid = false;
+        }
+    remappedCommands.fill(false);
+    if (valid) settings = candidate;
+    // Never edit the host's accelerator list during its Shortcut Mapper notification.
+    // Once that dialog closes, import valid assignments and remove native duplicates.
+    prepareLiveHotkeys();
+    applyLiveCommandSettings();
+    if (valid)
+    {
+        logSettingsChanges(previous, settings);
+        if (!settings.save(settingsFile))
+            pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
+    }
+    else
+    {
+        pluginLogger().write(LogLevel::warning, L"Shortcut Mapper changes rejected",
+            L"Duplicate, typing-only or reserved shortcut; previous NppHistory shortcuts retained.");
+        centeredMessageBox(nppData._nppHandle,
+            L"These shortcuts conflict with each other, ordinary typing or reserved system keys. Previous NppHistory shortcuts were retained. Use Commands & Hotkeys to configure them.",
+            pluginName, MB_OK | MB_ICONWARNING);
+    }
+}
+
 void editSettings()
 {
     pluginLogger().write(LogLevel::debug, L"Button click", L"Settings");
+    if (!settings.liveHotkeysAvailable && prepareLiveHotkeys()) applyLiveCommandSettings();
     const Settings previous = settings;
     settings.defaultLogFile = pluginConfigPath / L"NppHistory.log";
     if (settings.edit(nppData._nppHandle, moduleInstance))
@@ -1015,7 +1181,7 @@ void editSettings()
         settings.installUpdateNow = false;
         pluginLogger().configure(settings, pluginConfigPath);
         logSettingsChanges(previous, settings);
-        configureCommandMenu();
+        applyLiveCommandSettings();
         if (!settings.save(settingsFile))
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
@@ -1313,8 +1479,8 @@ void configureCommandMenu()
 {
     pluginCommandMenu = findCommandMenu(GetMenu(nppData._nppHandle), menuItems[captureIndex]._cmdID);
     if (!pluginCommandMenu) return;
-    // Reorder native items without changing exported indices/IDs or the shortcut
-    // strings maintained by Notepad++ (including Shortcut Mapper changes).
+    // Preserve native command IDs/state/icons; shortcut suffixes describe the active
+    // plugin-owned bindings, not stale startup accelerator registrations.
     std::array<MENUITEMINFOW, commandCount> items{};
     std::array<std::array<wchar_t, 256>, commandCount> labels{};
     for (int row = 0; row < commandCount; ++row)
@@ -1326,6 +1492,10 @@ void configureCommandMenu()
         item.cch = static_cast<UINT>(labels[row].size());
         if (!GetMenuItemInfoW(pluginCommandMenu, menuItems[commandMenuIndices[row]]._cmdID, FALSE, &item))
             return;
+        std::wstring label(commands[row].name);
+        const std::wstring shortcut = commandHotkeyText(liveHotkeys.keys[row]);
+        if (!shortcut.empty()) label += L"\t" + shortcut;
+        wcsncpy_s(labels[row].data(), labels[row].size(), label.c_str(), _TRUNCATE);
     }
     for (int row = 0; row < commandCount; ++row)
         RemoveMenu(pluginCommandMenu, items[row].wID, MF_BYCOMMAND);
@@ -1395,6 +1565,44 @@ void appendCommandContextMenu(HMENU menu, CommandSurface surface)
     else separator();
 }
 
+void syncToolbarVisibility()
+{
+    if (!nppData._nppHandle) return;
+    struct Result { bool changed = false; int visible = 0; } result;
+    EnumChildWindows(nppData._nppHandle, [](HWND toolbar, LPARAM parameter) -> BOOL {
+        wchar_t name[64]{};
+        GetClassNameW(toolbar, name, 64);
+        if (wcscmp(name, TOOLBARCLASSNAMEW) != 0) return TRUE;
+        auto& result = *reinterpret_cast<Result*>(parameter);
+        bool changed = false;
+        for (int row = 0; row < commandCount; ++row)
+        {
+            const int id = menuItems[commandMenuIndices[row]]._cmdID;
+            const LRESULT state = SendMessageW(toolbar, TB_GETSTATE, id, 0);
+            if (!id || state < 0) continue;
+            const bool visible = settings.commandVisible(static_cast<Command>(row), CommandSurface::toolbar);
+            if (((state & TBSTATE_HIDDEN) == 0) != visible)
+                changed = (SendMessageW(toolbar, TB_HIDEBUTTON, id, MAKELPARAM(!visible, 0)) != FALSE) || changed;
+            if (!(SendMessageW(toolbar, TB_GETSTATE, id, 0) & TBSTATE_HIDDEN)) ++result.visible;
+        }
+        if (changed)
+        {
+            SendMessageW(toolbar, TB_AUTOSIZE, 0, 0);
+            InvalidateRect(toolbar, nullptr, TRUE);
+            result.changed = true;
+        }
+        return TRUE;
+    }, reinterpret_cast<LPARAM>(&result));
+    if (result.changed)
+    {
+        RECT area{};
+        GetClientRect(nppData._nppHandle, &area);
+        SendMessageW(nppData._nppHandle, WM_SIZE, SIZE_RESTORED, MAKELPARAM(area.right, area.bottom));
+    }
+    SetPropW(nppData._nppHandle, L"NppHistoryToolbarButtonsVisible",
+        reinterpret_cast<HANDLE>(static_cast<INT_PTR>(result.visible + 1)));
+}
+
 void registerConfiguredToolbarButtons()
 {
     ensureConfigurationLoaded();
@@ -1402,19 +1610,22 @@ void registerConfiguredToolbarButtons()
     for (const Command command : commandOrder)
     {
         const int index = static_cast<int>(command);
-        if (!settings.commandVisible(static_cast<Command>(index), CommandSurface::toolbar))
-            continue;
-        toolbarAssets[index].icon = static_cast<HICON>(LoadImageW(moduleInstance,
-            MAKEINTRESOURCEW(commands[index].icon), IMAGE_ICON, 16, 16, LR_SHARED));
-        toolbarAssets[index].bitmap = createToolbarBitmap(toolbarAssets[index].icon);
-        toolbarIconsWithDarkMode icons{toolbarAssets[index].bitmap,
-            toolbarAssets[index].icon, toolbarAssets[index].icon};
-        if (SendMessageW(nppData._nppHandle, NPPM_ADDTOOLBARICON_FORDARKMODE,
-            menuItems[commandMenuIndices[index]]._cmdID, reinterpret_cast<LPARAM>(&icons)) != FALSE)
-            ++registered;
+        if (!toolbarRegistered[index])
+        {
+            if (!toolbarAssets[index].icon) toolbarAssets[index].icon = static_cast<HICON>(LoadImageW(moduleInstance,
+                MAKEINTRESOURCEW(commands[index].icon), IMAGE_ICON, 16, 16, LR_SHARED));
+            if (!toolbarAssets[index].bitmap) toolbarAssets[index].bitmap = createToolbarBitmap(toolbarAssets[index].icon);
+            toolbarIconsWithDarkMode icons{toolbarAssets[index].bitmap,
+                toolbarAssets[index].icon, toolbarAssets[index].icon};
+            if (SendMessageW(nppData._nppHandle, NPPM_ADDTOOLBARICON_FORDARKMODE,
+                menuItems[commandMenuIndices[index]]._cmdID, reinterpret_cast<LPARAM>(&icons)) != FALSE)
+                toolbarRegistered[index] = true;
+        }
+        if (toolbarRegistered[index]) ++registered;
     }
     SetPropW(nppData._nppHandle, L"NppHistoryToolbarButtonsRegistered",
         reinterpret_cast<HANDLE>(static_cast<INT_PTR>(registered + 1)));
+    syncToolbarVisibility();
     syncCommandStates();
 }
 
@@ -1474,6 +1685,8 @@ void initialise()
     nextUpdateStatusRefreshTick = now;
     SetWindowSubclass(nppData._nppHandle, mainWindowSubclass, 1, 0);
     ready = true;
+    prepareLiveHotkeys();
+    applyLiveCommandSettings();
     configureCommandMenu();
     refreshDocumentTabIndicators();
     configurePluginMenuIcons();
@@ -1497,12 +1710,6 @@ extern "C" __declspec(dllexport) void setInfo(NppData data)
 {
     nppData = data;
     ensureConfigurationLoaded();
-    const auto shortcut = [](ShortcutKey& target, const HotkeySetting& source) {
-        target._isCtrl = source.ctrl;
-        target._isAlt = source.alt;
-        target._isShift = source.shift;
-        target._key = static_cast<UCHAR>(source.key);
-    };
     setMenuItem(captureIndex, L"Capture", captureNow);
     setMenuItem(compareIndex, L"Compare", compareCurrent);
     setMenuItem(historyIndex, L"History", showHistory);
@@ -1512,9 +1719,9 @@ extern "C" __declspec(dllexport) void setInfo(NppData data)
     setMenuItem(refreshIndex, L"Refresh", refreshCurrent);
     for (int row = 0; row < commandCount; ++row)
     {
-        const auto& key = settings.commandHotkey(static_cast<Command>(row));
-        shortcut(commandShortcuts[row], key);
-        menuItems[commandMenuIndices[row]]._pShKey = key.enabled ? &commandShortcuts[row] : nullptr;
+        // Shortcuts belong to our replaceable runtime table, not the host's startup table.
+        // Legacy Shortcut Mapper entries are removed/verified at NPPN_READY.
+        menuItems[commandMenuIndices[row]]._pShKey = nullptr;
     }
 }
 
@@ -1543,6 +1750,26 @@ void handleNotification(SCNotification* notification)
     }
     if (!ready)
         return;
+
+    if (code == NPPN_SHORTCUTREMAPPED && !clearingNativeShortcuts)
+    {
+        for (int row = 0; row < commandCount; ++row)
+            if (notification->nmhdr.idFrom == static_cast<UINT_PTR>(menuItems[commandMenuIndices[row]]._cmdID)
+                && notification->nmhdr.hwndFrom)
+            {
+                remappedShortcuts[row] = *reinterpret_cast<const ShortcutKey*>(notification->nmhdr.hwndFrom);
+                remappedCommands[row] = true;
+                // Native assignment remains active until the dialog closes; suppress
+                // its plugin-owned counterpart to prevent duplicate dispatch meanwhile.
+                liveHotkeys.keys[row].enabled = false;
+            }
+        return;
+    }
+    if (code == NPPN_TOOLBARICONSETCHANGED || code == NPPN_DARKMODECHANGED)
+    {
+        syncToolbarVisibility();
+        syncCommandStates();
+    }
 
     if (code == SCN_MODIFIED
         && (notification->modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT)) != 0)
@@ -1671,6 +1898,9 @@ void handleNotification(SCNotification* notification)
         if (activeTimerId)
             KillTimer(nullptr, activeTimerId);
         activeTimerId = 0;
+        if (commandKeyboardHook) UnhookWindowsHookEx(commandKeyboardHook);
+        commandKeyboardHook = nullptr;
+        liveHotkeys.resetPressed();
         RemoveWindowSubclass(nppData._nppHandle, mainWindowSubclass, 1);
         for (auto& asset : toolbarAssets)
         {

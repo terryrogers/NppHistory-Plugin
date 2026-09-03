@@ -14,6 +14,8 @@ Status: source changes prepared; **not compiled, not installed, no native/runtim
 
 ## Why toolbar/hotkey changes currently require restart
 
+**Superseded by the subsequent [live-command source changes](SOURCE_LIVE_COMMANDS-2026-09-03.md).** The following describes the previously installed implementation, not the current source.
+
 This is the plugin's current registration lifecycle, not a general inability to change Windows controls live.
 
 - Toolbar commands are registered in response to Notepad++'s startup `NPPN_TBMODIFICATION` notification via `registerConfiguredToolbarButtons`. Saving Settings does not currently reconcile additions/removals with the live host toolbar.

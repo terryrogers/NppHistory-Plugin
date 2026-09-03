@@ -85,6 +85,8 @@ struct HotkeySetting
 
 struct Settings
 {
+    // Runtime-only capability flag; never persisted.
+    bool liveHotkeysAvailable = true;
     bool autoSaveEnabled = true;
     bool autoSaveAfterEdit = true;
     unsigned afterEditSeconds = 30;

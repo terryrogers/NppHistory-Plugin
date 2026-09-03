@@ -140,6 +140,26 @@ try {
     $toolbar=[NppHistoryNative]::FindDescendant($main,'ToolbarWindow32')
     $positions=@($ids | ForEach-Object {[NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$_,[IntPtr]::Zero).ToInt32()})
     Assert (@($positions | Where-Object {$_ -lt 0}).Count -eq 0 -and ($positions -join ',') -eq (($positions | Sort-Object) -join ',')) 'toolbar common order'
+    Assert ([NppHistoryNative]::GetProp($main,'NppHistoryLiveHotkeysReady').ToInt64() -eq 2) 'live keyboard handler ready and native duplicates removed'
+    # Immediate toolbar visibility and shortcut labels, without closing this process.
+    $settings=Open-Settings
+    Click-Control $settings 1071
+    [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x777,[IntPtr]::Zero)
+    Click-Control $settings 1
+    Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 8) 'OK hides Capture toolbar button immediately'
+    Assert (([CommandProbe]::Entries($menu))[0].Text.EndsWith('Ctrl+Alt+Shift+F8')) 'OK replaces active Capture shortcut suffix'
+    $settings=Open-Settings
+    Click-Control $settings 1071
+    [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x731,[IntPtr]::Zero)
+    Click-Control $settings 2
+    Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 8) 'Cancel keeps toolbar visibility unchanged'
+    Assert (([CommandProbe]::Entries($menu))[0].Text.EndsWith('Ctrl+Alt+Shift+F8')) 'Cancel keeps active shortcut unchanged'
+    $settings=Open-Settings
+    Click-Control $settings 1071
+    [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x731,[IntPtr]::Zero)
+    Click-Control $settings 1
+    Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 0) 'OK shows Capture toolbar button without restart'
+    Assert (([CommandProbe]::Entries($menu))[0].Text -eq $entries[0].Text) 'OK restores original shortcut without restart'
     $context=@(Read-Context $true)
     Assert (($context.Text -join '|') -eq ($entries.Text -join '|')) 'submenu order and shortcuts match Plugins menu'
     Assert (@($context | Where-Object Icon).Count -eq 7) 'all context icons'

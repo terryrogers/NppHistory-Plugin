@@ -1,5 +1,6 @@
 #include "TestHarness.h"
 #include "Settings.h"
+#include "LiveHotkeys.h"
 #include "Utilities.h"
 
 using namespace npphistory;
@@ -52,6 +53,57 @@ bool sameSettings(const Settings& left, const Settings& right)
 
 void runSettingsTests(TestContext& context)
 {
+    Settings liveConfig;
+    for (int row = 0; row < commandCount; ++row)
+        liveConfig.commandHotkey(static_cast<Command>(row)) =
+            {true, true, true, true, static_cast<unsigned>(VK_F13 + row)};
+    LiveHotkeys runtime;
+    runtime.apply(liveConfig);
+    for (int row = 0; row < commandCount; ++row)
+    {
+        const unsigned key = VK_F13 + row;
+        context.expect(!runtime.event(key, true, false, false, true, true, true, false, false).consume,
+            "hotkey ignored outside active main window or in modal/menu scope");
+        context.expect(!runtime.event(key, true, false, true, true, true, true, true, false).consume,
+            "Windows-key combinations are not intercepted");
+        context.expect(!runtime.event(key, true, false, true, true, true, true, false, true).consume,
+            "AltGr text input is not intercepted");
+        context.expect(!runtime.event(key, true, false, true, true, true, false, false, false).consume,
+            "modifiers must match exactly");
+        const auto first = runtime.event(key, true, false, true, true, true, true, false, false);
+        context.expect(first.consume && first.command == row, "one initial keydown routes the correct command");
+        const auto repeat = runtime.event(key, true, true, true, true, true, true, false, false);
+        context.expect(repeat.consume && repeat.command == -1, "held keys cannot repeat actions");
+        const auto released = runtime.event(key, false, false, false, false, false, false, false, false);
+        context.expect(released.consume && released.command == -1, "consumed keyup does not escape into a command dialog");
+    }
+    const unsigned beforeGeneration = runtime.generation;
+    Settings draft = liveConfig;
+    draft.hotkeyCapture.key = VK_F24;
+    context.expect(runtime.keys[0].key == VK_F13, "editing an uncommitted draft does not change live bindings");
+    runtime.apply(draft);
+    context.expect(runtime.generation != beforeGeneration, "committing invalidates queued old-generation actions");
+    context.expect(!runtime.event(VK_F13, true, false, true, true, true, true, false, false).consume,
+        "old key no longer matches after replacement");
+    context.expect(runtime.event(VK_F24, true, false, true, true, true, true, false, false).command == 0,
+        "new key matches immediately after replacement");
+    draft.hotkeyCapture.enabled = false;
+    runtime.apply(draft);
+    runtime.resetPressed();
+    context.expect(!runtime.event(VK_F24, true, false, true, true, true, true, false, false).consume,
+        "disabled shortcut passes through");
+    context.expect(!runtime.event(999, true, false, true, true, true, true, false, false).consume,
+        "invalid key codes are ignored safely");
+    context.expect(!safeCommandHotkey({true, false, false, false, 'A'})
+        && !safeCommandHotkey({true, false, false, true, 'A'})
+        && !safeCommandHotkey({true, false, true, false, 'F'})
+        && !safeCommandHotkey({true, false, true, false, VK_F4})
+        && !safeCommandHotkey({true, true, true, false, VK_DELETE}),
+        "typing, host mnemonics and system combinations are rejected");
+    context.expect(safeCommandHotkey({true, false, false, false, VK_F8})
+        && safeCommandHotkey({true, true, true, false, 'C'}), "function keys and modified commands are allowed");
+    context.expect(commandHotkeyText({true, true, true, true, VK_F24}) == L"Ctrl+Alt+Shift+F24"
+        && commandHotkeyText({false, true, true, false, 'C'}).empty(), "menu suffix describes the active binding");
     TestDirectory directory(L"settings");
     std::wstring order;
     for (const Command command : commandOrder)

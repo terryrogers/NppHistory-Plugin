@@ -1,4 +1,5 @@
 #include "Settings.h"
+#include "LiveHotkeys.h"
 #include "Logger.h"
 #include "resource.h"
 #include "Utilities.h"
@@ -28,14 +29,14 @@ struct SettingsTooltipEntry
 };
 
 std::vector<SettingsTooltipEntry> settingsTooltips = {
-    {IDC_TOOLBAR_CAPTURE, L"Add or remove the NppHistory Capture command on the main Notepad++ toolbar after restart."},
-    {IDC_TOOLBAR_COMPARE, L"Add or remove the NppHistory Compare command on the main Notepad++ toolbar after restart."},
-    {IDC_TOOLBAR_HISTORY, L"Add or remove the NppHistory History command on the main Notepad++ toolbar after restart."},
-    {IDC_HOTKEY_CAPTURE_ENABLED, L"Enable a configurable keyboard shortcut for Capture after restarting Notepad++."},
+    {IDC_TOOLBAR_CAPTURE, L"Show or hide Capture on the Notepad++ toolbar when you click OK."},
+    {IDC_TOOLBAR_COMPARE, L"Show or hide Compare on the Notepad++ toolbar when you click OK."},
+    {IDC_TOOLBAR_HISTORY, L"Show or hide History on the Notepad++ toolbar when you click OK."},
+    {IDC_HOTKEY_CAPTURE_ENABLED, L"Enable the Capture keyboard shortcut when you click OK."},
     {IDC_HOTKEY_CAPTURE_INPUT, L"Press the complete key combination to use for Capture."},
-    {IDC_HOTKEY_COMPARE_ENABLED, L"Enable a configurable keyboard shortcut for Compare after restarting Notepad++."},
+    {IDC_HOTKEY_COMPARE_ENABLED, L"Enable the Compare keyboard shortcut when you click OK."},
     {IDC_HOTKEY_COMPARE_INPUT, L"Press the complete key combination to use for Compare."},
-    {IDC_HOTKEY_HISTORY_ENABLED, L"Enable a configurable keyboard shortcut for opening History after restarting Notepad++."},
+    {IDC_HOTKEY_HISTORY_ENABLED, L"Enable the History keyboard shortcut when you click OK."},
     {IDC_HOTKEY_HISTORY_INPUT, L"Press the complete key combination to use for History."},
     {IDC_ENABLED, L"Enable NppHistory automatic file saving. This is unavailable while AutoSave.dll is installed."},
     {IDC_AFTER_EDIT, L"Automatically save after editing has stopped for the configured number of seconds."},
@@ -82,7 +83,7 @@ void configureSettingsTooltips(HWND dialog)
         [](const auto& entry) { return entry.id >= 1200 || entry.id == IDC_CONTEXT_SUBMENU; }),
         settingsTooltips.end());
     const wchar_t* surfaces[] = {L"History Pane", L"tab bar right-click menu",
-        L"Notepad++ toolbar (after restart)", L"document right-click menu"};
+        L"Notepad++ toolbar (applies on OK)", L"document right-click menu"};
     for (int row = 0; row < commandCount; ++row)
     {
         for (int column = 0; column < 4; ++column)
@@ -100,8 +101,8 @@ void configureSettingsTooltips(HWND dialog)
                 [=](const auto& entry) { return entry.id == id; }))
                 settingsTooltips.push_back({id, std::wstring(commands[row].name)
                     + (id == hotkeyEnableIds[row]
-                        ? L": enable this keyboard shortcut after restarting Notepad++."
-                        : L": press the complete key combination; applies after restart.")});
+                        ? L": enable this keyboard shortcut when you click OK."
+                        : L": press the complete key combination; applies on OK, only while Notepad++ is active.")});
     }
     settingsTooltips.push_back({IDC_CONTEXT_SUBMENU,
         L"For both document and tab bar menus: checked places selected commands in an NppHistory submenu; unchecked places them between separator lines."});
@@ -299,15 +300,7 @@ void updateHotkeyControls(HWND dialog)
 
 std::wstring hotkeyText(const HotkeySetting& hotkey)
 {
-    std::wstring text;
-    if (hotkey.ctrl) text += L"Ctrl+";
-    if (hotkey.alt) text += L"Alt+";
-    if (hotkey.shift) text += L"Shift+";
-    if (hotkey.key >= VK_F1 && hotkey.key <= VK_F12)
-        text += L"F" + std::to_wstring(hotkey.key - VK_F1 + 1);
-    else if (hotkey.key)
-        text += static_cast<wchar_t>(hotkey.key);
-    return text;
+    return commandHotkeyText(hotkey);
 }
 
 struct MenuShortcut
@@ -348,6 +341,10 @@ bool validateHotkeys(HWND dialog, const Settings& settings, bool showMessage)
             continue;
         if (!selected[row].key)
             issue = std::wstring(commands[row].name) + L" needs a key.";
+        else if (!safeCommandHotkey(selected[row]))
+            issue = L"Use Ctrl/Alt with a key, or a function key; system shortcuts are reserved.";
+        else if (!settings.liveHotkeysAvailable)
+            issue = L"Live shortcuts are unavailable. Disable shortcuts or reopen Settings to retry.";
         for (int previous = 0; previous < row && issue.empty(); ++previous)
         {
             if (selected[previous].enabled

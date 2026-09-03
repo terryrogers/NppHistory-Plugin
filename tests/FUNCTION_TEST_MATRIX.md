@@ -1,5 +1,16 @@
 # Function verification matrix
 
+## Live command settings — subsequent source-only changes
+
+Not compiled or executed; historical PASS results do not certify these changes. See `SOURCE_LIVE_COMMANDS-2026-09-03.md`.
+
+| Area | Prepared coverage | Status |
+|---|---|---|
+| `LiveHotkeys::apply/event/resetPressed`, `safeCommandHotkey`, `commandHotkeyText` | Seven commands; exact modifiers; old/new/disabled bindings; draft isolation; repeats/releases; focus, Windows key and AltGr exclusions; reserved/typing keys; menu suffixes | Unit cases added, NOT RUN |
+| `syncToolbarVisibility`, `applyLiveCommandSettings` | Same-process hide/show on OK, unchanged on Cancel, registration versus visibility counts | Native smoke cases added, NOT RUN |
+| `prepareLiveHotkeys`, `commandKeyboardProc`, dispatch handler | UI-thread-only hook, native-shortcut removal/readback, generation and buffer checks, enabled-state guard, cleanup | Source reviewed; real keyboard UAT pending |
+| `processShortcutMapperChanges` | Deferred import after dialog closes, duplicate/reserved rejection, native duplicate removal and persisted settings | Source reviewed; Shortcut Mapper UAT pending |
+
 ## Pending source-only refinements — 3 September 2026
 
 The historical PASS entries below do not certify the latest uncompiled changes. Per user instruction, no build or runtime tests were run for this refinement batch.
