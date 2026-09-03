@@ -4,6 +4,7 @@
 #include "HistoryCatalog.h"
 #include "HistoryStore.h"
 #include "Logger.h"
+#include "TemporaryStatusBar.h"
 #include "PluginInterface.h"
 #include "Settings.h"
 #include "Utilities.h"
@@ -458,7 +459,9 @@ void saveBuffer(UINT_PTR bufferId)
     }
     if (settings.isAutoSaveExcluded(path))
         return;
-    SendMessageW(nppData._nppHandle, NPPM_SAVEFILE, 0, reinterpret_cast<LPARAM>(path.c_str()));
+    const bool saved = SendMessageW(nppData._nppHandle, NPPM_SAVEFILE, 0,
+        reinterpret_cast<LPARAM>(path.c_str())) != FALSE;
+    actionStatus().show(saved ? L"Auto saved" : L"Auto save failed");
 }
 
 void saveConfiguredScope(UINT_PTR preferredBuffer = 0)
@@ -749,6 +752,10 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
     else if (completion->result.status == UpdateCheckStatus::upToDate)
         availableUpdate = {};
     settings.refreshUpdateStatus(false);
+    actionStatus().show(successful
+        ? (completion->result.status == UpdateCheckStatus::updateAvailable
+            ? L"Update available" : L"Up to date")
+        : L"Update check failed");
     if (completion->result.status == UpdateCheckStatus::updateAvailable)
     {
         const auto& release = completion->result.release;
@@ -903,6 +910,7 @@ LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LP
     if (message == WM_ACTIVATEAPP && !wParam) liveHotkeys.resetPressed();
     if (message == WM_NCDESTROY)
     {
+        actionStatus().shutdown();
         if (commandKeyboardHook) UnhookWindowsHookEx(commandKeyboardHook);
         commandKeyboardHook = nullptr;
         RemoveWindowSubclass(window, mainWindowSubclass, 1);
@@ -994,14 +1002,17 @@ void captureNow()
                 pluginName, MB_OK | MB_ICONERROR);
             pluginLogger().write(LogLevel::error, L"Capture failed",
                 L"The current note could not be saved: " + path.wstring());
+            actionStatus().show(L"Capture failed");
             return;
         }
     }
-    if (historyStore.captureFile(path, L"Manual capture", true))
+    const bool captured = historyStore.captureFile(path, L"Manual capture", true);
+    if (captured)
         pluginLogger().write(LogLevel::informational, L"Capture", path.wstring());
     else
         pluginLogger().write(LogLevel::error, L"Capture failed", path.wstring());
     refreshPanel();
+    actionStatus().show(captured ? L"Revision captured" : L"Capture failed");
 }
 
 void compareCurrent()
@@ -1026,6 +1037,7 @@ void refreshCurrent()
     pluginLogger().write(LogLevel::debug, L"Button click", L"Refresh");
     historyPanel.refresh(currentPath());
     pluginLogger().write(LogLevel::informational, L"Refresh", currentPath().wstring());
+    actionStatus().show(L"History refreshed");
 }
 
 std::wstring boolText(bool value) { return value ? L"Enabled" : L"Disabled"; }
@@ -1182,7 +1194,8 @@ void editSettings()
         pluginLogger().configure(settings, pluginConfigPath);
         logSettingsChanges(previous, settings);
         applyLiveCommandSettings();
-        if (!settings.save(settingsFile))
+        const bool settingsSaved = settings.save(settingsFile);
+        if (!settingsSaved)
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
             settings.customHistoryRoot, pluginConfigPath / L"history");
@@ -1198,6 +1211,7 @@ void editSettings()
             (void)bufferId;
             state.lastEditTick = now;
         }
+        actionStatus().show(settingsSaved ? L"Settings saved" : L"Settings save failed");
         if (openLog)
         {
             if (pluginLogger().ensureFile())
@@ -1659,6 +1673,7 @@ void showPendingUpdateResult()
 
 void initialise()
 {
+    actionStatus().initialize(nppData._nppHandle);
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES | ICC_TAB_CLASSES
         | ICC_LINK_CLASS | ICC_STANDARD_CLASSES | ICC_HOTKEY_CLASS};
     InitCommonControlsEx(&controls);
@@ -1786,6 +1801,7 @@ void handleNotification(SCNotification* notification)
     const UINT_PTR bufferId = static_cast<UINT_PTR>(notification->nmhdr.idFrom);
     if (code == NPPN_BUFFERACTIVATED)
     {
+        actionStatus().clear();
         if (settings.shouldAutoSave(AutoSaveTrigger::tabChange) && lastActiveBuffer
             && lastActiveBuffer != bufferId)
             saveConfiguredScope(lastActiveBuffer);
@@ -1818,16 +1834,19 @@ void handleNotification(SCNotification* notification)
         else
             reconcileFile(bufferId, path);
         pluginLogger().write(LogLevel::informational, L"File saved", path.wstring());
+        bool revisionCreated = false;
         if (!restoreInitiatedSave
             && settings.shouldCreateRevision(RevisionTrigger::afterSave) && !path.empty()
             && !settings.isHistoryExcluded(path))
         {
-            if (historyStore.captureFile(path, L"Saved"))
+            revisionCreated = historyStore.captureFile(path, L"Saved");
+            if (revisionCreated)
                 pluginLogger().write(LogLevel::informational, L"Revision created",
                     L"After save: " + path.wstring());
         }
         dirtyBuffers.erase(bufferId);
         refreshPanel();
+        actionStatus().show(revisionCreated ? L"Saved; revision created" : L"File saved");
     }
     else if (code == NPPN_FILEOPENED || code == NPPN_BUFFERACTIVATED)
     {
@@ -1879,6 +1898,7 @@ void handleNotification(SCNotification* notification)
     }
     else if (code == NPPN_SHUTDOWN)
     {
+        actionStatus().shutdown();
         for (HWND tabs : documentTabControls()) removeDocumentTabDecorations(tabs);
         updateShuttingDown = true;
         if (updateThreadHandle)

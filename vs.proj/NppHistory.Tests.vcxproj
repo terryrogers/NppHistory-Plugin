@@ -13,10 +13,12 @@
   <PropertyGroup><OutDir>$(ProjectDir)..\build\tests\</OutDir><IntDir>$(ProjectDir)..\build\obj\tests\</IntDir><TargetName>NppHistory.Tests</TargetName></PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile><WarningLevel>Level4</WarningLevel><LanguageStandard>stdcpp17</LanguageStandard><AdditionalIncludeDirectories>$(ProjectDir)..\src</AdditionalIncludeDirectories><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
-    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>bcrypt.lib;winhttp.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link><SubSystem>Console</SubSystem><AdditionalDependencies>bcrypt.lib;winhttp.lib;comctl32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tests\test_main.cpp" />
+    <ClCompile Include="..\tests\test_temporary_status.cpp" />
+    <ClCompile Include="..\src\TemporaryStatusBar.cpp" />
     <ClCompile Include="..\tests\test_document_tabs.cpp" />
     <ClCompile Include="..\src\DocumentTabIndicators.cpp" />
     <ClCompile Include="..\tests\test_utilities.cpp" />

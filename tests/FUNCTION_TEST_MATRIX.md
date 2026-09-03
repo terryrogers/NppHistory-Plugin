@@ -1,5 +1,14 @@
 # Function verification matrix
 
+## Temporary status messages — subsequent source-only changes
+
+Not compiled or executed. See `SOURCE_STATUS_MESSAGES-2026-09-03.md`; older PASS results do not certify this feature.
+
+| Area | Prepared coverage | Status |
+|---|---|---|
+| `TemporaryStatusBar::initialize/attach/read/show/displayPending/release/clear/shutdown/subclass` | Queuing/coalescing, replacement baseline, expiry/stale timers, native Unicode/ANSI ownership, other fields/widths/styles, simple/owner-draw modes, shutdown/missing/recreated control | Win32 regression cases added, NOT RUN |
+| Capture/refresh/compare/restore, edit/delete, settings, save/autosave, update completion | Outcome-specific text; cancellations produce no success; no logging dependency | Source review only; live UAT pending |
+
 ## Live command settings — subsequent source-only changes
 
 Not compiled or executed; historical PASS results do not certify these changes. See `SOURCE_LIVE_COMMANDS-2026-09-03.md`.
