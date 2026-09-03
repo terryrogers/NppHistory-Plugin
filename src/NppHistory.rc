@@ -71,10 +71,10 @@ BEGIN
 
     GROUPBOX "Command placement and hotkeys", IDC_GENERAL_TOOLBAR_GROUP, 18, 37, 334, 174
     LTEXT "Command", 1270, 28, 53, 47, 12
-    LTEXT "Pane", 1271, 78, 53, 28, 12
-    LTEXT "Plugins", 1272, 108, 53, 34, 12
+    CTEXT "History\nPane", 1271, 74, 49, 32, 22
+    CTEXT "Tab bar\nmenu", 1272, 106, 49, 34, 22
     LTEXT "Toolbar", 1273, 143, 53, 34, 12
-    LTEXT "Right-click", 1274, 179, 53, 40, 12
+    CTEXT "Document\nmenu", 1274, 177, 49, 42, 22
     LTEXT "Hotkey", 1275, 225, 53, 110, 12
     LTEXT "Capture", 1200, 28, 74, 47, 12
     CONTROL "", 1201, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 84, 72, 12, 13
@@ -127,7 +127,7 @@ BEGIN
     CONTROL "", 1142, "msctls_hotkey32", WS_BORDER | WS_TABSTOP, 240, 173, 100, 16
     LTEXT "All commands always appear in Plugins > NppHistory.", IDC_TOOLBAR_DESCRIPTION, 28, 194, 314, 12
 
-    GROUPBOX "Document right-click menu", IDC_CONTEXT_GROUP, 18, 217, 334, 47
+    GROUPBOX "Document and tab bar right-click menus", IDC_CONTEXT_GROUP, 18, 217, 334, 47
     CONTROL "Group commands in an NppHistory submenu", IDC_CONTEXT_SUBMENU, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 28, 231, 310, 13
     LTEXT "Unchecked: show selected commands between two separator lines.", IDC_CONTEXT_NOTE, 28, 246, 314, 12
     LTEXT "Toolbar and hotkey changes apply after restart. Other placements apply when you click OK.", IDC_HOTKEY_NOTE, 28, 265, 314, 24

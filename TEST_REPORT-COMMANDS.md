@@ -1,5 +1,7 @@
 # Commands and hotkeys verification — 3 September 2026
 
+This report describes the previously compiled and installed build. Later [source-only refinements](SOURCE_REFINEMENTS-2026-09-03.md) are **not covered by these PASS results** and have not been compiled, installed or exercised in Notepad++.
+
 **Result: automated verification PASS; installed 3 September 2026; installed-environment UAT pending.**
 
 ## Scope

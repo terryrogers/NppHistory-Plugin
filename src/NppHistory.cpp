@@ -81,8 +81,11 @@ ReleaseInfo availableUpdate;
 void syncCommandStates();
 bool actionAvailable(Command command);
 void configureCommandMenu();
-void appendDocumentContextMenu(HMENU menu);
+void removeCommandContextItems(HMENU menu);
+void appendCommandContextMenu(HMENU menu, CommandSurface surface);
 bool documentContextPending = false;
+bool tabContextPending = false;
+HMENU activeCommandContextMenu = nullptr;
 UINT_PTR currentBuffer();
 
 void prepareRestoreSave()
@@ -696,22 +699,52 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
 LRESULT CALLBACK mainWindowSubclass(HWND window, UINT message, WPARAM wParam, LPARAM lParam,
     UINT_PTR, DWORD_PTR)
 {
+    if (ready && message == WM_NOTIFY && lParam)
+    {
+        const auto* notification = reinterpret_cast<const NMHDR*>(lParam);
+        if (notification->code == NM_RCLICK)
+        {
+            const auto tabs = documentTabControls();
+            if (std::find(tabs.begin(), tabs.end(), notification->hwndFrom) != tabs.end())
+            {
+                // Native right-click selects the tab; the host then activates its split view.
+                // Do not intercept mouse clicks or change tab captions/geometry here.
+                const bool previous = tabContextPending;
+                const HMENU previousMenu = activeCommandContextMenu;
+                activeCommandContextMenu = nullptr;
+                tabContextPending = true;
+                const LRESULT result = DefSubclassProc(window, message, wParam, lParam);
+                // The host reuses this popup for Document List too. Clean up only
+                // after tracking finishes, never while a submenu is still open.
+                removeCommandContextItems(activeCommandContextMenu);
+                activeCommandContextMenu = previousMenu;
+                tabContextPending = previous;
+                return result;
+            }
+        }
+    }
     if (ready && message == WM_CONTEXTMENU
         && (reinterpret_cast<HWND>(wParam) == nppData._scintillaMainHandle
             || reinterpret_cast<HWND>(wParam) == nppData._scintillaSecondHandle))
     {
         // Let Notepad++ build its normal editor menu and switch the active split view.
         const bool previous = documentContextPending;
+        const HMENU previousMenu = activeCommandContextMenu;
+        activeCommandContextMenu = nullptr;
         documentContextPending = true;
         const LRESULT result = DefSubclassProc(window, message, wParam, lParam);
+        removeCommandContextItems(activeCommandContextMenu);
+        activeCommandContextMenu = previousMenu;
         documentContextPending = previous;
         return result;
     }
-    if (ready && message == WM_INITMENUPOPUP && documentContextPending)
+    if (ready && message == WM_INITMENUPOPUP && (documentContextPending || tabContextPending))
     {
-        documentContextPending = false; // Only the root editor popup, never its child menus.
+        const auto surface = tabContextPending ? CommandSurface::tabContext : CommandSurface::context;
+        documentContextPending = tabContextPending = false; // Only the root popup, never child menus.
         const LRESULT result = DefSubclassProc(window, message, wParam, lParam);
-        appendDocumentContextMenu(reinterpret_cast<HMENU>(wParam));
+        activeCommandContextMenu = reinterpret_cast<HMENU>(wParam);
+        appendCommandContextMenu(activeCommandContextMenu, surface);
         return result;
     }
     if (ready && message == WM_INITMENUPOPUP
@@ -906,11 +939,11 @@ void logSettingsChanges(const Settings& previous, const Settings& current)
     boolean(L"Context menu submenu", previous.contextSubmenu, current.contextSubmenu);
     for (int row = 0; row < commandCount; ++row)
     {
-        const wchar_t* surfaces[] = {L"Pane", L"Plugins menu", L"Toolbar", L"Document context menu"};
+        const wchar_t* surfaces[] = {L"History Pane", L"Tab bar context menu", L"Toolbar", L"Document context menu"};
         for (int column = 0; column < 4; ++column)
             boolean(std::wstring(surfaces[column]) + L": " + commands[row].name,
-                previous.commandVisible(static_cast<Command>(row), static_cast<CommandSurface>(column)),
-                current.commandVisible(static_cast<Command>(row), static_cast<CommandSurface>(column)));
+                previous.commandVisible(static_cast<Command>(row), placementSurfaces[column]),
+                current.commandVisible(static_cast<Command>(row), placementSurfaces[column]));
     }
     const auto hotkeyValue = [](const HotkeySetting& value) {
         if (!value.enabled) return std::wstring(L"disabled");
@@ -1031,6 +1064,7 @@ INT_PTR CALLBACK aboutProc(HWND dialog, UINT message, WPARAM wParam, LPARAM lPar
             (std::wstring(L"Release Date: ")
                 + localDateDisplay(NPPHISTORY_RELEASE_DATE_W)).c_str());
         centerWindowOnOwner(dialog, nppData._nppHandle);
+        addControlTooltip(dialog, IDOK, L"Close About NppHistory.");
         return TRUE;
     }
     if (message == WM_NOTIFY && reinterpret_cast<NMHDR*>(lParam)->idFrom == IDC_ABOUT_AUTHOR
@@ -1300,9 +1334,9 @@ void configureCommandMenu()
         InsertMenuItemW(pluginCommandMenu, position++, TRUE, &items[static_cast<int>(command)]);
 }
 
-void appendDocumentContextMenu(HMENU menu)
+void removeCommandContextItems(HMENU menu)
 {
-    if (!menu || !pluginCommandMenu) return;
+    if (!menu || !IsMenu(menu)) return;
     // The host may reuse its popup. Remove only entries tagged by this plugin.
     for (int index = GetMenuItemCount(menu) - 1; index >= 0; --index)
     {
@@ -1314,9 +1348,15 @@ void appendDocumentContextMenu(HMENU menu)
             if (item.hSubMenu) DestroyMenu(item.hSubMenu);
         }
     }
+}
+
+void appendCommandContextMenu(HMENU menu, CommandSurface surface)
+{
+    if (!menu || !pluginCommandMenu) return;
+    removeCommandContextItems(menu);
     bool any = false;
     for (const Command command : commandOrder)
-        any = any || settings.commandVisible(command, CommandSurface::context);
+        any = any || settings.commandVisible(command, surface);
     if (!any) return;
     syncCommandStates();
     const HMENU target = settings.contextSubmenu ? CreatePopupMenu() : menu;
@@ -1331,7 +1371,7 @@ void appendDocumentContextMenu(HMENU menu)
     if (!settings.contextSubmenu) separator();
     for (const Command command : commandOrder)
     {
-        if (!settings.commandVisible(command, CommandSurface::context)) continue;
+        if (!settings.commandVisible(command, surface)) continue;
         const int row = static_cast<int>(command);
         wchar_t label[256]{};
         MENUITEMINFOW item{sizeof(item)};

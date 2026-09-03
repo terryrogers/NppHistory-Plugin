@@ -2,6 +2,7 @@
 #include "Utilities.h"
 
 #include <chrono>
+#include <commctrl.h>
 #include <cstdlib>
 #include <regex>
 
@@ -10,6 +11,31 @@ using namespace npphistory;
 
 void runUtilityTests(TestContext& context)
 {
+    context.expect(!isTooltipInputControl(nullptr), "null controls cannot have tooltips");
+    const HWND tooltipOwner = CreateWindowExW(0, L"Static", L"Tooltip test", WS_POPUP,
+        0, 0, 200, 100, nullptr, nullptr, GetModuleHandleW(nullptr), nullptr);
+    context.expect(tooltipOwner != nullptr, "tooltip test owner created");
+    if (tooltipOwner)
+    {
+        struct ControlCase { const wchar_t* type; DWORD style; bool eligible; };
+        const ControlCase cases[] = {
+            {L"Static", SS_LEFT, false}, {L"Static", SS_NOTIFY, false},
+            {L"Button", BS_GROUPBOX, false}, {L"Button", BS_PUSHBUTTON, true},
+            {L"Button", BS_AUTOCHECKBOX | WS_DISABLED, true},
+            {L"Button", BS_AUTORADIOBUTTON, true}, {L"Edit", ES_READONLY, true},
+            {L"Edit", ES_MULTILINE, true}, {L"ComboBox", CBS_DROPDOWNLIST, true}
+        };
+        for (const auto& spec : cases)
+        {
+            const HWND control = CreateWindowExW(0, spec.type, L"", WS_CHILD | spec.style,
+                0, 0, 100, 20, tooltipOwner, reinterpret_cast<HMENU>(101),
+                GetModuleHandleW(nullptr), nullptr);
+            context.expect(control && isTooltipInputControl(control) == spec.eligible,
+                "tooltip eligibility accepts inputs/buttons and rejects labels/group boxes");
+            if (control) DestroyWindow(control);
+        }
+        DestroyWindow(tooltipOwner);
+    }
     TestDirectory directory(L"utilities");
     const fs::path nested = directory.path() / L"nested" / L"bytes.bin";
     const std::vector<std::uint8_t> first{0, 1, 2, 0xFE, 0xFF};

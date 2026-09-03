@@ -6,7 +6,11 @@
 namespace npphistory
 {
 enum class Command { capture, compare, restore, refresh, settings, about, history };
-enum class CommandSurface { pane, plugins, toolbar, context };
+enum class CommandSurface { pane, plugins, toolbar, context, tabContext };
+// UI order is independent of the persisted surface identifiers. Plugins is mandatory,
+// so it has no settings column; its former control slot now edits the tab menu.
+inline constexpr std::array<CommandSurface, 4> placementSurfaces{
+    CommandSurface::pane, CommandSurface::tabContext, CommandSurface::toolbar, CommandSurface::context};
 inline constexpr int commandCount = 7;
 // Internal indices remain stable; every visible surface uses this order.
 inline constexpr std::array<Command, commandCount> commandOrder{
@@ -21,8 +25,8 @@ inline constexpr std::array<CommandDefinition, commandCount> commands{{
 }};
 inline constexpr bool placementLocked(Command command, CommandSurface surface)
 {
-    (void)command;
-    return surface == CommandSurface::plugins;
+    return surface == CommandSurface::plugins
+        || (command == Command::history && surface == CommandSurface::pane);
 }
 struct CommandPlacement
 {
@@ -30,6 +34,7 @@ struct CommandPlacement
     bool plugins = true;
     bool toolbar = false;
     bool context = false;
+    bool tabContext = false;
 };
 inline constexpr bool commandAvailable(Command command, bool saved, bool excluded,
     bool historyEnabled, bool hasRevisions, bool selected, bool paneVisible)

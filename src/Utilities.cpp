@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <bcrypt.h>
+#include <commctrl.h>
 
 #include <algorithm>
 #include <array>
@@ -16,6 +17,36 @@ namespace fs = std::filesystem;
 
 namespace npphistory
 {
+bool isTooltipInputControl(HWND control)
+{
+    wchar_t name[64]{};
+    if (!control || !GetClassNameW(control, name, static_cast<int>(std::size(name)))) return false;
+    if (_wcsicmp(name, L"Button") == 0)
+        return (GetWindowLongPtrW(control, GWL_STYLE) & BS_TYPEMASK) != BS_GROUPBOX;
+    return _wcsicmp(name, L"Edit") == 0 || _wcsicmp(name, L"ComboBox") == 0
+        || _wcsicmp(name, HOTKEY_CLASSW) == 0 || _wcsicmp(name, L"Scintilla") == 0;
+}
+
+void addControlTooltip(HWND dialog, int controlId, const wchar_t* text)
+{
+    const HWND control = GetDlgItem(dialog, controlId);
+    if (!isTooltipInputControl(control) || !text || !*text) return;
+    const HWND tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+        WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT, CW_USEDEFAULT,
+        CW_USEDEFAULT, CW_USEDEFAULT, dialog, nullptr,
+        reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog, GWLP_HINSTANCE)), nullptr);
+    if (!tooltip) return;
+    TOOLINFOW tool{sizeof(tool)};
+    tool.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+    tool.hwnd = dialog;
+    tool.uId = reinterpret_cast<UINT_PTR>(control);
+    tool.lpszText = const_cast<wchar_t*>(text);
+    SendMessageW(tooltip, TTM_SETMAXTIPWIDTH, 0, 420);
+    if (!SendMessageW(tooltip, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool)))
+        DestroyWindow(tooltip);
+    // Owned tooltip windows are destroyed with the dialog.
+}
+
 namespace
 {
 thread_local HWND messageBoxOwner = nullptr;

@@ -37,8 +37,6 @@ std::vector<SettingsTooltipEntry> settingsTooltips = {
     {IDC_HOTKEY_COMPARE_INPUT, L"Press the complete key combination to use for Compare."},
     {IDC_HOTKEY_HISTORY_ENABLED, L"Enable a configurable keyboard shortcut for opening History after restarting Notepad++."},
     {IDC_HOTKEY_HISTORY_INPUT, L"Press the complete key combination to use for History."},
-    {IDC_HOTKEY_NOTE, L"Toolbar and hotkey changes are loaded by Notepad++ when it next starts."},
-    {IDC_HOTKEY_STATUS, L"Shows whether the selected hotkeys are complete, unique and currently available."},
     {IDC_ENABLED, L"Enable NppHistory automatic file saving. This is unavailable while AutoSave.dll is installed."},
     {IDC_AFTER_EDIT, L"Automatically save after editing has stopped for the configured number of seconds."},
     {IDC_AFTER_EDIT_SECONDS, L"Seconds of editing inactivity before automatic saving; the minimum is 10 seconds."},
@@ -50,9 +48,8 @@ std::vector<SettingsTooltipEntry> settingsTooltips = {
     {IDC_AUTOSAVE_CURRENT_FILE, L"Apply an automatic-save trigger only to the currently active file."},
     {IDC_AUTOSAVE_ALL_FILES, L"Apply an automatic-save trigger to every open modified file."},
     {IDC_AUTOSAVE_EXCLUSIONS, L"One case-insensitive wildcard per line. Matching files are excluded from NppHistory Auto Save."},
-    {IDC_AUTOSAVE_CONFLICT_NOTICE, L"NppHistory Auto Save is disabled to avoid competing with the installed AutoSave plugin."},
     {IDC_HISTORY_ENABLED, L"Enable creation of local NppHistory file revisions."},
-    {IDC_HISTORY_BEFORE_SAVE, L"Create a revision containing the editor content immediately before a file is saved."},
+    {IDC_HISTORY_BEFORE_SAVE, L"Create a revision of the existing file on disk before saving overwrites it."},
     {IDC_HISTORY_AFTER_SAVE, L"Create a revision containing the saved content immediately after a file is saved."},
     {IDC_HISTORY_BEFORE_RESTORE, L"Create a safety revision before replacing a file with an older revision."},
     {IDC_HISTORY_ADJACENT, L"Store each file's revisions in a hidden .npphistory folder beside that file."},
@@ -67,7 +64,6 @@ std::vector<SettingsTooltipEntry> settingsTooltips = {
     {IDC_LOGGING_PATH, L"Full path of the custom NppHistory log file."},
     {IDC_LOGGING_BROWSE, L"Choose a custom log file location."},
     {IDC_LOGGING_OPEN, L"Open the active NppHistory log file in Notepad++."},
-    {IDC_LOGGING_EFFECTIVE_PATH, L"The complete log file path that NppHistory will currently use."},
     {IDC_LOGGING_MAX_SIZE, L"Maximum log size in megabytes before the selected rollover action is applied."},
     {IDC_LOGGING_ROLLOVER, L"Choose whether a full log is overwritten or renamed as an archive."},
     {IDC_LOGGING_ARCHIVES, L"Maximum number of archived log files retained when archive rollover is selected."},
@@ -75,10 +71,8 @@ std::vector<SettingsTooltipEntry> settingsTooltips = {
     {IDC_UPDATE_FREQUENCY, L"Choose how often automatic update checks are due: daily, weekly or monthly."},
     {IDC_UPDATE_PRERELEASES, L"Include beta and other prerelease builds when checking for updates."},
     {IDC_UPDATE_CHECK_NOW, L"Check for an eligible update now and offer installation if one is available."},
-    {IDC_UPDATE_STATUS, L"Shows the latest update result, last successful check and next scheduled check."},
     {IDOK, L"Save all Settings changes and close this window."},
-    {IDCANCEL, L"Discard unsaved Settings changes and close this window."},
-    {IDC_SETTINGS_TABS, L"Choose the Commands & Hotkeys, Auto Save, History, Logging or Updates settings page."}
+    {IDCANCEL, L"Discard unsaved Settings changes and close this window."}
 };
 
 void configureSettingsTooltips(HWND dialog)
@@ -87,7 +81,7 @@ void configureSettingsTooltips(HWND dialog)
     settingsTooltips.erase(std::remove_if(settingsTooltips.begin(), settingsTooltips.end(),
         [](const auto& entry) { return entry.id >= 1200 || entry.id == IDC_CONTEXT_SUBMENU; }),
         settingsTooltips.end());
-    const wchar_t* surfaces[] = {L"NppHistory pane", L"Plugins > NppHistory menu",
+    const wchar_t* surfaces[] = {L"History Pane", L"tab bar right-click menu",
         L"Notepad++ toolbar (after restart)", L"document right-click menu"};
     for (int row = 0; row < commandCount; ++row)
     {
@@ -95,9 +89,8 @@ void configureSettingsTooltips(HWND dialog)
         {
             const int id = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
             std::wstring hint = std::wstring(commands[row].name) + L": show in the " + surfaces[column] + L".";
-            if (placementLocked(static_cast<Command>(row), static_cast<CommandSurface>(column)))
-                hint += column == 0 ? L" Not applicable: History opens this pane."
-                    : L" Always available so this command cannot become inaccessible.";
+            if (placementLocked(static_cast<Command>(row), placementSurfaces[column]))
+                hint = L"History opens the History Pane, so it cannot be added inside that pane.";
             if (std::none_of(settingsTooltips.begin(), settingsTooltips.end(),
                 [=](const auto& entry) { return entry.id == id; }))
                 settingsTooltips.push_back({id, hint});
@@ -106,10 +99,12 @@ void configureSettingsTooltips(HWND dialog)
             if (std::none_of(settingsTooltips.begin(), settingsTooltips.end(),
                 [=](const auto& entry) { return entry.id == id; }))
                 settingsTooltips.push_back({id, std::wstring(commands[row].name)
-                    + L": enable a shortcut and press the complete key combination; applies after restart."});
+                    + (id == hotkeyEnableIds[row]
+                        ? L": enable this keyboard shortcut after restarting Notepad++."
+                        : L": press the complete key combination; applies after restart.")});
     }
     settingsTooltips.push_back({IDC_CONTEXT_SUBMENU,
-        L"Checked: place selected right-click commands inside NppHistory. Unchecked: surround them with separator lines."});
+        L"For both document and tab bar menus: checked places selected commands in an NppHistory submenu; unchecked places them between separator lines."});
     const HINSTANCE instance = reinterpret_cast<HINSTANCE>(GetWindowLongPtrW(dialog,
         GWLP_HINSTANCE));
     const HWND tooltip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
@@ -122,7 +117,7 @@ void configureSettingsTooltips(HWND dialog)
     int added = 0;
     for (const auto& entry : settingsTooltips)
     {
-        if (!GetDlgItem(dialog, entry.id))
+        if (!isTooltipInputControl(GetDlgItem(dialog, entry.id)))
             continue;
         TOOLINFOW tool{sizeof(tool)};
         tool.uFlags = TTF_TRACK | TTF_ABSOLUTE;
@@ -151,7 +146,7 @@ void updateSettingsTooltip(HWND dialog)
     {
         const HWND control = GetDlgItem(dialog, entry.id);
         RECT bounds{};
-        if (control && IsWindowVisible(control) && GetWindowRect(control, &bounds)
+        if (isTooltipInputControl(control) && IsWindowVisible(control) && GetWindowRect(control, &bounds)
             && PtInRect(&bounds, cursor))
         {
             hovered = entry.id;
@@ -631,7 +626,7 @@ const wchar_t* settingsCommandName(int id)
     static std::wstring commandName;
     for (int row = 0; row < commandCount; ++row)
     {
-        const wchar_t* surfaces[] = {L"Pane", L"Plugins menu", L"Toolbar", L"Document context menu"};
+        const wchar_t* surfaces[] = {L"History Pane", L"Tab bar context menu", L"Toolbar", L"Document context menu"};
         for (int column = 0; column < 4; ++column)
         {
             const int control = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
@@ -756,7 +751,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             const auto command = static_cast<Command>(row);
             for (int column = 0; column < 4; ++column)
             {
-                const auto surface = static_cast<CommandSurface>(column);
+                const auto surface = placementSurfaces[column];
                 const int id = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
                 CheckDlgButton(dialog, id, settings->commandVisible(command, surface) ? BST_CHECKED : BST_UNCHECKED);
                 EnableWindow(GetDlgItem(dialog, id), !placementLocked(command, surface));
@@ -975,7 +970,7 @@ INT_PTR CALLBACK settingsProc(HWND dialog, UINT message, WPARAM wParam, LPARAM l
             for (int column = 0; column < 4; ++column)
             {
                 const int id = column == 2 ? toolbarControlIds[row] : placementControl(row, column + 1);
-                settings->setCommandVisible(command, static_cast<CommandSurface>(column),
+                settings->setCommandVisible(command, placementSurfaces[column],
                     IsDlgButtonChecked(dialog, id) == BST_CHECKED);
             }
             settings->commandHotkey(command) = hotkeyFromControls(dialog, row);
@@ -1259,9 +1254,9 @@ void Settings::load(const std::filesystem::path& file)
     {
         const auto command = static_cast<Command>(row);
         const std::wstring name(commands[row].name);
-        for (int column = 0; column < 4; ++column)
+        for (int column = 0; column < 5; ++column)
         {
-            const wchar_t* prefixes[] = {L"Pane", L"PluginMenu", L"Toolbar", L"Context"};
+            const wchar_t* prefixes[] = {L"Pane", L"PluginMenu", L"Toolbar", L"Context", L"TabContext"};
             const auto surface = static_cast<CommandSurface>(column);
             const bool fallback = column == 0 || column == 1 ? true
                 : column == 2 ? commandVisible(command, surface) : false;
@@ -1341,8 +1336,8 @@ bool Settings::save(const std::filesystem::path& file) const
     {
         const auto command = static_cast<Command>(row);
         const std::wstring name(commands[row].name);
-        const wchar_t* prefixes[] = {L"Pane", L"PluginMenu", L"Toolbar", L"Context"};
-        for (int column = 0; column < 4; ++column)
+        const wchar_t* prefixes[] = {L"Pane", L"PluginMenu", L"Toolbar", L"Context", L"TabContext"};
+        for (int column = 0; column < 5; ++column)
             if (!write((prefixes[column] + name).c_str(),
                 commandVisible(command, static_cast<CommandSurface>(column)) ? L"1" : L"0")) return false;
         const auto& key = commandHotkey(command);
@@ -1415,6 +1410,7 @@ bool Settings::commandVisible(Command command, CommandSurface surface) const noe
     case CommandSurface::pane: return placement.pane;
     case CommandSurface::plugins: return placement.plugins;
     case CommandSurface::context: return placement.context;
+    case CommandSurface::tabContext: return placement.tabContext;
     case CommandSurface::toolbar:
         if (command == Command::capture) return toolbarCapture;
         if (command == Command::compare) return toolbarCompare;
@@ -1433,6 +1429,7 @@ void Settings::setCommandVisible(Command command, CommandSurface surface, bool v
     case CommandSurface::pane: placement.pane = visible; break;
     case CommandSurface::plugins: placement.plugins = visible; break;
     case CommandSurface::context: placement.context = visible; break;
+    case CommandSurface::tabContext: placement.tabContext = visible; break;
     case CommandSurface::toolbar:
         if (command == Command::capture) toolbarCapture = visible;
         else if (command == Command::compare) toolbarCompare = visible;

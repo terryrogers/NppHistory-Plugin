@@ -67,7 +67,7 @@ Copy-Item -Path "$(Split-Path $NotepadExe)\*.xml" -Destination $root
 [IO.Directory]::CreateDirectory("$root\plugins\Config\NppHistory") | Out-Null
 Copy-Item -LiteralPath "$PSScriptRoot\..\build\x64\Release\NppHistory.dll" -Destination "$root\plugins\NppHistory\NppHistory.dll"
 $names = @('Capture','Compare','Restore','History','Refresh','Settings','About')
-$paneIds = @(1006,1004,1005,1153,1003,1007,1008)
+$paneIds = @(1006,1004,1005,1003,1007,1008)
 $ini = "[NppHistory]`r`nAutoSaveEnabled=0`r`nAutoUpdateEnabled=0`r`nHistoryBeforeSave=0`r`nHistoryAfterSave=0`r`nLoggingEnabled=1`r`nLogLevel=3`r`n"
 for($i=0;$i -lt $names.Count;$i++) {
     $name=$names[$i]
@@ -102,11 +102,16 @@ function Snapshot($window,[string]$file) {
     try {[void][NppHistoryNative]::PrintWindow($window,$dc,2)}finally{$g.ReleaseHdc($dc);$g.Dispose()}
     $b.Save("$root\$file");$b.Dispose()
 }
-function Read-Context([bool]$submenu) {
-    [void][NppHistoryNative]::PostMessage($main,0x7B,$editor,[IntPtr](-1))
+function Read-Context([bool]$submenu,[bool]$tabBar=$false) {
+    if($tabBar) {
+        $tabs=[NppHistoryNative]::FindDescendant($main,'SysTabControl32')
+        [NppHistoryNative]::BeginRightClick($tabs,30,8)
+    } else {
+        [void][NppHistoryNative]::PostMessage($main,0x7B,$editor,[IntPtr](-1))
+    }
     $popup=[IntPtr]::Zero
     for($j=0;$j -lt 40;$j++){$popup=[CommandProbe]::Popup([uint32]$process.Id);if($popup -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 50}
-    Assert ($popup -ne [IntPtr]::Zero) 'document context menu opens'
+    Assert ($popup -ne [IntPtr]::Zero) "context menu opens (tab bar: $tabBar)"
     $items=@([CommandProbe]::Entries($popup));$group=@($items | Where-Object Text -eq 'NppHistory')
     if($submenu){Assert ($group.Count -eq 1) 'exactly one NppHistory submenu';$items=@([CommandProbe]::Entries($group[0].Sub))}
     else {Assert ($group.Count -eq 0) 'inline mode has no NppHistory submenu'}
@@ -146,7 +151,8 @@ try {
     Assert ($panel -ne [IntPtr]::Zero) 'History command opens pane'
     $buttons=@(foreach($id in $paneIds){$h=[NppHistoryNative]::FindControl($panel,$id);$r=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($h,[ref]$r);[pscustomobject]@{Id=$id;Top=$r.Top;Left=$r.Left;Visible=[NppHistoryNative]::IsWindowVisible($h)}})
     Assert ((($buttons | Sort-Object Top,Left).Id -join ',') -eq ($paneIds -join ',')) 'pane common order'
-    Assert (@($buttons | Where-Object Visible).Count -eq 7) 'all pane commands initially visible'
+    Assert (@($buttons | Where-Object Visible).Count -eq 6) 'six eligible pane commands initially visible'
+    Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1153))) 'History command is never displayed inside its pane'
     $context=@(Read-Context $true)
     Assert (!$context[1].Enabled -and !$context[2].Enabled) 'visible pane without selection disables Compare and Restore'
     $list=[NppHistoryNative]::FindControl($panel,1002)
@@ -165,11 +171,23 @@ try {
     [void][NppHistoryNative]::SendMessage($restoreKey,0x401,[IntPtr]0x0733,[IntPtr]::Zero)
     [void][NppHistoryNative]::SendMessage($settings,0x111,[IntPtr](1226 -bor (0x300 -shl 16)),$restoreKey)
     Snapshot $settings 'commands-settings.png'
-    # Every Plugins checkbox is checked and locked; other placements are editable.
+    # The former Plugins column now edits an independent, opt-in tab bar menu.
     for($row=0;$row -lt 7;$row++) {
         $h=[NppHistoryNative]::FindControl($settings,(1202+$row*10))
-        Assert (![NppHistoryNative]::IsWindowEnabled($h) -and [NppHistoryNative]::SendMessage($h,0xF0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64() -eq 1) 'Plugins placement locked on'
+        Assert ([NppHistoryNative]::IsWindowEnabled($h) -and [NppHistoryNative]::SendMessage($h,0xF0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64() -eq 0) 'tab context placement is editable and defaults off'
+        Click-Control $settings (1202+$row*10)
     }
+    $historyPaneChoice=[NppHistoryNative]::FindControl($settings,1261)
+    Assert (![NppHistoryNative]::IsWindowEnabled($historyPaneChoice) -and [NppHistoryNative]::SendMessage($historyPaneChoice,0xF0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64() -eq 0) 'History Pane checkbox for History is cleared and locked'
+    Assert ([NppHistoryNative]::Text([NppHistoryNative]::FindControl($settings,1272)) -notmatch 'Plugins') 'Plugins column removed'
+    Click-Control $settings 1
+    Start-Sleep -Milliseconds 200
+    $tabMenu=@(Read-Context $true $true)
+    Assert (($tabMenu.Text -join '|') -eq ($entries.Text -join '|')) 'tab submenu has seven commands and active shortcuts in common order'
+    Assert (@($tabMenu | Where-Object Icon).Count -eq 7) 'all tab menu commands have icons'
+    $tabMenuAgain=@(Read-Context $true $true)
+    Assert ($tabMenuAgain.Count -eq 7) 'reused native tab popup has no duplicates'
+    $settings=Open-Settings
     Click-Control $settings 1151
     Click-Control $settings 1201 # hide Capture in pane only
     Click-Control $settings 1254 # hide About in context only
@@ -178,6 +196,8 @@ try {
     Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1006))) 'pane placement applied immediately'
     $context=@(Read-Context $false)
     Assert (($context.Text -join '|') -eq (($entries | Select-Object -First 6).Text -join '|')) 'inline context filters only the disabled command'
+    $tabMenu=@(Read-Context $false $true)
+    Assert ($tabMenu.Count -eq 7) 'document menu filtering does not change tab menu selection'
     Assert (([CommandProbe]::Entries($menu)).Count -eq 7) 'Plugins menu remains complete'
     $again=@(Read-Context $false)
     Assert ($again.Count -eq 6) 'reopening context does not duplicate commands'
@@ -204,7 +224,7 @@ try {
     Start-Sleep -Milliseconds 150
     Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1006))) 'Cancel discards placement edits'
     $settings=Open-Settings
-    for($row=1;$row -lt 7;$row++){Click-Control $settings (1201+$row*10)}
+    for($row=1;$row -lt 6;$row++){Click-Control $settings (1201+$row*10)}
     Click-Control $settings 1
     Start-Sleep -Milliseconds 150
     Assert (@($paneIds | Where-Object {[NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,$_))}).Count -eq 0) 'all pane buttons can be hidden without removing Plugins menu access'

@@ -647,8 +647,8 @@ try {
     $compareButton = [NppHistoryNative]::FindControlByText($mainWindow, 'Button', 'Compare')
     $historyPanel = [NppHistoryNative]::GetParent($compareButton)
     $historyList = [NppHistoryNative]::FindControl($historyPanel, 1002)
-    $panelButtonLabels = @('Capture','Compare','Restore','History','Refresh','Settings','About')
-    $panelButtonIds = @(1006,1004,1005,1153,1003,1007,1008)
+    $panelButtonLabels = @('Capture','Compare','Restore','Refresh','Settings','About')
+    $panelButtonIds = @(1006,1004,1005,1003,1007,1008)
     $panelButtonsPassed = $historyPanel -ne [IntPtr]::Zero
     $panelButtonWidths = @()
     for ($buttonIndex = 0; $buttonIndex -lt $panelButtonIds.Count; $buttonIndex++) {
@@ -1169,7 +1169,7 @@ try {
                 $settingsWindow, 'NppHistorySettingsTooltipWindow')
             $settingsTooltipActive = [NppHistoryNative]::GetProp(
                 $settingsWindow, 'NppHistorySettingsTooltipActive').ToInt64()
-            $settingsTooltipsPassed = $settingsTooltipCount -eq 85 -and
+            $settingsTooltipsPassed = $settingsTooltipCount -eq 79 -and
                 $settingsTooltipWindow -ne [IntPtr]::Zero
             [void][NppHistoryNative]::SendMessage($intervalControl, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
             $intervalEnabledOnSelection = [NppHistoryNative]::IsWindowEnabled($intervalMinutesControl)

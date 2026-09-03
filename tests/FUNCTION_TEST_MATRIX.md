@@ -1,5 +1,18 @@
 # Function verification matrix
 
+## Pending source-only refinements — 3 September 2026
+
+The historical PASS entries below do not certify the latest uncompiled changes. Per user instruction, no build or runtime tests were run for this refinement batch.
+
+| Changed area | Updated coverage | Current status |
+|---|---|---|
+| Settings tooltips | `settings_tooltip_source_audit.ps1`: all 79 input/button targets present; zero label/non-input targets | Source audit PASS; native hover pending |
+| `placementLocked`, placement surfaces, settings load/save | Locked-off History Pane choice, legacy `PaneHistory=1`, opt-in independent `TabContext` preferences | Unit tests updated, NOT RUN |
+| `appendCommandContextMenu`, `removeCommandContextItems`, main-window popup handling | Native tab menu selection, order, icons, shortcuts, grouping, repeated opens and independent editor choices | Smoke tests updated, NOT RUN |
+| `isTooltipInputControl`, `addControlTooltip` | Labels/group boxes rejected; buttons, disabled checkboxes and text fields allowed; missing comment/About/compare hints added | Classifier unit tests added, NOT RUN; tooltip creation/hover UAT pending |
+
+See `SOURCE_REFINEMENTS-2026-09-03.md` for the remaining UAT criteria and restart explanation.
+
 This inventory covers the project-defined functions in `src`. “Indirect” means a private helper is reached through a public operation and its observable result is asserted. “Live” means the rebuilt DLL is exercised in an isolated real Notepad++ process. PASS means the intended behaviour represented by that function has automated evidence; PARTIAL means its core behaviour is tested but a modal, destructive, lifecycle or external side effect remains manual UAT.
 
 ## Seven-command configuration (3 September 2026)

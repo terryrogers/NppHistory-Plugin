@@ -61,19 +61,21 @@ void runSettingsTests(TestContext& context)
     Settings placements;
     for (const Command command : commandOrder)
     {
-        context.expect(placements.commandVisible(command, CommandSurface::pane)
+        context.expect(placements.commandVisible(command, CommandSurface::pane) == (command != Command::history)
             && placements.commandVisible(command, CommandSurface::plugins)
             && !placements.commandVisible(command, CommandSurface::toolbar)
-            && !placements.commandVisible(command, CommandSurface::context),
+            && !placements.commandVisible(command, CommandSurface::context)
+            && !placements.commandVisible(command, CommandSurface::tabContext),
             "all seven commands have safe default placements");
         placements.setCommandVisible(command, CommandSurface::plugins, false);
         context.expect(placements.commandVisible(command, CommandSurface::plugins),
             "all seven Plugins menu items are permanently available");
         for (const CommandSurface surface : {CommandSurface::pane, CommandSurface::toolbar,
-            CommandSurface::context})
+            CommandSurface::context, CommandSurface::tabContext})
         {
             placements.setCommandVisible(command, surface, true);
-            context.expect(placements.commandVisible(command, surface), "placement can be enabled");
+            context.expect(placements.commandVisible(command, surface) == !placementLocked(command, surface),
+                "optional placement enables except locked History Pane entry");
             placements.setCommandVisible(command, surface, false);
             context.expect(!placements.commandVisible(command, surface), "placement can be disabled");
             placements.setCommandVisible(command, surface, surface != CommandSurface::pane);
@@ -94,9 +96,20 @@ void runSettingsTests(TestContext& context)
         context.expect(!placementReload.commandVisible(command, CommandSurface::pane)
             && placementReload.commandVisible(command, CommandSurface::toolbar)
             && placementReload.commandVisible(command, CommandSurface::context)
+            && placementReload.commandVisible(command, CommandSurface::tabContext)
             && placementReload.commandVisible(command, CommandSurface::plugins),
             "each command placement round-trips independently");
     }
+    // Legacy settings must not re-enable the self-opening History command in its pane.
+    WritePrivateProfileStringW(L"NppHistory", L"PaneHistory", L"1", commandsPath.c_str());
+    placementReload.load(commandsPath);
+    context.expect(!placementReload.commandVisible(Command::history, CommandSurface::pane),
+        "legacy PaneHistory=1 is ignored");
+    placementReload.setCommandVisible(Command::capture, CommandSurface::tabContext, false);
+    context.expect(placementReload.commandVisible(Command::capture, CommandSurface::context),
+        "tab context selection is independent of document context selection");
+    context.expect(placementSurfaces[1] == CommandSurface::tabContext,
+        "former Plugins settings column edits tab context instead");
     for (int bits = 0; bits < 64; ++bits)
     {
         const bool saved = bits & 1, excluded = bits & 2, enabled = bits & 4,

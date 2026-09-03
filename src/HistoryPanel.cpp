@@ -785,18 +785,18 @@ bool configureComparisonToolbar(HWND toolbar, HINSTANCE instance, HIMAGELIST& im
 const wchar_t* toolbarHint(int image)
 {
     static const wchar_t* hints[] = {
-        L"Choose revision to compare",
-        L"Next difference",
-        L"Previous difference",
-        L"First difference",
-        L"Current difference",
-        L"Last difference",
-        L"First revision",
-        L"Previous revision",
-        L"Next revision",
-        L"Last revision",
-        L"Comparison options",
-        L"Refresh comparison"
+        L"Choose revision to compare with the current editor content.",
+        L"Next difference: scroll to the next block of changed lines.",
+        L"Previous difference: scroll to the previous block of changed lines.",
+        L"First difference: scroll to the first block of changed lines.",
+        L"Current difference: return to the selected difference without changing revisions.",
+        L"Last difference: scroll to the last block of changed lines.",
+        L"First revision: compare with the first revision in the history list.",
+        L"Previous revision: compare with the preceding revision in the history list.",
+        L"Next revision: compare with the following revision in the history list.",
+        L"Last revision: compare with the last revision in the history list.",
+        L"Comparison options: choose which whitespace, blank-line, case and line-ending differences to ignore.",
+        L"Refresh comparison: recalculate differences against the current editor content. No revision is created."
     };
     return image >= 0 && image < static_cast<int>(std::size(hints)) ? hints[image]
         : L"NppHistory comparison command";
@@ -1611,6 +1611,9 @@ INT_PTR CALLBACK HistoryPanel::editCommentProc(HWND dialog, UINT message,
             GWLP_HINSTANCE)), MAKEINTRESOURCEW(IDI_NPPHISTORY));
         SendMessageW(dialog, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(icon));
         SetDlgItemTextW(dialog, IDC_EDIT_COMMENT, context->comment.c_str());
+        addControlTooltip(dialog, IDC_EDIT_COMMENT, L"Enter the comment displayed beside this revision. The revision content is not changed.");
+        addControlTooltip(dialog, IDOK, L"Save the revised comment and close this window.");
+        addControlTooltip(dialog, IDCANCEL, L"Discard comment edits and close this window.");
         SendDlgItemMessageW(dialog, IDC_EDIT_COMMENT, EM_SETSEL, 0, -1);
         SetFocus(GetDlgItem(dialog, IDC_EDIT_COMMENT));
         centerWindowOnOwner(dialog, GetParent(dialog));
@@ -1640,6 +1643,8 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
     auto* context = reinterpret_cast<CompareContext*>(GetWindowLongPtrW(dialog, DWLP_USER));
     if (message == WM_INITDIALOG)
     {
+        addControlTooltip(dialog, IDC_COMPARE_LEFT, L"Current editor content, shown read-only for comparison.");
+        addControlTooltip(dialog, IDC_COMPARE_RIGHT, L"Selected stored revision, shown read-only for comparison.");
         context = reinterpret_cast<CompareContext*>(lParam);
         SetWindowLongPtrW(dialog, DWLP_USER, lParam);
         const HICON icon = LoadIconW(context->panel->_instance, MAKEINTRESOURCEW(IDI_NPPHISTORY));
