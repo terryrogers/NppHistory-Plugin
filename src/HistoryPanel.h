@@ -40,6 +40,8 @@ private:
         HistoryPanel* panel = nullptr;
         int revisionIndex = 0;
         bool synchronizingScroll = false;
+        std::filesystem::path sourceFile;
+        std::wstring sourceRevision;
         int topLine = 0;
         int visibleLines = 1;
         int lineHeight = 1;

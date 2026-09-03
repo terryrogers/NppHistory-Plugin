@@ -59,7 +59,7 @@ std::vector<SettingsTooltipEntry> settingsTooltips = {
     {IDC_HISTORY_BROWSE, L"Choose the common revision-history folder."},
     {IDC_HISTORY_EXCLUSIONS, L"One case-insensitive wildcard per line. Matching files cannot create, refresh, compare or restore revisions."},
     {IDC_LOGGING_ENABLED, L"Enable NppHistory diagnostic and audit logging."},
-    {IDC_LOGGING_LEVEL, L"Choose the minimum severity recorded: Errors, Warnings, Informational or Debug."},
+    {IDC_LOGGING_LEVEL, L"Choose the minimum severity recorded: Errors, Warnings, Informational or Debug. Critical failures are included at every enabled level."},
     {IDC_LOGGING_DEFAULT, L"Write the log in the normal Notepad++ plugin configuration folder."},
     {IDC_LOGGING_CUSTOM, L"Write the log to a custom file path."},
     {IDC_LOGGING_PATH, L"Full path of the custom NppHistory log file."},
@@ -1090,6 +1090,7 @@ std::wstring logLevelDisplayName(LogLevel value)
 {
     switch (value)
     {
+    case LogLevel::critical: return L"Critical";
     case LogLevel::error: return L"Error";
     case LogLevel::warning: return L"Warning";
     case LogLevel::informational: return L"Informational";

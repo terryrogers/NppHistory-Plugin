@@ -19,6 +19,8 @@
     <ClCompile Include="..\tests\test_main.cpp" />
     <ClCompile Include="..\tests\test_temporary_status.cpp" />
     <ClCompile Include="..\src\TemporaryStatusBar.cpp" />
+    <ClCompile Include="..\src\ActionFeedback.cpp" />
+    <ClCompile Include="..\tests\test_action_feedback.cpp" />
     <ClCompile Include="..\tests\test_document_tabs.cpp" />
     <ClCompile Include="..\src\DocumentTabIndicators.cpp" />
     <ClCompile Include="..\tests\test_utilities.cpp" />

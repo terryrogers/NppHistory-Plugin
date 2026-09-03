@@ -1,5 +1,16 @@
 # Function verification matrix
 
+## Contextual action feedback and paired logs — subsequent source-only changes
+
+Not compiled or executed. Current wording/severity contract: `SOURCE_ACTION_FEEDBACK-2026-09-03.md`.
+
+| Area | Prepared coverage | Status |
+|---|---|---|
+| `makeActionFeedback` | Exact 21 event templates, severity, filenames/Unicode, localized revision timestamps, manual/automatic updates, absent context and single-line sanitation | Tests added, NOT RUN |
+| `reportAction` | Same message/severity logged once per report, full path/revision/version/diagnostics, logging disabled/filtered/inaccessible while status remains independent | Tests added, NOT RUN |
+| Logger Critical severity | CRITICAL label, inclusion at all enabled thresholds, disabled logging respected, legacy persisted enum values unchanged | Tests updated, NOT RUN |
+| Native action producers | Paired reporter for all 21 event kinds, comparison-open event in initialization, updated filename-aware log assertions | Source audit PASS; native smoke updated, NOT RUN |
+
 ## Temporary status messages — subsequent source-only changes
 
 Not compiled or executed. See `SOURCE_STATUS_MESSAGES-2026-09-03.md`; older PASS results do not certify this feature.

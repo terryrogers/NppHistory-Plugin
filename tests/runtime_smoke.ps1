@@ -560,8 +560,8 @@ try {
             [IO.File]::ReadAllText($automaticUpdateLogPath)
         } else { '' }
         $automaticUpdateCheckPassed = $automaticUpdateLog.Contains('Automatic update check started') -and
-            ($automaticUpdateLog.Contains('Automatic update check completed') -or
-                $automaticUpdateLog.Contains('[WARNING] Update check failure'))
+            ($automaticUpdateLog.Contains('[INFO] Automatic Update Check:') -or
+                $automaticUpdateLog.Contains('[WARNING] Automatic Update Check Failed!'))
     }
 
     $lengthBefore = [NppHistoryNative]::SendMessage($editor, 2006, [IntPtr]::Zero, [IntPtr]::Zero).ToInt64()
@@ -1032,10 +1032,11 @@ try {
 
         $actionLogPath = Join-Path $configFolder 'NppHistory.log'
         $actionLogText = if (Test-Path $actionLogPath) { [IO.File]::ReadAllText($actionLogPath) } else { '' }
-        $commentUpdateLogged = $actionLogText.Contains('[INFO] Revision comment updated')
-        $revisionDeletionLogged = $actionLogText.Contains('[INFO] Revision deleted') -and
+        $loggedFileName = [regex]::Escape([IO.Path]::GetFileName($notePath))
+        $commentUpdateLogged = $actionLogText -match ('\[INFO\] ' + $loggedFileName + ' Revision .+ Comment Updated\.')
+        $revisionDeletionLogged = ($actionLogText -match ('\[INFO\] ' + $loggedFileName + ' Revision .+ Deleted\.')) -and
             $actionLogText.Contains('Automated deletion audit')
-        $restoreLogged = $actionLogText.Contains('[INFO] Restore')
+        $restoreLogged = $actionLogText -match ('\[INFO\] Restored .+ Revision for ' + $loggedFileName + '\.')
     }
 
     $settingsWindow = [IntPtr]::Zero
@@ -1523,19 +1524,20 @@ try {
 
     $logPath = Join-Path $configFolder 'NppHistory.log'
     $logText = if (Test-Path $logPath) { [IO.File]::ReadAllText($logPath) } else { '' }
-    $loggingEventsPassed = $logText.Contains('[INFO] File saved') -and
+    $loggedFileName = [regex]::Escape([IO.Path]::GetFileName($notePath))
+    $loggingEventsPassed = ($logText -match ('\[INFO\] ' + $loggedFileName + ' Saved(?:\.|; Revision Created\.)')) -and
         $logText.Contains('[INFO] Revision created') -and
-        $logText.Contains('[INFO] Capture') -and
-        $logText.Contains('[INFO] Compare') -and
+        $logText.Contains('[INFO] ' + [IO.Path]::GetFileName($notePath) + ' Revision Captured.') -and
+        $logText.Contains('[INFO] ' + [IO.Path]::GetFileName($notePath) + ' Comparison View Opened.') -and
         $logText.Contains('[INFO] Settings changed') -and
         $commentUpdateLogged -and $revisionDeletionLogged -and $restoreLogged -and
         ($SkipAutomaticUpdateWait.IsPresent -or
             ($logText.Contains('Automatic update check started') -and
-                ($logText.Contains('Automatic update check completed') -or
-                    $logText.Contains('[WARNING] Update check failure')))) -and
+                ($logText.Contains('[INFO] Automatic Update Check:') -or
+                    $logText.Contains('[WARNING] Automatic Update Check Failed!')))) -and
         $logText.Contains('Manual update check started') -and
-        ($logText.Contains('Manual update check completed') -or
-            $logText.Contains('[WARNING] Update check failure')) -and
+        ($logText.Contains('[INFO] Manual Update Check:') -or
+            $logText.Contains('[WARNING] Manual Update Check Failed!')) -and
         $logText.Contains('[DEBUG] Button click')
     $settingsControlLoggingPassed = $logText.Contains('[DEBUG] Settings tab | Logging') -and
         $logText.Contains('[DEBUG] Settings control | Plugin logging enabled') -and

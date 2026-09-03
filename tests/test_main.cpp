@@ -1,11 +1,13 @@
 #include "TestHarness.h"
 void runDocumentTabTests(TestContext& context);
 void runTemporaryStatusTests(TestContext& context);
+void runActionFeedbackTests(TestContext& context);
 
 int wmain()
 {
     TestContext context;
     runTemporaryStatusTests(context);
+    runActionFeedbackTests(context);
     runDocumentTabTests(context);
     runUtilityTests(context);
     runSettingsTests(context);

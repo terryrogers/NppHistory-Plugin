@@ -1,6 +1,6 @@
 #include "HistoryPanel.h"
 #include "Logger.h"
-#include "TemporaryStatusBar.h"
+#include "ActionFeedback.h"
 #include "DockingFeature/Docking.h"
 #include "TextDiff.h"
 #include "Utilities.h"
@@ -338,29 +338,28 @@ void HistoryPanel::editSelectedComment()
     const int index = selectedIndex();
     if (index < 0 || index >= static_cast<int>(_revisions.size()))
         return;
-    EditCommentContext context{_revisions[index].reason};
+    const RevisionInfo selected = _revisions[index];
+    EditCommentContext context{selected.reason};
     const std::wstring previousComment = context.comment;
     if (DialogBoxParamW(_instance, MAKEINTRESOURCEW(IDD_EDIT_COMMENT),
         _nppData._nppHandle, editCommentProc, reinterpret_cast<LPARAM>(&context)) != IDOK)
         return;
-    if (!_store->updateComment(_revisions[index], context.comment))
+    if (!_store->updateComment(selected, context.comment))
     {
         centeredMessageBox(_nppData._nppHandle, L"The revision comment could not be updated.",
             L"NppHistory", MB_OK | MB_ICONERROR);
-        pluginLogger().write(LogLevel::error, L"Edit revision comment failed",
-            _currentFile.wstring());
-        actionStatus().show(L"Comment update failed");
+        reportAction(ActionEvent::commentFailed,
+            {_currentFile, selected.timestamp, {}, false, selected.revisionPath.wstring()});
         return;
     }
-    pluginLogger().write(LogLevel::informational, L"Revision comment updated",
-        _currentFile.wstring() + L" | " + _revisions[index].timestamp);
     pluginLogger().write(LogLevel::debug, L"Option change",
         L"Revision comment: " + previousComment + L" -> " + context.comment);
     refresh(_currentFile);
     if (index < static_cast<int>(_revisions.size()))
         ListView_SetItemState(GetDlgItem(_dialog, IDC_REVISIONS), index,
             LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
-    actionStatus().show(L"Comment updated");
+    reportAction(ActionEvent::commentUpdated,
+        {_currentFile, selected.timestamp, {}, false, selected.revisionPath.wstring()});
 }
 
 void HistoryPanel::deleteSelected()
@@ -379,15 +378,14 @@ void HistoryPanel::deleteSelected()
     {
         centeredMessageBox(_nppData._nppHandle, L"The revision could not be deleted completely.",
             L"NppHistory", MB_OK | MB_ICONERROR);
-        pluginLogger().write(LogLevel::error, L"Delete revision failed",
-            _currentFile.wstring());
-        actionStatus().show(L"Revision deletion failed");
+        reportAction(ActionEvent::deleteFailed,
+            {_currentFile, revision.timestamp, {}, false, revision.revisionPath.wstring()});
         return;
     }
-    pluginLogger().write(LogLevel::informational, L"Revision deleted",
-        _currentFile.wstring() + L" | " + revision.timestamp + L" | " + revision.reason);
     refresh(_currentFile);
-    actionStatus().show(L"Revision deleted");
+    reportAction(ActionEvent::deleted,
+        {_currentFile, revision.timestamp, {}, false,
+            L"Revision File: " + revision.revisionPath.wstring() + L" | Comment: " + revision.reason});
 }
 
 void HistoryPanel::compareSelected()
@@ -401,19 +399,15 @@ void HistoryPanel::compareSelected()
     if (index < 0 || index >= static_cast<int>(_revisions.size()))
         index = 0;
     CompareContext context{this, index, false};
+    context.sourceFile = _currentFile;
+    context.sourceRevision = _revisions[index].timestamp;
     const INT_PTR result = DialogBoxParamW(_instance, MAKEINTRESOURCEW(IDD_COMPARE),
         _nppData._nppHandle,
         compareProc, reinterpret_cast<LPARAM>(&context));
     if (result == -1)
     {
         centeredMessageBox(_nppData._nppHandle, L"The comparison window could not be opened.", L"NppHistory", MB_OK | MB_ICONERROR);
-        pluginLogger().write(LogLevel::error, L"Compare failed", _currentFile.wstring());
-        actionStatus().show(L"Comparison failed");
-    }
-    else
-    {
-        pluginLogger().write(LogLevel::informational, L"Compare", _currentFile.wstring());
-        actionStatus().show(L"Comparison closed");
+        reportAction(ActionEvent::comparisonFailed, {context.sourceFile, context.sourceRevision});
     }
 }
 
@@ -1140,9 +1134,8 @@ void HistoryPanel::restoreSelected()
             _cancelRestoreSaveCallback();
         centeredMessageBox(_nppData._nppHandle, L"The current edits could not be saved, so the restore was cancelled.",
             L"NppHistory", MB_OK | MB_ICONERROR);
-        pluginLogger().write(LogLevel::error, L"Restore failed",
-            L"Current edits could not be saved: " + _currentFile.wstring());
-        actionStatus().show(L"Restore failed");
+        reportAction(ActionEvent::restoreFailed,
+            {_currentFile, selected.timestamp, {}, false, L"Current Edits Could Not Be Saved"});
         return;
     }
     if (retainSafetyRevision)
@@ -1154,16 +1147,15 @@ void HistoryPanel::restoreSelected()
     if (!_store->restoreRevision(selected, _currentFile))
     {
         centeredMessageBox(_nppData._nppHandle, L"The revision could not be restored.", L"NppHistory", MB_OK | MB_ICONERROR);
-        pluginLogger().write(LogLevel::error, L"Restore failed", _currentFile.wstring());
-        actionStatus().show(L"Restore failed");
+        reportAction(ActionEvent::restoreFailed,
+            {_currentFile, selected.timestamp, {}, false, selected.revisionPath.wstring()});
         return;
     }
-    pluginLogger().write(LogLevel::informational, L"Restore",
-        _currentFile.wstring() + L" | " + selected.timestamp + L" | " + selected.reason);
     const bool reloaded = SendMessageW(_nppData._nppHandle, NPPM_RELOADFILE, FALSE,
         reinterpret_cast<LPARAM>(_currentFile.c_str())) != FALSE;
     refresh(_currentFile);
-    actionStatus().show(reloaded ? L"Revision restored" : L"Restored; reload failed");
+    reportAction(reloaded ? ActionEvent::restored : ActionEvent::reloadFailed,
+        {_currentFile, selected.timestamp, {}, false, selected.revisionPath.wstring()});
 }
 
 void HistoryPanel::layout()
@@ -1561,8 +1553,7 @@ INT_PTR CALLBACK HistoryPanel::dialogProc(HWND dialog, UINT message, WPARAM wPar
         {
             pluginLogger().write(LogLevel::debug, L"Button click", L"Refresh");
             panel->refresh(panel->_currentFile);
-            pluginLogger().write(LogLevel::informational, L"Refresh", panel->_currentFile.wstring());
-            actionStatus().show(L"History refreshed");
+            reportAction(ActionEvent::refreshed, {panel->_currentFile});
         }
         if (LOWORD(wParam) == IDC_COMPARE)
         {
@@ -1699,6 +1690,7 @@ INT_PTR CALLBACK HistoryPanel::compareProc(HWND dialog, UINT message, WPARAM wPa
         context->panel->renderComparison(dialog, *context);
         SendMessageW(dialog, WM_SIZE, 0, 0);
         centerWindowOnOwner(dialog, context->panel->_nppData._nppHandle);
+        reportAction(ActionEvent::comparisonOpened, {context->sourceFile, context->sourceRevision});
         return TRUE;
     }
     if (!context)

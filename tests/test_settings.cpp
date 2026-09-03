@@ -185,7 +185,8 @@ void runSettingsTests(TestContext& context)
         && updateFrequencyDisplayName(UpdateFrequency::weekly) == L"Weekly"
         && updateFrequencyDisplayName(UpdateFrequency::monthly) == L"Monthly",
         "update-frequency log names describe every schedule");
-    context.expect(logLevelDisplayName(LogLevel::error) == L"Error"
+    context.expect(logLevelDisplayName(LogLevel::critical) == L"Critical"
+        && logLevelDisplayName(LogLevel::error) == L"Error"
         && logLevelDisplayName(LogLevel::warning) == L"Warning"
         && logLevelDisplayName(LogLevel::informational) == L"Informational"
         && logLevelDisplayName(LogLevel::debug) == L"Debug",

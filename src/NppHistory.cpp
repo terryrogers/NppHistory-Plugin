@@ -5,6 +5,7 @@
 #include "HistoryStore.h"
 #include "Logger.h"
 #include "TemporaryStatusBar.h"
+#include "ActionFeedback.h"
 #include "PluginInterface.h"
 #include "Settings.h"
 #include "Utilities.h"
@@ -461,7 +462,7 @@ void saveBuffer(UINT_PTR bufferId)
         return;
     const bool saved = SendMessageW(nppData._nppHandle, NPPM_SAVEFILE, 0,
         reinterpret_cast<LPARAM>(path.c_str())) != FALSE;
-    actionStatus().show(saved ? L"Auto saved" : L"Auto save failed");
+    reportAction(saved ? ActionEvent::autoSaved : ActionEvent::autoSaveFailed, {path});
 }
 
 void saveConfiguredScope(UINT_PTR preferredBuffer = 0)
@@ -734,9 +735,6 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
                 : L"Up to date \u2014 latest published version: " + publishedVersion);
         if (!settings.save(settingsFile))
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
-        pluginLogger().write(LogLevel::informational,
-            completion->manual ? L"Manual update check completed" : L"Automatic update check completed",
-            settings.lastUpdateStatus);
     }
     else
     {
@@ -744,18 +742,18 @@ void handleUpdateCompletion(std::unique_ptr<UpdateCompletion> completion)
         settings.lastUpdateStatus = L"Last check failed: " + completion->result.detail;
         if (!settings.save(settingsFile))
             pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
-        pluginLogger().write(LogLevel::warning, L"Update check failure",
-            completion->result.detail);
     }
     if (completion->result.status == UpdateCheckStatus::updateAvailable)
         availableUpdate = completion->result.release;
     else if (completion->result.status == UpdateCheckStatus::upToDate)
         availableUpdate = {};
     settings.refreshUpdateStatus(false);
-    actionStatus().show(successful
+    reportAction(successful
         ? (completion->result.status == UpdateCheckStatus::updateAvailable
-            ? L"Update available" : L"Up to date")
-        : L"Update check failed");
+            ? ActionEvent::updateAvailable : ActionEvent::upToDate)
+        : ActionEvent::updateFailed,
+        {{}, {}, displayVersion(completion->result.release.tag), !completion->manual,
+            completion->result.detail});
     if (completion->result.status == UpdateCheckStatus::updateAvailable)
     {
         const auto& release = completion->result.release;
@@ -1000,19 +998,14 @@ void captureNow()
         {
             centeredMessageBox(nppData._nppHandle, L"The current note could not be saved.",
                 pluginName, MB_OK | MB_ICONERROR);
-            pluginLogger().write(LogLevel::error, L"Capture failed",
-                L"The current note could not be saved: " + path.wstring());
-            actionStatus().show(L"Capture failed");
+            reportAction(ActionEvent::captureFailed,
+                {path, {}, {}, false, L"Current Edits Could Not Be Saved"});
             return;
         }
     }
     const bool captured = historyStore.captureFile(path, L"Manual capture", true);
-    if (captured)
-        pluginLogger().write(LogLevel::informational, L"Capture", path.wstring());
-    else
-        pluginLogger().write(LogLevel::error, L"Capture failed", path.wstring());
     refreshPanel();
-    actionStatus().show(captured ? L"Revision captured" : L"Capture failed");
+    reportAction(captured ? ActionEvent::captured : ActionEvent::captureFailed, {path});
 }
 
 void compareCurrent()
@@ -1035,9 +1028,9 @@ void refreshCurrent()
 {
     if (!actionAvailable(Command::refresh)) return;
     pluginLogger().write(LogLevel::debug, L"Button click", L"Refresh");
-    historyPanel.refresh(currentPath());
-    pluginLogger().write(LogLevel::informational, L"Refresh", currentPath().wstring());
-    actionStatus().show(L"History refreshed");
+    const auto path = currentPath();
+    historyPanel.refresh(path);
+    reportAction(ActionEvent::refreshed, {path});
 }
 
 std::wstring boolText(bool value) { return value ? L"Enabled" : L"Disabled"; }
@@ -1195,8 +1188,6 @@ void editSettings()
         logSettingsChanges(previous, settings);
         applyLiveCommandSettings();
         const bool settingsSaved = settings.save(settingsFile);
-        if (!settingsSaved)
-            pluginLogger().write(LogLevel::error, L"Settings save failed", settingsFile.wstring());
         historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
             settings.customHistoryRoot, pluginConfigPath / L"history");
         reconcileFile(currentBuffer(), currentPath());
@@ -1211,7 +1202,8 @@ void editSettings()
             (void)bufferId;
             state.lastEditTick = now;
         }
-        actionStatus().show(settingsSaved ? L"Settings saved" : L"Settings save failed");
+        reportAction(settingsSaved ? ActionEvent::settingsSaved : ActionEvent::settingsFailed,
+            {settingsFile, {}, {}, false, settingsSaved ? L"" : L"Session Changes Are Not Persisted"});
         if (openLog)
         {
             if (pluginLogger().ensureFile())
@@ -1833,7 +1825,6 @@ void handleNotification(SCNotification* notification)
             reconcileFile(bufferId, path, previous->second);
         else
             reconcileFile(bufferId, path);
-        pluginLogger().write(LogLevel::informational, L"File saved", path.wstring());
         bool revisionCreated = false;
         if (!restoreInitiatedSave
             && settings.shouldCreateRevision(RevisionTrigger::afterSave) && !path.empty()
@@ -1846,7 +1837,7 @@ void handleNotification(SCNotification* notification)
         }
         dirtyBuffers.erase(bufferId);
         refreshPanel();
-        actionStatus().show(revisionCreated ? L"Saved; revision created" : L"File saved");
+        reportAction(revisionCreated ? ActionEvent::savedWithRevision : ActionEvent::fileSaved, {path});
     }
     else if (code == NPPN_FILEOPENED || code == NPPN_BUFFERACTIVATED)
     {

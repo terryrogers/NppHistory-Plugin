@@ -2,6 +2,8 @@
 
 Status: **source-only; not compiled, installed or runtime-tested**. The existing no-compilation instruction remains in force. Existing DLLs and user configuration are unchanged.
 
+The initial wording and comparison-closure behaviour below are superseded by [contextual action messages and paired logging](SOURCE_ACTION_FEEDBACK-2026-09-03.md). The five-second timing, native ownership and layout-preservation rules remain unchanged.
+
 ## Behaviour
 
 - Borrow the leftmost native status field (normally document type) for approximately five seconds. Prefix feedback with `NppHistory:`. Do not add, resize or repartition status fields; cursor position, size, encoding, line endings and typing mode remain native.

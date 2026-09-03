@@ -16,7 +16,8 @@ void runLoggerTests(TestContext& context)
     settings.logArchivesToRetain = 2;
     auto& logger = pluginLogger();
     logger.configure(settings, directory.path());
-    context.expect(std::wstring(logLevelName(LogLevel::error)) == L"ERROR"
+    context.expect(std::wstring(logLevelName(LogLevel::critical)) == L"CRITICAL"
+        && std::wstring(logLevelName(LogLevel::error)) == L"ERROR"
         && std::wstring(logLevelName(LogLevel::warning)) == L"WARNING"
         && std::wstring(logLevelName(LogLevel::informational)) == L"INFO"
         && std::wstring(logLevelName(LogLevel::debug)) == L"DEBUG",
@@ -28,10 +29,13 @@ void runLoggerTests(TestContext& context)
         "PluginLogger uses the Notepad++ plugin configuration directory by default");
     context.expect(logger.ensureFile(), "PluginLogger creates its log file and parent directory");
     logger.write(LogLevel::informational, L"Capture", L"note.txt");
+    logger.write(LogLevel::critical, L"Critical test event", L"note.txt");
     logger.write(LogLevel::informational, L"Revision deleted",
         L"note.txt | 2026-08-30T01:02:03Z | Manual capture");
     logger.write(LogLevel::debug, L"Hidden debug event");
     const auto firstText = decodeText(readAllBytes(logger.path()));
+    context.expect(firstText.find(L"[CRITICAL] Critical test event | note.txt") != std::wstring::npos,
+        "PluginLogger writes Critical without relabeling it as Error");
     context.expect(firstText.find(L"[INFO] Capture | note.txt") != std::wstring::npos,
         "PluginLogger writes informational actions and detail");
     context.expect(firstText.find(L"[INFO] Revision deleted | note.txt | 2026-08-30T01:02:03Z | Manual capture")

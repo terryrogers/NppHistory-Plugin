@@ -5,6 +5,7 @@ NppHistory is an open-source Notepad++ plugin that automatically saves ordinary 
 ## Beta features
 
 - Pending source-only: temporary action messages use the leftmost Notepad++ status field for about five seconds, then restore its normal text. A newer action replaces the previous message; a native update to that field takes precedence. Other status fields and their widths remain unchanged. Feedback works independently of plugin logging. See [status-message verification boundary](SOURCE_STATUS_MESSAGES-2026-09-03.md).
+- These messages now include the filename and, where applicable, the revision's localized timestamp. Each event has matching INFO/WARNING/CRITICAL log wording plus full-path diagnostic context. Logging remains subject to its enabled switch and threshold; Critical is included at every enabled level. See [complete message and severity list](SOURCE_ACTION_FEEDBACK-2026-09-03.md).
 - Captures the existing on-disk file immediately before every Notepad++ save.
 - Captures the successfully saved result as the new history baseline.
 - Suppresses consecutive revisions with identical content.

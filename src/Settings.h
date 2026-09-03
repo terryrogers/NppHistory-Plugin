@@ -26,7 +26,8 @@ enum class UpdateFrequency
 
 enum class LogLevel
 {
-    error,
+    critical = -1, // Preserve existing persisted Error/Warning/Info/Debug values 0..3.
+    error = 0,
     warning,
     informational,
     debug

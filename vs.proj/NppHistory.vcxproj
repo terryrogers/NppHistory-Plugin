@@ -49,6 +49,7 @@
     <ClInclude Include="..\src\Commands.h" />
     <ClInclude Include="..\src\LiveHotkeys.h" />
     <ClInclude Include="..\src\TemporaryStatusBar.h" />
+    <ClInclude Include="..\src\ActionFeedback.h" />
     <ClInclude Include="..\src\Utilities.h" />
     <ClInclude Include="..\src\UpdateChecker.h" />
     <ClInclude Include="..\src\UpdateInstaller.h" />
@@ -63,6 +64,7 @@
   <ItemGroup>
     <ClCompile Include="..\src\NppHistory.cpp" />
     <ClCompile Include="..\src\TemporaryStatusBar.cpp" />
+    <ClCompile Include="..\src\ActionFeedback.cpp" />
     <ClCompile Include="..\src\DocumentTabIndicators.cpp" />
     <ClCompile Include="..\src\HistoryCatalog.cpp" />
     <ClCompile Include="..\src\HistoryPanel.cpp" />
