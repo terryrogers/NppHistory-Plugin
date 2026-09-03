@@ -1,5 +1,9 @@
 # Toolbar / History pane repaint regression
 
+## Installation update — 3 September 2026, 14:22 BST
+
+Installed with explicit user approval after verifying Notepad++ was closed. The installed DLL now matches corrected build SHA-256 `A58027E96C530AD54209CA609FBB8E04B44AB1D983C3EDEF963CF3243EFF4674`; version remains **0.2.0.25**. Previous DLL hash `B58F1AC880C8A79AE8AA7C3A97110BC1D731162268679FFBBEEA3C456EB77182` was backed up and verified at `build/installed-backups/20260903-142234-toolbar-pane-repaint/NppHistory.dll` before replacement. No settings, user files or history were changed. Notepad++ was not launched; installed-environment visual UAT is still pending. This update supersedes the not-installed status recorded below.
+
 ## Report and investigation
 
 The user reported a blank native toolbar and stale/overlapping-looking History pane button rows after the latest review build. No user document contents or supplied screenshot were copied into repository artifacts. Investigation and runtime checks used disposable `commands.txt` in isolated Notepad++ processes.

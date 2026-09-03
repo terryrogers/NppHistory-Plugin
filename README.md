@@ -4,7 +4,7 @@ NppHistory is an open-source Notepad++ plugin that automatically saves ordinary 
 
 Latest local review build (3 September 2026): plugin/updater/tests compile with no warnings or errors; 1,123 core checks pass. Not installed or visually reviewed yet. See [build results and artifact hashes](BUILD_REVIEW-2026-09-03.md); this supersedes the older source-only build status in the refinement documents.
 
-Follow-up toolbar/pane repaint correction: rebuilt plugin, 1,123 core checks and 95 focused native layout checks pass; isolated renders inspected. The replacement is not installed and user-environment confirmation remains pending. See [regression report and latest DLL hash](TOOLBAR_PANE_REGRESSION-2026-09-03.md).
+Follow-up toolbar/pane repaint correction: rebuilt plugin, 1,123 core checks and 95 focused native layout checks pass; isolated renders inspected. Installed and hash-verified on 3 September 2026 with the previous DLL backed up. User-environment visual confirmation remains pending. See [regression report and latest DLL hash](TOOLBAR_PANE_REGRESSION-2026-09-03.md).
 
 ## Beta features
 
