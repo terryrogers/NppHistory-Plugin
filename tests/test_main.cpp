@@ -2,10 +2,12 @@
 void runDocumentTabTests(TestContext& context);
 void runTemporaryStatusTests(TestContext& context);
 void runActionFeedbackTests(TestContext& context);
+void runToolbarLayoutTests(TestContext& context);
 
 int wmain()
 {
     TestContext context;
+    runToolbarLayoutTests(context);
     runTemporaryStatusTests(context);
     runActionFeedbackTests(context);
     runDocumentTabTests(context);

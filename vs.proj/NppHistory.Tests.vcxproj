@@ -17,6 +17,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\tests\test_main.cpp" />
+    <ClCompile Include="..\tests\test_toolbar_layout.cpp" />
     <ClCompile Include="..\tests\test_temporary_status.cpp" />
     <ClCompile Include="..\src\TemporaryStatusBar.cpp" />
     <ClCompile Include="..\src\ActionFeedback.cpp" />

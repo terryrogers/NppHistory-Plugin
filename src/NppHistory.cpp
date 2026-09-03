@@ -1565,10 +1565,12 @@ void syncToolbarVisibility()
         if (wcscmp(name, TOOLBARCLASSNAMEW) != 0) return TRUE;
         auto& result = *reinterpret_cast<Result*>(parameter);
         bool changed = false;
+        bool containsPluginCommand = false;
         for (int row = 0; row < commandCount; ++row)
         {
             const int id = menuItems[commandMenuIndices[row]]._cmdID;
             if (id <= 0 || static_cast<int>(SendMessageW(toolbar, TB_COMMANDTOINDEX, id, 0)) < 0) continue;
+            containsPluginCommand = true;
             const int state = static_cast<int>(SendMessageW(toolbar, TB_GETSTATE, id, 0));
             if (state < 0) continue;
             const bool visible = settings.commandVisible(static_cast<Command>(row), CommandSurface::toolbar);
@@ -1585,6 +1587,11 @@ void syncToolbarVisibility()
             const HWND parent = GetParent(toolbar);
             RedrawWindow(parent ? parent : toolbar, nullptr, nullptr,
                 RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+        }
+        if (ready && containsPluginCommand && repairClippedToolbarBand(toolbar))
+        {
+            pluginLogger().write(LogLevel::warning, L"Toolbar layout recovered",
+                L"Reapplied the native rebar band height because the toolbar was shorter than its buttons.");
         }
         return TRUE;
     }, reinterpret_cast<LPARAM>(&result));

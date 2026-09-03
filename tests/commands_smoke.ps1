@@ -1,4 +1,4 @@
-param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe', [switch]$LayoutOnly)
+param([string]$NotepadExe = 'C:\iCloud\iCloudDrive\Filing\N\Notepad++\notepad++.exe', [switch]$LayoutOnly, [switch]$MixedToolbar, [switch]$MonitorTransitions, [switch]$InjectCollapsedToolbar, [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll")
 $ErrorActionPreference = 'Stop'
 # Reuse the established read-only Win32 test helpers without running that workflow.
 if (-not ('NppHistoryNative' -as [type])) {
@@ -14,6 +14,8 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 public static class CommandProbe {
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X,Y; }
+    [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr window,ref Point point);
     [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window,int x,int y,int width,int height,bool repaint);
     [StructLayout(LayoutKind.Sequential)] struct MENUITEMINFO {
         public uint cbSize,fMask,fType,fState,wID;
@@ -66,13 +68,14 @@ Copy-Item -Path "$(Split-Path $NotepadExe)\*.xml" -Destination $root
 [IO.File]::WriteAllText("$root\doLocalConf.xml",'<!-- isolated test -->')
 [IO.Directory]::CreateDirectory("$root\plugins\NppHistory") | Out-Null
 [IO.Directory]::CreateDirectory("$root\plugins\Config\NppHistory") | Out-Null
-Copy-Item -LiteralPath "$PSScriptRoot\..\build\x64\Release\NppHistory.dll" -Destination "$root\plugins\NppHistory\NppHistory.dll"
+Copy-Item -LiteralPath $PluginDll -Destination "$root\plugins\NppHistory\NppHistory.dll"
 $names = @('Capture','Compare','Restore','History','Refresh','Settings','About')
 $paneIds = @(1006,1004,1005,1003,1007,1008)
 $ini = "[NppHistory]`r`nAutoSaveEnabled=0`r`nAutoUpdateEnabled=0`r`nHistoryBeforeSave=0`r`nHistoryAfterSave=0`r`nLoggingEnabled=1`r`nLogLevel=3`r`n"
 for($i=0;$i -lt $names.Count;$i++) {
     $name=$names[$i]
-    $ini += "Toolbar$name=1`r`nContext$name=1`r`nHotkey$($name)Enabled=1`r`nHotkey$($name)Ctrl=1`r`nHotkey$($name)Alt=1`r`nHotkey$($name)Shift=1`r`nHotkey$($name)Key=$([int]49+$i)`r`n"
+    $toolbarVisible = [int](!$MixedToolbar -or $i -lt 4)
+    $ini += "Toolbar$name=$toolbarVisible`r`nContext$name=1`r`nHotkey$($name)Enabled=1`r`nHotkey$($name)Ctrl=1`r`nHotkey$($name)Alt=1`r`nHotkey$($name)Shift=1`r`nHotkey$($name)Key=$([int]49+$i)`r`n"
 }
 [IO.File]::WriteAllText("$root\plugins\Config\NppHistory\NppHistory.ini",$ini)
 [IO.File]::WriteAllText("$root\commands.txt",'Original command test')
@@ -139,8 +142,47 @@ try {
     Assert (@($entries | Where-Object {$_.Text.Contains("`t")}).Count -eq 7) 'all seven native shortcuts displayed'
     Assert (([NppHistoryNative]::GetProp($main,'NppHistoryToolbarButtonsRegistered')).ToInt64() -eq 8) 'all seven toolbar commands registered'
     $toolbar=[NppHistoryNative]::FindDescendant($main,'ToolbarWindow32')
+    if ($MonitorTransitions) {
+        Add-Type -AssemblyName System.Windows.Forms
+        foreach ($screen in [Windows.Forms.Screen]::AllScreens) {
+            $area=$screen.WorkingArea
+            [void][CommandProbe]::MoveWindow($main,($area.Left+32),($area.Top+32),[Math]::Min(1100,$area.Width-64),[Math]::Min(800,$area.Height-64),$true)
+            Start-Sleep -Milliseconds 1400
+            $toolbar=[NppHistoryNative]::FindDescendant($main,'ToolbarWindow32')
+            $r=[NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$r)
+            $size=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
+            $bh=($size -shr 16) -band 65535
+            Snapshot $main "toolbar-monitor-$($area.Left)-$($area.Top).png"
+            Assert ($bh -ge 16 -and ($r.Bottom-$r.Top) -ge $bh) "toolbar fits buttons after monitor transition at $($area.Left),$($area.Top): height=$($r.Bottom-$r.Top), button=$bh"
+        }
+    }
     $initialToolbarRect=[NppHistoryNative+RECT]::new()
     [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$initialToolbarRect)
+    $buttonSize=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
+    $buttonHeight=($buttonSize -shr 16) -band 65535
+    $toolbarHeight=$initialToolbarRect.Bottom-$initialToolbarRect.Top
+    Snapshot $main 'toolbar-startup.png'
+    Assert ($buttonHeight -ge 16 -and $toolbarHeight -ge $buttonHeight) "startup toolbar must fit its icons/buttons (toolbar=$toolbarHeight, button=$buttonHeight)"
+    if ($InjectCollapsedToolbar) {
+        $nativeState=[NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]41001,[IntPtr]::Zero)
+        $images=[NppHistoryNative]::SendMessage($toolbar,0x431,[IntPtr]::Zero,[IntPtr]::Zero)
+        $point=[CommandProbe+Point]::new();$point.X=$initialToolbarRect.Left;$point.Y=$initialToolbarRect.Top
+        [void][CommandProbe]::ScreenToClient([NppHistoryNative]::GetParent($toolbar),[ref]$point)
+        [void][CommandProbe]::MoveWindow($toolbar,$point.X,$point.Y,($initialToolbarRect.Right-$initialToolbarRect.Left),4,$false)
+        $clipped=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$clipped)
+        Assert (($clipped.Bottom-$clipped.Top) -eq 4) 'fault injection recreates four-pixel child toolbar in isolated process'
+        Start-Sleep -Milliseconds 1600
+        $recovered=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$recovered)
+        Snapshot $main 'toolbar-recovered.png'
+        Assert (($recovered.Bottom-$recovered.Top) -ge $buttonHeight) 'plugin timer repairs clipped toolbar without restarting Notepad++'
+        Assert ([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]41001,[IntPtr]::Zero) -eq $nativeState) 'recovery preserves native New button state'
+        Assert ([NppHistoryNative]::SendMessage($toolbar,0x431,[IntPtr]::Zero,[IntPtr]::Zero) -eq $images) 'recovery preserves host image list'
+        $logFile="$root\plugins\Config\NppHistory\NppHistory.log"
+        Assert ((Get-Content -LiteralPath $logFile -Raw).Contains('[WARNING] Toolbar layout recovered')) 'actual recovery emits a descriptive warning'
+        Start-Sleep -Milliseconds 1100
+        Assert (@(Select-String -LiteralPath $logFile -SimpleMatch '[WARNING] Toolbar layout recovered').Count -eq 1) 'healthy polls do not repeat repairs or warning logs'
+    }
     $positions=@($ids | ForEach-Object {[NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$_,[IntPtr]::Zero).ToInt32()})
     Assert (@($positions | Where-Object {$_ -lt 0}).Count -eq 0 -and ($positions -join ',') -eq (($positions | Sort-Object) -join ',')) 'toolbar common order'
     Assert ([NppHistoryNative]::GetProp($main,'NppHistoryLiveHotkeysReady').ToInt64() -eq 2) 'live keyboard handler ready and native duplicates removed'
@@ -152,6 +194,9 @@ try {
     Assert (([NppHistoryNative]::SendMessage($toolbar,0x412,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt64() -band 8) -eq 8) 'OK hides Capture toolbar button immediately'
     $hiddenToolbarRect=[NppHistoryNative+RECT]::new()
     [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$hiddenToolbarRect)
+    $buttonSize=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
+    $buttonHeight=($buttonSize -shr 16) -band 65535
+    Assert ($buttonHeight -ge 16 -and ($hiddenToolbarRect.Bottom-$hiddenToolbarRect.Top) -ge $buttonHeight) 'toolbar must still fit buttons after live visibility change'
     Snapshot $main 'toolbar-after-hide.png'
     Assert ($hiddenToolbarRect.Top -eq $initialToolbarRect.Top -and
         $hiddenToolbarRect.Left -eq $initialToolbarRect.Left -and

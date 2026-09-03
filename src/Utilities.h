@@ -12,6 +12,9 @@ namespace npphistory
 // Returns a premultiplied-alpha 32-bit DIB for MIIM_BITMAP. Caller deletes the
 // bitmap; the supplied icon remains owned by its caller.
 HBITMAP createMenuIconBitmap(HICON icon, int size = 16);
+// Reapply only a clipped toolbar's existing rebar band height; do not autosize
+// the host toolbar or change its button sizes, ordering, visibility or width.
+bool repairClippedToolbarBand(HWND toolbar);
 std::vector<std::uint8_t> readAllBytes(const std::filesystem::path& path);
 bool writeAllBytesAtomic(const std::filesystem::path& path, const std::vector<std::uint8_t>& bytes);
 std::string sha256Hex(const std::vector<std::uint8_t>& bytes);
