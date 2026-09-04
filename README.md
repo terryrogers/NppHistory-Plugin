@@ -95,7 +95,7 @@ When a tracked file moves:
 3. If an open file disappears, NppHistory retains the old association and warns you. When Notepad++ later supplies a new path through Save As, rename, or reopening, relocation is attempted automatically.
 4. If the old history is missing or matching would be ambiguous, NppHistory alerts you instead of guessing.
 
-Changing the configured history location migrates the active file immediately. Other tracked files migrate the next time they are opened.
+Changing the configured history location migrates the active file immediately. Other tracked files migrate the next time they are opened. When a common folder is selected, opening or activating a file also discovers matching older history in its adjacent `.npphistory` folder. Those revisions are safely merged into the common location without overwriting existing history; comments and timestamps are preserved. The migrated bucket and an empty `.npphistory` folder are removed only after the move succeeds. INFO logging records the file, source, destination and counts; failures are logged as WARNING and leave the source available for retry.
 
 ## Revision semantics
 

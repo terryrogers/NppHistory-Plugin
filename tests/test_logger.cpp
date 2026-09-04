@@ -32,6 +32,10 @@ void runLoggerTests(TestContext& context)
     logger.write(LogLevel::critical, L"Critical test event", L"note.txt");
     logger.write(LogLevel::informational, L"Revision deleted",
         L"note.txt | 2026-08-30T01:02:03Z | Manual capture");
+    logger.write(LogLevel::informational, L"Adjacent history migrated",
+        L"File: C:\\Notes\\note.txt | History Folders Moved: 1 | Revisions Moved: 3 | From: C:\\Notes\\.npphistory\\old | To: C:\\History\\id | .npphistory Folder Removed: Yes");
+    logger.write(LogLevel::warning, L"Adjacent history migration failed",
+        L"File: C:\\Notes\\note.txt | From: C:\\Notes\\.npphistory\\old | To: C:\\History\\id | Source History Retained: Yes");
     logger.write(LogLevel::debug, L"Hidden debug event");
     const auto firstText = decodeText(readAllBytes(logger.path()));
     context.expect(firstText.find(L"[CRITICAL] Critical test event | note.txt") != std::wstring::npos,
@@ -40,6 +44,12 @@ void runLoggerTests(TestContext& context)
         "PluginLogger writes informational actions and detail");
     context.expect(firstText.find(L"[INFO] Revision deleted | note.txt | 2026-08-30T01:02:03Z | Manual capture")
         != std::wstring::npos, "PluginLogger records revision deletion audit detail");
+    context.expect(firstText.find(L"[INFO] Adjacent history migrated | File: C:\\Notes\\note.txt | History Folders Moved: 1 | Revisions Moved: 3")
+        != std::wstring::npos && firstText.find(L".npphistory Folder Removed: Yes") != std::wstring::npos,
+        "PluginLogger records enriched adjacent-history migration context");
+    context.expect(firstText.find(L"[WARNING] Adjacent history migration failed | File: C:\\Notes\\note.txt")
+        != std::wstring::npos && firstText.find(L"Source History Retained: Yes") != std::wstring::npos,
+        "PluginLogger records enriched migration failure and retention context");
     context.expect(firstText.find(L"Hidden debug event") == std::wstring::npos,
         "PluginLogger filters events below the configured verbosity");
 

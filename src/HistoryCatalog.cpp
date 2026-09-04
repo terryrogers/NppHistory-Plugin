@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <fstream>
+#include <map>
+#include <set>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -80,6 +82,70 @@ std::string hashFile(const fs::path& path)
     if (!fs::is_regular_file(path, error))
         return {};
     return sha256Hex(readAllBytes(path));
+}
+
+std::wstring storedPath(const fs::path& bucket)
+{
+    std::ifstream input(bucket / L"path.txt", std::ios::binary);
+    if (!input) return {};
+    std::string value((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+    return utf8ToWide(value);
+}
+
+bool equalFiles(const fs::path& left, const fs::path& right)
+{
+    std::error_code error;
+    if (fs::file_size(left, error) != fs::file_size(right, error) || error) return false;
+    try { return readAllBytes(left) == readAllBytes(right); }
+    catch (...) { return false; }
+}
+
+bool copyPreservingTime(const fs::path& from, const fs::path& to, std::error_code& error)
+{
+    if (!fs::copy_file(from, to, fs::copy_options::none, error) || error) return false;
+    const auto time = fs::last_write_time(from, error);
+    if (!error) fs::last_write_time(to, time, error);
+    if (error)
+    {
+        std::error_code cleanup;
+        fs::remove(to, cleanup);
+    }
+    return !error;
+}
+
+void removeEmptyAdjacentRoot(const fs::path& bucket)
+{
+    if (bucket.parent_path().filename() != L".npphistory") return;
+    std::error_code error;
+    if (fs::is_empty(bucket.parent_path(), error)) fs::remove(bucket.parent_path(), error);
+}
+
+void rebuildBucketState(const fs::path& bucket, const fs::path& filePath)
+{
+    const std::string normalized = wideToUtf8(normalizePath(filePath));
+    writeAllBytesAtomic(bucket / L"path.txt",
+        std::vector<std::uint8_t>(normalized.begin(), normalized.end()));
+    fs::path newest;
+    std::error_code error;
+    for (fs::directory_iterator iterator(bucket, error), end; iterator != end && !error;
+        iterator.increment(error))
+    {
+        if (iterator->is_regular_file() && iterator->path().extension() == L".meta"
+            && (newest.empty() || iterator->path().filename() > newest.filename()))
+            newest = iterator->path();
+    }
+    std::string newestHash;
+    if (!newest.empty())
+    {
+        std::ifstream metadata(newest, std::ios::binary);
+        std::string line;
+        while (std::getline(metadata, line))
+            if (line.rfind("hash=", 0) == 0) { newestHash = line.substr(5); break; }
+    }
+    if (!newestHash.empty())
+        writeAllBytesAtomic(bucket / L"latest.hash",
+            std::vector<std::uint8_t>(newestHash.begin(), newestHash.end()));
+    else fs::remove(bucket / L"latest.hash", error);
 }
 }
 
@@ -205,6 +271,137 @@ bool HistoryCatalog::moveHistory(const fs::path& from, const fs::path& to)
     return !error;
 }
 
+bool HistoryCatalog::mergeHistory(const fs::path& from, const fs::path& to,
+    const fs::path& filePath, std::size_t& revisionCount)
+{
+    revisionCount = 0;
+    if (samePath(from, to)) return true;
+    std::error_code error;
+    if (!fs::is_directory(to, error))
+    {
+        if (!moveHistory(from, to)) return false;
+        for (fs::directory_iterator iterator(to, error), end; iterator != end && !error;
+            iterator.increment(error))
+            if (iterator->is_regular_file() && iterator->path().extension() == L".rev")
+                ++revisionCount;
+        rebuildBucketState(to, filePath);
+        return true;
+    }
+
+    struct Copy { fs::path source; fs::path target; };
+    std::vector<Copy> copies;
+    std::set<fs::path> consumed;
+    std::vector<fs::path> sourceRevisions;
+    for (fs::directory_iterator iterator(from, error), end; iterator != end && !error;
+        iterator.increment(error))
+    {
+        if (!iterator->is_regular_file()) return false; // Never discard an unknown nested item.
+        if (iterator->path().extension() == L".rev") sourceRevisions.push_back(iterator->path());
+    }
+    if (error) return false;
+
+    for (const auto& sourceRevision : sourceRevisions)
+    {
+        fs::path sourceMetadata = sourceRevision;
+        sourceMetadata.replace_extension(L".meta");
+        fs::path targetRevision = to / sourceRevision.filename();
+        fs::path targetMetadata = to / sourceMetadata.filename();
+        const bool metadataExists = fs::is_regular_file(sourceMetadata, error);
+        const auto pairMatches = [&]() {
+            return fs::is_regular_file(targetRevision, error)
+                && equalFiles(sourceRevision, targetRevision)
+                && (!metadataExists || (fs::is_regular_file(targetMetadata, error)
+                    && equalFiles(sourceMetadata, targetMetadata)));
+        };
+        bool identical = pairMatches();
+        if (!identical && (fs::exists(targetRevision, error)
+            || (metadataExists && fs::exists(targetMetadata, error))))
+        {
+            const std::wstring stem = sourceRevision.stem().wstring();
+            unsigned suffix = 1;
+            while (true)
+            {
+                targetRevision = to / (stem + L"-migrated-" + std::to_wstring(suffix++) + L".rev");
+                targetMetadata = targetRevision;
+                targetMetadata.replace_extension(L".meta");
+                if (pairMatches()) { identical = true; break; }
+                if (!fs::exists(targetRevision, error) && !fs::exists(targetMetadata, error)) break;
+            }
+        }
+        if (!identical)
+        {
+            copies.push_back({sourceRevision, targetRevision});
+            if (metadataExists) copies.push_back({sourceMetadata, targetMetadata});
+        }
+        consumed.insert(sourceRevision);
+        if (metadataExists) consumed.insert(sourceMetadata);
+        ++revisionCount;
+    }
+
+    for (fs::directory_iterator iterator(from, error), end; iterator != end && !error;
+        iterator.increment(error))
+    {
+        const fs::path source = iterator->path();
+        if (!iterator->is_regular_file() || consumed.count(source)
+            || source.filename() == L"path.txt" || source.filename() == L"latest.hash") continue;
+        fs::path target = to / source.filename();
+        if (fs::exists(target, error))
+        {
+            unsigned suffix = 1;
+            const std::wstring stem = target.stem().wstring();
+            const std::wstring extension = target.extension().wstring();
+            do target = to / (stem + L"-migrated-" + std::to_wstring(suffix++) + extension);
+            while (fs::exists(target, error));
+        }
+        copies.push_back({source, target});
+    }
+    if (error) return false;
+
+    std::vector<fs::path> created;
+    for (const auto& copy : copies)
+    {
+        if (!copyPreservingTime(copy.source, copy.target, error))
+        {
+            for (const auto& path : created) { std::error_code rollback; fs::remove(path, rollback); }
+            return false;
+        }
+        created.push_back(copy.target);
+    }
+    fs::remove_all(from, error);
+    if (error) return false;
+    removeEmptyAdjacentRoot(from);
+    rebuildBucketState(to, filePath);
+    return true;
+}
+
+std::vector<fs::path> HistoryCatalog::adjacentHistoryPaths(const CatalogRecord& record,
+    const fs::path& filePath, const fs::path& desired) const
+{
+    std::vector<fs::path> result;
+    if (_mode != HistoryLocationMode::customRoot || filePath.empty()) return result;
+    const fs::path root = filePath.parent_path() / L".npphistory";
+    std::error_code error;
+    if (!fs::is_directory(root, error)) return result;
+    const fs::path hashed = root / utf8ToWide(sha256Hex(normalizePath(filePath)));
+    const fs::path catalogued = root / utf8ToWide(record.id);
+    const auto add = [&](const fs::path& candidate) {
+        if (samePath(candidate, desired) || std::find_if(result.begin(), result.end(),
+            [&](const fs::path& item) { return samePath(item, candidate); }) != result.end()) return;
+        std::error_code candidateError;
+        if (fs::is_directory(candidate, candidateError)) result.push_back(candidate);
+    };
+    add(hashed);
+    add(catalogued);
+    for (fs::directory_iterator iterator(root, error), end; iterator != end && !error;
+        iterator.increment(error))
+    {
+        if (!iterator->is_directory()) continue;
+        const std::wstring path = storedPath(iterator->path());
+        if (!path.empty() && normalizePath(path) == normalizePath(filePath)) add(iterator->path());
+    }
+    return result;
+}
+
 ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
     const std::optional<fs::path>& knownPreviousPath)
 {
@@ -279,14 +476,34 @@ ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
         std::error_code error;
         if (fs::is_directory(record->historyPath, error))
         {
-            result.historyMoved = moveHistory(record->historyPath, desired);
+            std::size_t moved = 0;
+            const fs::path source = record->historyPath;
+            result.historyMoved = mergeHistory(source, desired, currentPath, moved);
             if (!result.historyMoved)
             {
                 result.moveFailed = true;
+                if (_mode == HistoryLocationMode::customRoot
+                    && source.parent_path().filename() == L".npphistory")
+                {
+                    result.adjacentMigrationFailed = true;
+                    result.migrationSource = source;
+                    result.migrationDestination = desired;
+                }
                 record->filePath = currentPath;
                 result.historyPath = record->historyPath;
                 save();
                 return result;
+            }
+            if (_mode == HistoryLocationMode::customRoot
+                && source.parent_path().filename() == L".npphistory")
+            {
+                result.adjacentHistoryMigrated = true;
+                result.migratedRevisionCount += moved;
+                ++result.migratedHistoryFolderCount;
+                result.migrationSource = source;
+                result.migrationDestination = desired;
+                std::error_code rootError;
+                result.adjacentRootRemoved = !fs::exists(source.parent_path(), rootError);
             }
         }
         else if (record->hasHistory)
@@ -302,6 +519,30 @@ ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
         {
             result.historyMissing = true;
             record->hasHistory = false;
+        }
+    }
+
+    if (_mode == HistoryLocationMode::customRoot)
+    {
+        for (const auto& source : adjacentHistoryPaths(*record, currentPath, desired))
+        {
+            std::size_t moved = 0;
+            if (!mergeHistory(source, desired, currentPath, moved))
+            {
+                result.adjacentMigrationFailed = true;
+                if (result.migrationSource.empty()) result.migrationSource = source;
+                result.migrationDestination = desired;
+                continue;
+            }
+            result.historyMoved = true;
+            result.adjacentHistoryMigrated = true;
+            result.migratedRevisionCount += moved;
+            ++result.migratedHistoryFolderCount;
+            if (result.migrationSource.empty()) result.migrationSource = source;
+            result.migrationDestination = desired;
+            record->hasHistory = record->hasHistory || moved > 0;
+            std::error_code rootError;
+            result.adjacentRootRemoved = !fs::exists(source.parent_path(), rootError);
         }
     }
 

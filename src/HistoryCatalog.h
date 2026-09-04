@@ -32,6 +32,13 @@ struct ReconcileResult
     bool moveFailed = false;
     bool matchedByContent = false;
     bool ambiguousMatch = false;
+    bool adjacentHistoryMigrated = false;
+    bool adjacentMigrationFailed = false;
+    bool adjacentRootRemoved = false;
+    std::size_t migratedRevisionCount = 0;
+    std::size_t migratedHistoryFolderCount = 0;
+    std::filesystem::path migrationSource;
+    std::filesystem::path migrationDestination;
 };
 
 class HistoryCatalog
@@ -52,6 +59,11 @@ private:
     std::filesystem::path desiredHistoryPath(const CatalogRecord& record,
         const std::filesystem::path& filePath) const;
     static bool moveHistory(const std::filesystem::path& from, const std::filesystem::path& to);
+    static bool mergeHistory(const std::filesystem::path& from, const std::filesystem::path& to,
+        const std::filesystem::path& filePath, std::size_t& revisionCount);
+    std::vector<std::filesystem::path> adjacentHistoryPaths(
+        const CatalogRecord& record, const std::filesystem::path& filePath,
+        const std::filesystem::path& desired) const;
     static void ensureHiddenAdjacentRoot(const std::filesystem::path& historyPath);
 
     std::filesystem::path _databaseFile;

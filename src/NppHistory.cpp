@@ -385,7 +385,15 @@ bool existingFile(const fs::path& path)
 
 void showReconcileAlert(const ReconcileResult& result)
 {
-    if (result.moveFailed)
+    if (result.adjacentMigrationFailed)
+    {
+        const std::wstring message = L"NppHistory found older adjacent history but could not move it to the configured common folder.\n\nPrevious: "
+            + result.migrationSource.wstring() + L"\n\nCommon folder: "
+            + result.migrationDestination.wstring()
+            + L"\n\nThe older history has been left in place so it can be retried safely.";
+        centeredMessageBox(nppData._nppHandle, message.c_str(), pluginName, MB_OK | MB_ICONWARNING);
+    }
+    else if (result.moveFailed)
     {
         const std::wstring message = L"NppHistory found the previous history folder but could not move it.\n\nPrevious: "
             + result.previousHistoryPath.wstring() + L"\n\nHistory will continue using the previous location until this is resolved.";
@@ -411,6 +419,25 @@ void reconcileFile(UINT_PTR bufferId, const fs::path& path,
     if (!existingFile(path))
         return;
     const auto result = historyCatalog.reconcile(path, previousPath);
+    if (result.adjacentHistoryMigrated)
+    {
+        pluginLogger().write(LogLevel::informational, L"Adjacent history migrated",
+            L"File: " + path.wstring()
+            + L" | History Folders Moved: " + std::to_wstring(result.migratedHistoryFolderCount)
+            + L" | Revisions Moved: " + std::to_wstring(result.migratedRevisionCount)
+            + L" | From: " + result.migrationSource.wstring()
+            + L" | To: " + result.migrationDestination.wstring()
+            + L" | .npphistory Folder Removed: "
+            + (result.adjacentRootRemoved ? L"Yes" : L"No (folder is not empty)"));
+    }
+    if (result.adjacentMigrationFailed)
+    {
+        pluginLogger().write(LogLevel::warning, L"Adjacent history migration failed",
+            L"File: " + path.wstring()
+            + L" | From: " + result.migrationSource.wstring()
+            + L" | To: " + result.migrationDestination.wstring()
+            + L" | Source History Retained: Yes");
+    }
     showReconcileAlert(result);
     lastKnownPaths[bufferId] = path;
     missingSince.erase(bufferId);

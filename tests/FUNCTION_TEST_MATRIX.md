@@ -209,8 +209,8 @@ See `TEST_REPORT-COMMANDS.md` for the latest scoped results and manual UAT bound
 | `databaseFile` | Direct path assertion | PASS |
 | `desiredHistoryPath` | Direct adjacent/custom path assertions | PASS |
 | `ensureHiddenAdjacentRoot` | Direct adjacent-root creation plus live hidden folder | PASS |
-| `moveHistory` | Direct successful and blocked migration | PASS |
-| `reconcile` | Direct new, unchanged, explicit move, hash match, missing, ambiguous, blocked and legacy cases | PASS |
+| `moveHistory`, `mergeHistory`, `adjacentHistoryPaths` | Direct move, collision-safe merge, matching `path.txt`/hash/catalogue IDs, empty-root cleanup, unrelated-history retention and blocked migration rollback | PASS |
+| `reconcile` | Direct new, unchanged, explicit move, hash match, missing, ambiguous, blocked, legacy and on-access adjacent-to-common migration cases | PASS |
 | `historyPathFor` | Direct known and unknown record paths | PASS |
 | `recordCapture` | Direct new/existing record capture and persistence | PASS |
 | `records` | Direct count/content assertions | PASS |

@@ -179,4 +179,81 @@ void runHistoryCatalogTests(TestContext& context)
         && fs::is_regular_file(legacy.historyPath / L"legacy.rev")
         && !fs::exists(legacyBucket),
         "reconcile discovers and migrates a legacy hash-addressed history bucket");
+
+    TestDirectory adjacentImportDirectory(L"catalog-adjacent-import");
+    const fs::path importNote = adjacentImportDirectory.path() / L"files" / L"older.txt";
+    const fs::path adjacentRoot = importNote.parent_path() / L".npphistory";
+    const fs::path orphanBucket = adjacentRoot / L"orphan-catalog-id";
+    const fs::path commonRoot = adjacentImportDirectory.path() / L"common";
+    writeAllBytesAtomic(importNote, {'n', 'o', 'w'});
+    writeAllBytesAtomic(orphanBucket / L"20260101-010101-001_old.rev", {'o', 'l', 'd'});
+    writeAllBytesAtomic(orphanBucket / L"20260101-010101-001_old.meta",
+        std::vector<std::uint8_t>{'r','e','a','s','o','n','=','O','l','d','e','r',' ','c','o','m','m','e','n','t','\n',
+            'h','a','s','h','=','o','l','d','h','a','s','h','\n','s','i','z','e','=','3','\n'});
+    const std::string importPath = wideToUtf8(normalizePath(importNote));
+    writeAllBytesAtomic(orphanBucket / L"path.txt",
+        std::vector<std::uint8_t>(importPath.begin(), importPath.end()));
+    writeAllBytesAtomic(orphanBucket / L"latest.hash", {'o','l','d','h','a','s','h'});
+    HistoryCatalog importCatalog;
+    importCatalog.configure(adjacentImportDirectory.path() / L"catalog.db",
+        HistoryLocationMode::customRoot, commonRoot);
+    const auto imported = importCatalog.reconcile(importNote);
+    HistoryStore importStore;
+    importStore.setCatalog(&importCatalog);
+    const auto importedRevisions = importStore.revisionsFor(importNote);
+    context.expect(imported.recordCreated && imported.adjacentHistoryMigrated
+        && imported.migratedRevisionCount == 1 && imported.adjacentRootRemoved,
+        "common-root access discovers a matching orphan adjacent history bucket");
+    context.expect(importedRevisions.size() == 1
+        && importedRevisions.front().reason == L"Older comment"
+        && importStore.readRevision(importedRevisions.front()) == std::vector<std::uint8_t>({'o','l','d'}),
+        "adjacent migration preserves revision data and comment metadata");
+    context.expect(!fs::exists(adjacentRoot) && !fs::exists(orphanBucket),
+        "successful final adjacent migration removes the empty .npphistory folder");
+
+    context.expect(importStore.captureFile(importNote, L"Common revision", true),
+        "common-root merge fixture creates an existing destination revision");
+    const auto commonBeforeMerge = importStore.revisionsFor(importNote);
+    const fs::path secondBucket = adjacentRoot / L"second-orphan";
+    fs::path collidingRevision = secondBucket / commonBeforeMerge.front().revisionPath.filename();
+    fs::path collidingMetadata = collidingRevision;
+    collidingMetadata.replace_extension(L".meta");
+    writeAllBytesAtomic(collidingRevision, importStore.readRevision(commonBeforeMerge.front()));
+    writeAllBytesAtomic(collidingMetadata,
+        std::vector<std::uint8_t>{'r','e','a','s','o','n','=','L','e','g','a','c','y',' ','c','o','m','m','e','n','t','\n',
+            'h','a','s','h','=','l','e','g','a','c','y','h','a','s','h','\n','s','i','z','e','=','3','\n'});
+    writeAllBytesAtomic(secondBucket / L"path.txt",
+        std::vector<std::uint8_t>(importPath.begin(), importPath.end()));
+    const fs::path unrelated = adjacentRoot / L"unrelated";
+    writeAllBytesAtomic(unrelated / L"path.txt", {'x'});
+    const auto merged = importCatalog.reconcile(importNote);
+    const auto mergedRevisions = importStore.revisionsFor(importNote);
+    context.expect(merged.adjacentHistoryMigrated && merged.migratedRevisionCount == 1
+        && !merged.adjacentRootRemoved && fs::is_directory(unrelated),
+        "migration retains .npphistory only when unrelated file history remains");
+    context.expect(mergedRevisions.size() == commonBeforeMerge.size() + 1
+        && std::any_of(mergedRevisions.begin(), mergedRevisions.end(), [](const RevisionInfo& item) {
+            return item.reason == L"Legacy comment";
+        }), "migration renames a colliding pair instead of overwriting its comment");
+    context.expect(!fs::exists(secondBucket),
+        "merged adjacent bucket is removed only after all files reach the common destination");
+
+    TestDirectory importFailureDirectory(L"catalog-adjacent-import-failure");
+    const fs::path failureNote = importFailureDirectory.path() / L"note.txt";
+    writeAllBytesAtomic(failureNote, content);
+    const fs::path failureBucket = failureNote.parent_path() / L".npphistory" / L"orphan";
+    const std::string failurePath = wideToUtf8(normalizePath(failureNote));
+    writeAllBytesAtomic(failureBucket / L"path.txt",
+        std::vector<std::uint8_t>(failurePath.begin(), failurePath.end()));
+    writeAllBytesAtomic(failureBucket / L"old.rev", {'o'});
+    writeAllBytesAtomic(failureBucket / L"old.meta", {'r','e','a','s','o','n','=','O','l','d','\n'});
+    const fs::path blockedCommon = importFailureDirectory.path() / L"blocked";
+    writeAllBytesAtomic(blockedCommon, {'x'});
+    HistoryCatalog importFailureCatalog;
+    importFailureCatalog.configure(importFailureDirectory.path() / L"catalog.db",
+        HistoryLocationMode::customRoot, blockedCommon);
+    const auto importFailed = importFailureCatalog.reconcile(failureNote);
+    context.expect(importFailed.adjacentMigrationFailed
+        && !importFailed.adjacentHistoryMigrated && fs::is_directory(failureBucket),
+        "failed adjacent migration reports failure and retains the complete source bucket");
 }
