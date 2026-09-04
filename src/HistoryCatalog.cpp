@@ -470,6 +470,11 @@ ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
     }
 
     const fs::path desired = desiredHistoryPath(*record, currentPath);
+    if (_mode == HistoryLocationMode::customRoot)
+    {
+        result.adjacentHistoryChecked = true;
+        result.adjacentRoot = currentPath.parent_path() / L".npphistory";
+    }
     result.previousHistoryPath = record->historyPath;
     if (!record->historyPath.empty() && !samePath(record->historyPath, desired))
     {
@@ -485,6 +490,7 @@ ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
                 if (_mode == HistoryLocationMode::customRoot
                     && source.parent_path().filename() == L".npphistory")
                 {
+                    ++result.adjacentHistoryFolderCountFound;
                     result.adjacentMigrationFailed = true;
                     result.migrationSource = source;
                     result.migrationDestination = desired;
@@ -497,6 +503,7 @@ ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
             if (_mode == HistoryLocationMode::customRoot
                 && source.parent_path().filename() == L".npphistory")
             {
+                ++result.adjacentHistoryFolderCountFound;
                 result.adjacentHistoryMigrated = true;
                 result.migratedRevisionCount += moved;
                 ++result.migratedHistoryFolderCount;
@@ -524,7 +531,9 @@ ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
 
     if (_mode == HistoryLocationMode::customRoot)
     {
-        for (const auto& source : adjacentHistoryPaths(*record, currentPath, desired))
+        const auto adjacentSources = adjacentHistoryPaths(*record, currentPath, desired);
+        result.adjacentHistoryFolderCountFound += adjacentSources.size();
+        for (const auto& source : adjacentSources)
         {
             std::size_t moved = 0;
             if (!mergeHistory(source, desired, currentPath, moved))

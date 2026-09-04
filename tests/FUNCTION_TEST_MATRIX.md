@@ -211,6 +211,7 @@ See `TEST_REPORT-COMMANDS.md` for the latest scoped results and manual UAT bound
 | `ensureHiddenAdjacentRoot` | Direct adjacent-root creation plus live hidden folder | PASS |
 | `moveHistory`, `mergeHistory`, `adjacentHistoryPaths` | Direct move, collision-safe merge, matching `path.txt`/hash/catalogue IDs, empty-root cleanup, unrelated-history retention and blocked migration rollback | PASS |
 | `reconcile` | Direct new, unchanged, explicit move, hash match, missing, ambiguous, blocked, legacy and on-access adjacent-to-common migration cases | PASS |
+| `ReconcileResult` adjacent check evidence | Common-root checks report the inspected adjacent root, folders found and failure/success state for DEBUG logging | PASS |
 | `historyPathFor` | Direct known and unknown record paths | PASS |
 | `recordCapture` | Direct new/existing record capture and persistence | PASS |
 | `records` | Direct count/content assertions | PASS |

@@ -204,6 +204,10 @@ void runHistoryCatalogTests(TestContext& context)
     context.expect(imported.recordCreated && imported.adjacentHistoryMigrated
         && imported.migratedRevisionCount == 1 && imported.adjacentRootRemoved,
         "common-root access discovers a matching orphan adjacent history bucket");
+    context.expect(imported.adjacentHistoryChecked
+        && imported.adjacentRoot == adjacentRoot
+        && imported.adjacentHistoryFolderCountFound == 1,
+        "common-root reconcile reports its adjacent history location check");
     context.expect(importedRevisions.size() == 1
         && importedRevisions.front().reason == L"Older comment"
         && importStore.readRevision(importedRevisions.front()) == std::vector<std::uint8_t>({'o','l','d'}),
@@ -256,4 +260,8 @@ void runHistoryCatalogTests(TestContext& context)
     context.expect(importFailed.adjacentMigrationFailed
         && !importFailed.adjacentHistoryMigrated && fs::is_directory(failureBucket),
         "failed adjacent migration reports failure and retains the complete source bucket");
+    context.expect(importFailed.adjacentHistoryChecked
+        && importFailed.adjacentRoot == failureNote.parent_path() / L".npphistory"
+        && importFailed.adjacentHistoryFolderCountFound == 1,
+        "failed common-root migration still reports the adjacent history check");
 }

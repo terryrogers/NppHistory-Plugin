@@ -419,6 +419,33 @@ void reconcileFile(UINT_PTR bufferId, const fs::path& path,
     if (!existingFile(path))
         return;
     const auto result = historyCatalog.reconcile(path, previousPath);
+    if (pluginLogger().enabled(LogLevel::debug))
+    {
+        std::wstring detail = L"File: " + path.wstring()
+            + L" | Configured Location: " + historyLocationDisplayName(settings.historyLocationMode);
+        if (result.adjacentHistoryChecked)
+        {
+            detail += L" | Adjacent Folder: " + result.adjacentRoot.wstring()
+                + L" | History Folders Found: "
+                + std::to_wstring(result.adjacentHistoryFolderCountFound);
+            if (result.adjacentMigrationFailed)
+                detail += L" | Result: Migration failed; source history retained";
+            else if (result.adjacentHistoryMigrated)
+                detail += L" | Result: Migrated "
+                    + std::to_wstring(result.migratedHistoryFolderCount)
+                    + L" history folder(s) containing "
+                    + std::to_wstring(result.migratedRevisionCount)
+                    + L" revision(s) | .npphistory Folder Removed: "
+                    + (result.adjacentRootRemoved ? L"Yes" : L"No");
+            else
+                detail += L" | Result: No adjacent history found";
+        }
+        else
+        {
+            detail += L" | Result: Adjacent storage configured; migration check not required";
+        }
+        pluginLogger().write(LogLevel::debug, L"History location check", detail);
+    }
     if (result.adjacentHistoryMigrated)
     {
         pluginLogger().write(LogLevel::informational, L"Adjacent history migrated",

@@ -58,9 +58,14 @@ void runLoggerTests(TestContext& context)
     context.expect(logger.enabled(LogLevel::debug),
         "debug logging enables every severity");
     logger.write(LogLevel::debug, L"Option change", L"Enabled: false -> true\nnext");
+    logger.write(LogLevel::debug, L"History location check",
+        L"File: C:\\Notes\\note.txt | Configured Location: Common folder | Adjacent Folder: C:\\Notes\\.npphistory | History Folders Found: 0 | Result: No adjacent history found");
     const auto debugText = decodeText(readAllBytes(logger.path()));
     context.expect(debugText.find(L"[DEBUG] Option change | Enabled: false -> true next")
         != std::wstring::npos, "PluginLogger records debug changes and sanitizes line breaks");
+    context.expect(debugText.find(L"[DEBUG] History location check | File: C:\\Notes\\note.txt | Configured Location: Common folder")
+        != std::wstring::npos && debugText.find(L"Result: No adjacent history found") != std::wstring::npos,
+        "PluginLogger records an enriched history-location check when no migration is needed");
 
     const std::wstring large(1'100'000, L'x');
     logger.write(LogLevel::error, L"Large", large);

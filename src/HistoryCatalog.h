@@ -34,9 +34,12 @@ struct ReconcileResult
     bool ambiguousMatch = false;
     bool adjacentHistoryMigrated = false;
     bool adjacentMigrationFailed = false;
+    bool adjacentHistoryChecked = false;
     bool adjacentRootRemoved = false;
+    std::size_t adjacentHistoryFolderCountFound = 0;
     std::size_t migratedRevisionCount = 0;
     std::size_t migratedHistoryFolderCount = 0;
+    std::filesystem::path adjacentRoot;
     std::filesystem::path migrationSource;
     std::filesystem::path migrationDestination;
 };

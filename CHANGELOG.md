@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added DEBUG history-location checks for every reconciled file, including the configured location, adjacent folder, number of legacy history folders found, and migration outcome.
 - Added safe on-access migration of matching legacy adjacent `.npphistory` revisions into the configured common history folder. Existing common history is merged without overwrites, revision timestamps/comments are retained, collisions receive unique names, failed copies roll back and retain the source, and an empty `.npphistory` folder is removed. Success and failure produce enriched INFO/WARNING log entries.
 - Replaced the unsuccessful timer-based toolbar-height recovery. NppHistory now removes toolbar commands that are not selected in Settings and reinserts them live when enabled, preserving host/customized order, button data, images and enabled state. This avoids hidden trailing buttons that Customize Toolbar measured as four pixels. The exact NppHistory + Customize Toolbar + NppMenuSearch resize sequence now stays at full height; 1,243 core/native checks and 109 focused compatibility checks pass. Installed-environment UAT remains open; see TOOLBAR_HEIGHT_REGRESSION-2026-09-03.md.
 - Replaced background-flattened menu icons with shared transparent, premultiplied-alpha bitmaps for Plugins, document/tab-bar context menus and revision actions. Added 63 bitmap/native-menu checks; 1,186 core checks and 95 focused toolbar/pane checks pass. Installed hover-appearance UAT remains pending; see MENU_ICON_REGRESSION-2026-09-03.md.
