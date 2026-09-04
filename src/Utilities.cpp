@@ -211,7 +211,7 @@ bool wildcardMatchCaseInsensitive(std::wstring_view pattern, std::wstring_view v
     return patternIndex == pattern.size();
 }
 
-bool pathMatchesWildcardList(const fs::path& path, std::wstring_view patterns)
+std::wstring matchingPathWildcardPattern(const fs::path& path, std::wstring_view patterns)
 {
     std::error_code error;
     std::wstring fullPath = fs::absolute(path, error).lexically_normal().wstring();
@@ -238,13 +238,18 @@ bool pathMatchesWildcardList(const fs::path& path, std::wstring_view patterns)
                 || pattern.find(L':') != std::wstring::npos;
             if (wildcardMatchCaseInsensitive(pattern,
                     fullPathPattern ? std::wstring_view(fullPath) : std::wstring_view(fileName)))
-                return true;
+                return pattern;
         }
         if (end == std::wstring_view::npos)
             break;
         start = end + 1;
     }
-    return false;
+    return {};
+}
+
+bool pathMatchesWildcardList(const fs::path& path, std::wstring_view patterns)
+{
+    return !matchingPathWildcardPattern(path, patterns).empty();
 }
 
 fs::path findExternalAutoSavePlugin(const fs::path& pluginsRoot)

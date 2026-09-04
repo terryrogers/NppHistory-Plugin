@@ -421,7 +421,13 @@ void reconcileFile(UINT_PTR bufferId, const fs::path& path,
     const auto result = historyCatalog.reconcile(path, previousPath);
     if (pluginLogger().enabled(LogLevel::debug))
     {
+        const std::wstring matchedHistoryExclusion =
+            matchingPathWildcardPattern(path, settings.historyExclusions);
         std::wstring detail = L"File: " + path.wstring()
+            + L" | Revision History: " + (settings.historyEnabled ? L"Enabled" : L"Disabled")
+            + L" | History Exclusion: "
+            + (matchedHistoryExclusion.empty()
+                ? L"Not matched" : L"Matched (" + matchedHistoryExclusion + L")")
             + L" | Configured Location: " + historyLocationDisplayName(settings.historyLocationMode);
         if (result.adjacentHistoryChecked)
         {

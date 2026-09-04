@@ -237,6 +237,12 @@ void runUtilityTests(TestContext& context)
 
     context.expect(wildcardMatchCaseInsensitive(L"*.log", L"NppHistory.LOG"),
         "wildcard matching is case-insensitive and supports star");
+    context.expect(matchingPathWildcardPattern(L"C:\\Notes\\NppHistory.LOG",
+        L"*.tmp\r\n  *.log  \r\n*.bak") == L"*.log",
+        "matchingPathWildcardPattern reports the trimmed exclusion responsible for a match");
+    context.expect(matchingPathWildcardPattern(L"C:\\Notes\\NppHistory.txt",
+        L"*.tmp\r\n*.log").empty(),
+        "matchingPathWildcardPattern reports no exclusion for an unmatched file");
     context.expect(wildcardMatchCaseInsensitive(L"myfile*.com", L"myfile.com")
         && wildcardMatchCaseInsensitive(L"myfile*.com", L"myfiles.com"),
         "star matches zero or more filename characters");

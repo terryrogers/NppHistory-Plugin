@@ -75,7 +75,7 @@ See `TEST_REPORT-COMMANDS.md` for the latest scoped results and manual UAT bound
 | `localTimestampDisplay` | Direct locale-format check | PASS |
 | `localDateDisplay` | Direct valid, empty and invalid-date checks | PASS |
 | `formatFileSize` | Direct byte boundary and dynamic KB, MB and GB unit checks | PASS |
-| `wildcardMatchCaseInsensitive` | Direct anchored, case-insensitive star and question-mark cases | PASS |
+| `wildcardMatchCaseInsensitive`, `matchingPathWildcardPattern` | Direct anchored, case-insensitive star and question-mark cases plus exact matching-pattern reporting | PASS |
 | `pathMatchesWildcardList` | Direct filename/full-path, multiline, blank-row and whitespace cases | PASS |
 | `findExternalAutoSavePlugin` | Direct absent, conventional-folder and recursive case-insensitive `AutoSave.dll` discovery | PASS |
 | `centerWindowOnOwner` | Isolated Win32 positioning | PASS |
