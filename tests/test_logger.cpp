@@ -36,6 +36,10 @@ void runLoggerTests(TestContext& context)
         L"File: C:\\Notes\\note.txt | History Folders Moved: 1 | Revisions Moved: 3 | From: C:\\Notes\\.npphistory\\old | To: C:\\History\\id | .npphistory Folder Removed: Yes");
     logger.write(LogLevel::warning, L"Adjacent history migration failed",
         L"File: C:\\Notes\\note.txt | From: C:\\Notes\\.npphistory\\old | To: C:\\History\\id | Source History Retained: Yes");
+    logger.write(LogLevel::informational, L"Common history layout migrated",
+        L"File: C:\\Notes\\note.txt | Revisions Moved: 3 | From: C:\\History\\id | To: C:\\History\\.npphistory\\id | Legacy Folder Removed: Yes");
+    logger.write(LogLevel::warning, L"Common history layout migration failed",
+        L"File: C:\\Notes\\other.txt | From: C:\\History\\other | To: C:\\History\\.npphistory\\other | Source History Retained: Yes");
     logger.write(LogLevel::debug, L"Hidden debug event");
     const auto firstText = decodeText(readAllBytes(logger.path()));
     context.expect(firstText.find(L"[CRITICAL] Critical test event | note.txt") != std::wstring::npos,
@@ -50,6 +54,12 @@ void runLoggerTests(TestContext& context)
     context.expect(firstText.find(L"[WARNING] Adjacent history migration failed | File: C:\\Notes\\note.txt")
         != std::wstring::npos && firstText.find(L"Source History Retained: Yes") != std::wstring::npos,
         "PluginLogger records enriched migration failure and retention context");
+    context.expect(firstText.find(L"[INFO] Common history layout migrated | File: C:\\Notes\\note.txt | Revisions Moved: 3")
+        != std::wstring::npos && firstText.find(L"Legacy Folder Removed: Yes") != std::wstring::npos,
+        "PluginLogger records enriched common-layout migration context");
+    context.expect(firstText.find(L"[WARNING] Common history layout migration failed | File: C:\\Notes\\other.txt")
+        != std::wstring::npos && firstText.find(L"Source History Retained: Yes") != std::wstring::npos,
+        "PluginLogger records failed common-layout migration with source retention");
     context.expect(firstText.find(L"Hidden debug event") == std::wstring::npos,
         "PluginLogger filters events below the configured verbosity");
 

@@ -413,6 +413,42 @@ void showReconcileAlert(const ReconcileResult& result)
     }
 }
 
+void reportCommonLayoutMigrations(
+    const std::vector<CommonLayoutMigrationResult>& migrations)
+{
+    std::size_t failures = 0;
+    for (const auto& migration : migrations)
+    {
+        if (migration.succeeded)
+        {
+            pluginLogger().write(LogLevel::informational, L"Common history layout migrated",
+                L"File: " + migration.filePath.wstring()
+                + L" | Revisions Moved: " + std::to_wstring(migration.revisionCount)
+                + L" | From: " + migration.source.wstring()
+                + L" | To: " + migration.destination.wstring()
+                + L" | Legacy Folder Removed: Yes");
+        }
+        else
+        {
+            ++failures;
+            pluginLogger().write(LogLevel::warning, L"Common history layout migration failed",
+                L"File: " + migration.filePath.wstring()
+                + L" | From: " + migration.source.wstring()
+                + L" | To: " + migration.destination.wstring()
+                + L" | Source History Retained: Yes");
+        }
+    }
+    if (failures > 0)
+    {
+        const std::wstring message = L"NppHistory could not move "
+            + std::to_wstring(failures)
+            + L" common history folder(s) into the hidden .npphistory folder.\n\n"
+              L"The original folders were retained. See the NppHistory log for details.";
+        centeredMessageBox(nppData._nppHandle, message.c_str(), pluginName,
+            MB_OK | MB_ICONWARNING);
+    }
+}
+
 void reconcileFile(UINT_PTR bufferId, const fs::path& path,
     const std::optional<fs::path>& previousPath = std::nullopt)
 {
@@ -1251,6 +1287,7 @@ void editSettings()
         const bool settingsSaved = settings.save(settingsFile);
         historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
             settings.customHistoryRoot, pluginConfigPath / L"history");
+        reportCommonLayoutMigrations(historyCatalog.migrateLegacyCustomLayout());
         reconcileFile(currentBuffer(), currentPath());
         refreshPanel();
         const ULONGLONG now = GetTickCount64();
@@ -1701,6 +1738,7 @@ void initialise()
     ensureConfigurationLoaded();
     historyCatalog.configure(pluginConfigPath / L"catalog.db", settings.historyLocationMode,
         settings.customHistoryRoot, pluginConfigPath / L"history");
+    reportCommonLayoutMigrations(historyCatalog.migrateLegacyCustomLayout());
     historyStore.setCatalog(&historyCatalog);
     reconcileFile(currentBuffer(), currentPath());
 

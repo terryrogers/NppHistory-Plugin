@@ -44,11 +44,21 @@ struct ReconcileResult
     std::filesystem::path migrationDestination;
 };
 
+struct CommonLayoutMigrationResult
+{
+    std::filesystem::path filePath;
+    std::filesystem::path source;
+    std::filesystem::path destination;
+    std::size_t revisionCount = 0;
+    bool succeeded = false;
+};
+
 class HistoryCatalog
 {
 public:
     void configure(std::filesystem::path databaseFile, HistoryLocationMode mode,
         std::filesystem::path customRoot, std::filesystem::path legacyRoot = {});
+    std::vector<CommonLayoutMigrationResult> migrateLegacyCustomLayout();
     ReconcileResult reconcile(const std::filesystem::path& currentPath,
         const std::optional<std::filesystem::path>& knownPreviousPath = std::nullopt);
     std::filesystem::path historyPathFor(const std::filesystem::path& filePath) const;

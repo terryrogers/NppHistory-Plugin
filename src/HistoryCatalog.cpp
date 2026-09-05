@@ -207,8 +207,52 @@ bool HistoryCatalog::save() const
 fs::path HistoryCatalog::desiredHistoryPath(const CatalogRecord& record, const fs::path& filePath) const
 {
     if (_mode == HistoryLocationMode::customRoot && !_customRoot.empty())
-        return _customRoot / utf8ToWide(record.id);
+        return _customRoot / L".npphistory" / utf8ToWide(record.id);
     return filePath.parent_path() / L".npphistory" / utf8ToWide(record.id);
+}
+
+std::vector<CommonLayoutMigrationResult> HistoryCatalog::migrateLegacyCustomLayout()
+{
+    std::vector<CommonLayoutMigrationResult> results;
+    if (_mode != HistoryLocationMode::customRoot || _customRoot.empty())
+        return results;
+
+    // The selected common folder is user-visible content. Keep all implementation
+    // buckets beneath one hidden child, just as adjacent storage does.
+    const fs::path hiddenRoot = _customRoot / L".npphistory";
+    ensureHiddenAdjacentRoot(hiddenRoot / L"placeholder");
+    bool catalogueChanged = false;
+    for (auto& record : _records)
+    {
+        const fs::path source = _customRoot / utf8ToWide(record.id);
+        const fs::path destination = desiredHistoryPath(record, record.filePath);
+        std::error_code error;
+        if (fs::is_directory(source, error))
+        {
+            CommonLayoutMigrationResult migration;
+            migration.filePath = record.filePath;
+            migration.source = source;
+            migration.destination = destination;
+            migration.succeeded = mergeHistory(source, destination, record.filePath,
+                migration.revisionCount);
+            results.push_back(migration);
+            if (!migration.succeeded)
+                continue;
+            record.historyPath = destination;
+            record.hasHistory = record.hasHistory || migration.revisionCount > 0;
+            catalogueChanged = true;
+        }
+        else if (samePath(record.historyPath, source))
+        {
+            // Empty catalogue entries from the old layout have no directory to move,
+            // but must still point at the corrected hidden destination.
+            record.historyPath = destination;
+            catalogueChanged = true;
+        }
+    }
+    if (catalogueChanged)
+        save();
+    return results;
 }
 
 void HistoryCatalog::ensureHiddenAdjacentRoot(const fs::path& historyPath)
@@ -557,13 +601,7 @@ ReconcileResult HistoryCatalog::reconcile(const fs::path& currentPath,
 
     record->filePath = currentPath;
     record->historyPath = desired;
-    if (_mode == HistoryLocationMode::adjacent)
-        ensureHiddenAdjacentRoot(desired);
-    else
-    {
-        std::error_code error;
-        fs::create_directories(desired.parent_path(), error);
-    }
+    ensureHiddenAdjacentRoot(desired);
     result.historyPath = desired;
     save();
     return result;

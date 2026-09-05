@@ -3,6 +3,7 @@
 #include "HistoryStore.h"
 #include "Utilities.h"
 
+#include <chrono>
 #include <fstream>
 #include <regex>
 
@@ -100,10 +101,37 @@ void runHistoryCatalogTests(TestContext& context)
     const fs::path customRoot = basicDirectory.path() / L"common-history";
     catalog.configure(database, HistoryLocationMode::customRoot, customRoot);
     const auto custom = catalog.reconcile(reopenedNote);
-    context.expect(custom.historyMoved && custom.historyPath.parent_path() == customRoot,
-        "reconcile migrates existing history into a configured common root");
-    context.expect(fs::is_directory(customRoot),
-        "custom-root reconciliation creates the configured parent directory");
+    context.expect(custom.historyMoved
+        && custom.historyPath.parent_path() == customRoot / L".npphistory",
+        "reconcile migrates existing history beneath a common hidden root");
+    const DWORD customAttributes = GetFileAttributesW((customRoot / L".npphistory").c_str());
+    context.expect(customAttributes != INVALID_FILE_ATTRIBUTES
+        && (customAttributes & FILE_ATTRIBUTE_HIDDEN) != 0,
+        "custom-root reconciliation creates and hides its .npphistory container");
+
+    const fs::path oldVisibleBucket = customRoot
+        / utf8ToWide(catalog.records().front().id);
+    const auto beforeLayoutMigration = store.revisionsFor(reopenedNote);
+    const auto preservedRevisionTime = fs::file_time_type::clock::now()
+        - std::chrono::hours(24);
+    fs::last_write_time(beforeLayoutMigration.front().revisionPath,
+        preservedRevisionTime, error);
+    fs::rename(custom.historyPath, oldVisibleBucket, error);
+    const auto layoutMigrations = catalog.migrateLegacyCustomLayout();
+    const auto afterLayoutMigration = store.revisionsFor(reopenedNote);
+    context.expect(!error && layoutMigrations.size() == 1
+        && layoutMigrations.front().succeeded
+        && layoutMigrations.front().revisionCount == 1
+        && !fs::exists(oldVisibleBucket)
+        && fs::is_directory(custom.historyPath),
+        "legacy visible common bucket migrates into the hidden container and is removed");
+    context.expect(catalog.historyPathFor(reopenedNote) == custom.historyPath,
+        "legacy common-layout migration updates the catalogue history path");
+    context.expect(afterLayoutMigration.size() == 1
+        && afterLayoutMigration.front().reason == L"Saved"
+        && store.readRevision(afterLayoutMigration.front()) == content
+        && fs::last_write_time(afterLayoutMigration.front().revisionPath) == preservedRevisionTime,
+        "common-layout migration preserves revision content, comment and timestamp");
     fs::remove_all(custom.historyPath, error);
     const auto missing = catalog.reconcile(reopenedNote);
     context.expect(missing.historyMissing && !catalog.records().front().hasHistory,
@@ -163,6 +191,25 @@ void runHistoryCatalogTests(TestContext& context)
             << " previousExists=" << fs::exists(previousHistory)
             << " previousDirectory=" << fs::is_directory(previousHistory) << '\n';
     }
+
+    TestDirectory layoutFailureDirectory(L"catalog-common-layout-failure");
+    const fs::path layoutFailureNote = layoutFailureDirectory.path() / L"note.txt";
+    const fs::path layoutFailureDatabase = layoutFailureDirectory.path() / L"catalog.db";
+    const fs::path layoutFailureRoot = layoutFailureDirectory.path() / L"common";
+    writeAllBytesAtomic(layoutFailureNote, content);
+    HistoryCatalog layoutFailureCatalog;
+    layoutFailureCatalog.configure(layoutFailureDatabase, HistoryLocationMode::adjacent, {});
+    layoutFailureCatalog.reconcile(layoutFailureNote);
+    const std::string layoutFailureId = layoutFailureCatalog.records().front().id;
+    writeAllBytesAtomic(layoutFailureRoot / utf8ToWide(layoutFailureId) / L"legacy.rev", {'o'});
+    writeAllBytesAtomic(layoutFailureRoot / L".npphistory", {'b'});
+    layoutFailureCatalog.configure(layoutFailureDatabase,
+        HistoryLocationMode::customRoot, layoutFailureRoot);
+    const auto blockedLayoutMigrations = layoutFailureCatalog.migrateLegacyCustomLayout();
+    context.expect(blockedLayoutMigrations.size() == 1
+        && !blockedLayoutMigrations.front().succeeded
+        && fs::is_directory(layoutFailureRoot / utf8ToWide(layoutFailureId)),
+        "blocked common-layout migration reports failure and retains its visible source bucket");
 
     TestDirectory legacyDirectory(L"catalog-legacy");
     const fs::path legacyNote = legacyDirectory.path() / L"note.txt";
