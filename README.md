@@ -4,11 +4,11 @@ NppHistory is an open-source Notepad++ plugin that automatically saves ordinary 
 
 ## Current Project Status
 
-**Confirmed:** The source identifies the current candidate as `0.2.0-beta.25` (`0.2.0.25` in the Windows file version). Historical prereleases `v0.2.0-beta.20` and `v0.2.0-beta.24` are published. A fresh local Release x64 build and 1,264 core checks pass, but the full verifier currently stops at its live Notepad++ stage with restore/logging and exclusion-state failures. Installed-environment UAT and publication therefore remain open gates. No beta 25 tag or GitHub Release exists.
+**Confirmed:** The source identifies the current candidate as `0.2.0-beta.25` (`0.2.0.25` in the Windows file version). The former repository published prereleases `v0.2.0-beta.20` and `v0.2.0-beta.24`; their assets are retained in a verified local archive but their tags and releases were not copied into this clean repository. A fresh local Release x64 build and 1,264 core checks pass, but the full verifier currently stops at its live Notepad++ stage with restore/logging and exclusion-state failures. Installed-environment UAT and beta 25 publication therefore remain open gates.
 
-**Confirmed:** Local and published Git histories have been joined without rewriting either history. The resulting local `main` has not been pushed. The existing GitHub repository is public even though the reconstructed target state is private; changing visibility and pushing both require explicit approval.
+**Confirmed:** This is a clean Public repository created from the sanitised current source snapshot. Its initial history contains no legacy commits, tags or GitHub Releases. Local and remote `main` have been verified against each other, and the initial Windows build and core-test workflow passed.
 
-**Proposed:** Complete the remaining installed-environment tests, review the prepared publication diff, resolve repository visibility, and only then consider beta 25 publication. See [Project Discovery](PROJECT_DISCOVERY.md), [Roadmap](ROADMAP.md), [Architecture](docs/ARCHITECTURE.md), and [Release Process](docs/RELEASE_PROCESS.md).
+**Proposed:** Complete the remaining installed-environment tests and unresolved security work, then prepare beta 25 as a separately reviewed tag and GitHub Release. See [Project Discovery](PROJECT_DISCOVERY.md), [Roadmap](ROADMAP.md), [Architecture](docs/ARCHITECTURE.md), and [Release Process](docs/RELEASE_PROCESS.md).
 
 Earlier toolbar and pane evidence remains in [toolbar-height regression report](TOOLBAR_HEIGHT_REGRESSION-2026-09-03.md), [toolbar/pane regression report](TOOLBAR_PANE_REGRESSION-2026-09-03.md), and [menu-icon correction](MENU_ICON_REGRESSION-2026-09-03.md). Those reports retain their original verification boundaries.
 

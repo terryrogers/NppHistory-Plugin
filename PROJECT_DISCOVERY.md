@@ -20,16 +20,15 @@
 ## Repository Reconstruction
 
 - **Confirmed:** GitHub repository: `https://github.com/terryrogers/NppHistory-Plugin`.
-- **Confirmed:** Published prereleases: `v0.2.0-beta.20` and `v0.2.0-beta.24`.
-- **Confirmed:** Fetched GitHub `main` and the previously local `main` had different commit identities but the same final tree. A local non-fast-forward merge preserves both histories without rewriting them.
-- **Confirmed:** The reconstructed local branch is not pushed.
-- **Confirmed risk:** The existing GitHub repository is public. The requested target was private, and no visibility change is authorised yet.
+- **Confirmed:** The former repository published prereleases `v0.2.0-beta.20` and `v0.2.0-beta.24`; its full history and release assets are retained only in a verified local rollback archive.
+- **Confirmed:** The repository was recreated as Public from a sanitised current-source snapshot. The replacement contains no legacy commits, tags or GitHub Releases.
+- **Confirmed:** Local and remote `main` match, and the initial GitHub Actions workflow passed.
 
 ## OpenProject Reconstruction
 
-**Confirmed:** A private OpenProject project named NppHistory Plugin, identifier `NPPHIST`, was copied from the current Software Development template. Template memberships, phases, work-package types, saved views, Status board and Versions board were preserved. Project metadata, versions and 56 inherited work packages were reconstructed from repository evidence.
+**Confirmed:** An OpenProject project named NppHistory Plugin, identifier `NPPHIST`, was copied from the current Software Development template. Template memberships, phases, work-package types, saved views, Status board and Versions board were preserved. Project metadata, versions and 56 inherited work packages were reconstructed from repository evidence.
 
-**Confirmed:** OpenProject links to GitHub. A direct OpenProject URL is intentionally omitted from this repository while GitHub remains public, because publishing a private infrastructure address would violate the publication boundary.
+**Confirmed:** OpenProject links to GitHub. A direct OpenProject URL is intentionally omitted from this Public repository because publishing a private infrastructure address would violate the publication boundary.
 
 ## Evidence Classification
 
@@ -39,8 +38,7 @@
 
 ## Unresolved Decisions
 
-1. Approve or decline changing the existing GitHub repository from public to private.
-2. Review and approve the exact local `main` push, or request changes.
-3. Complete installed-environment beta 25 UAT and migration verification.
-4. Decide whether and when to publish `v0.2.0-beta.25`; tagging and releasing require separate exact approval.
-5. Define and approve stable `1.0.0` scope and schedule.
+1. Complete installed-environment beta 25 UAT and migration verification.
+2. Resolve or explicitly accept the documented security findings before a release.
+3. Decide whether and when to publish `v0.2.0-beta.25`; tagging and releasing require separate exact approval.
+4. Define and approve stable `1.0.0` scope and schedule.
