@@ -1,0 +1,342 @@
+param([string]$NotepadExe = 'C:\Program Files\Notepad++\notepad++.exe', [switch]$LayoutOnly, [switch]$MixedToolbar, [switch]$MonitorTransitions, [switch]$WithInstalledToolbarPlugins, [string]$PluginDll = "$PSScriptRoot\..\build\x64\Release\NppHistory.dll")
+$ErrorActionPreference = 'Stop'
+# Reuse the established read-only Win32 test helpers without running that workflow.
+if (-not ('NppHistoryNative' -as [type])) {
+    $source = Get-Content -LiteralPath "$PSScriptRoot\runtime_smoke.ps1" -Raw
+    $native = [regex]::Match($source, "(?s)Add-Type @'\r?\n(.*?)\r?\n'@")
+    if (!$native.Success) { throw 'Native test helpers not found' }
+    Add-Type $native.Groups[1].Value
+}
+if (-not ('CommandProbe' -as [type])) {
+Add-Type @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class CommandProbe {
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X,Y; }
+    [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr window,ref Point point);
+    [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr window,int x,int y,int width,int height,bool repaint);
+    [StructLayout(LayoutKind.Sequential)] struct MENUITEMINFO {
+        public uint cbSize,fMask,fType,fState,wID;
+        public IntPtr hSubMenu,hbmpChecked,hbmpUnchecked,dwItemData,dwTypeData;
+        public uint cch; public IntPtr hbmpItem;
+    }
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h,uint m,IntPtr w,IntPtr l);
+    public class Entry { public string Text; public uint Id; public bool Enabled, Separator, Icon; public IntPtr Sub; }
+    delegate bool EnumProc(IntPtr h, IntPtr p);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc p,IntPtr v);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h,StringBuilder s,int n);
+    [DllImport("user32.dll")] static extern IntPtr GetMenu(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr h);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern bool GetMenuItemInfo(IntPtr h,uint p,bool byPosition,ref MENUITEMINFO i);
+    [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetMenuString(IntPtr h,uint p,StringBuilder s,int n,uint flags);
+    public static Entry[] Entries(IntPtr menu) {
+        var result=new List<Entry>();
+        for(uint i=0;i<GetMenuItemCount(menu);i++) {
+            var m=new MENUITEMINFO(); m.cbSize=(uint)Marshal.SizeOf(m);m.fMask=0x187;
+            if(!GetMenuItemInfo(menu,i,true,ref m))throw new Exception("Menu read failed");
+            var label=new StringBuilder(256);GetMenuString(menu,i,label,256,0x400);
+            result.Add(new Entry{Text=label.ToString(),Id=m.wID,Enabled=(m.fState&3)==0,
+                Separator=(m.fType&0x800)!=0,Icon=m.hbmpItem!=IntPtr.Zero,Sub=m.hSubMenu});
+        }
+        return result.ToArray();
+    }
+    static IntPtr Find(IntPtr menu,string text) {
+        foreach(var e in Entries(menu)) {
+            if(e.Text.Replace("&","")==text)return e.Sub;
+            if(e.Sub!=IntPtr.Zero){var found=Find(e.Sub,text);if(found!=IntPtr.Zero)return found;}
+        }return IntPtr.Zero;
+    }
+    public static IntPtr PluginMenu(IntPtr window) {return Find(GetMenu(window),"NppHistory");}
+    public static IntPtr Popup(uint pid) {
+        IntPtr result=IntPtr.Zero;
+        EnumWindows(delegate(IntPtr h,IntPtr p){uint owner;GetWindowThreadProcessId(h,out owner);
+            var name=new StringBuilder(128);GetClassName(h,name,128);
+            if(owner==pid&&name.ToString()=="#32768") {result=SendMessage(h,0x1E1,IntPtr.Zero,IntPtr.Zero);return false;}
+            return true;},IntPtr.Zero);return result;
+    }
+}
+'@
+}
+Add-Type -AssemblyName System.Drawing
+$root = [IO.Path]::GetFullPath("$PSScriptRoot\..\build\commands-$([guid]::NewGuid().ToString('N'))")
+[IO.Directory]::CreateDirectory($root) | Out-Null
+Copy-Item -LiteralPath $NotepadExe -Destination "$root\notepad++.exe"
+Copy-Item -Path "$(Split-Path $NotepadExe)\*.xml" -Destination $root
+[IO.File]::WriteAllText("$root\doLocalConf.xml",'<!-- isolated test -->')
+[IO.Directory]::CreateDirectory("$root\plugins\NppHistory") | Out-Null
+[IO.Directory]::CreateDirectory("$root\plugins\Config\NppHistory") | Out-Null
+Copy-Item -LiteralPath $PluginDll -Destination "$root\plugins\NppHistory\NppHistory.dll"
+if ($WithInstalledToolbarPlugins) {
+    $hostRoot=Split-Path $NotepadExe
+    foreach ($plugin in @('_CustomizeToolbar','NppMenuSearch')) {
+        [IO.Directory]::CreateDirectory("$root\plugins\$plugin") | Out-Null
+        Copy-Item -LiteralPath "$hostRoot\plugins\$plugin\$plugin.dll" -Destination "$root\plugins\$plugin\$plugin.dll"
+    }
+    foreach ($config in @('CustomizeToolbar.dat','NppMenuSearch.xml')) {
+        Copy-Item -LiteralPath "$hostRoot\plugins\Config\$config" -Destination "$root\plugins\Config\$config"
+    }
+}
+$names = @('Capture','Compare','Restore','History','Refresh','Settings','About')
+$paneIds = @(1006,1004,1005,1003,1007,1008)
+$ini = "[NppHistory]`r`nAutoSaveEnabled=0`r`nAutoUpdateEnabled=0`r`nHistoryBeforeSave=0`r`nHistoryAfterSave=0`r`nLoggingEnabled=1`r`nLogLevel=3`r`n"
+for($i=0;$i -lt $names.Count;$i++) {
+    $name=$names[$i]
+    $toolbarVisible = [int](!$MixedToolbar -or $i -lt 4)
+    $ini += "Toolbar$name=$toolbarVisible`r`nContext$name=1`r`nHotkey$($name)Enabled=1`r`nHotkey$($name)Ctrl=1`r`nHotkey$($name)Alt=1`r`nHotkey$($name)Shift=1`r`nHotkey$($name)Key=$([int]49+$i)`r`n"
+}
+[IO.File]::WriteAllText("$root\plugins\Config\NppHistory\NppHistory.ini",$ini)
+[IO.File]::WriteAllText("$root\commands.txt",'Original command test')
+$script:checks=0
+function Assert($condition,[string]$description) {
+    $script:checks++
+    if(!$condition){throw "FAIL: $description (evidence $root)"}
+}
+function Wait-Window([string]$title) {
+    for($i=0;$i -lt 50;$i++) {
+        $h=[NppHistoryNative]::FindTopWindowContaining([uint32]$process.Id,$title)
+        if($h -ne [IntPtr]::Zero){return $h};Start-Sleep -Milliseconds 100
+    }throw "Window not found: $title"
+}
+function Open-Settings {
+    [NppHistoryNative]::BeginCommand($main,$ids[5],[IntPtr]::Zero)
+    $window=Wait-Window 'NppHistory Settings'
+    Start-Sleep -Milliseconds 400
+    [void][NppHistoryNative]::UpdateWindow($window)
+    return $window
+}
+function Click-Control($window,[int]$id) {
+    [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($window,$id),0xF5,[IntPtr]::Zero,[IntPtr]::Zero)
+}
+function Snapshot($window,[string]$file) {
+    $r=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($window,[ref]$r)
+    $b=[Drawing.Bitmap]::new($r.Right-$r.Left,$r.Bottom-$r.Top);$g=[Drawing.Graphics]::FromImage($b);$dc=$g.GetHdc()
+    try {[void][NppHistoryNative]::PrintWindow($window,$dc,2)}finally{$g.ReleaseHdc($dc);$g.Dispose()}
+    $b.Save("$root\$file");$b.Dispose()
+}
+function Read-Context([bool]$submenu,[bool]$tabBar=$false) {
+    if($tabBar) {
+        $tabs=[NppHistoryNative]::FindDescendant($main,'SysTabControl32')
+        [NppHistoryNative]::BeginRightClick($tabs,30,8)
+    } else {
+        [void][NppHistoryNative]::PostMessage($main,0x7B,$editor,[IntPtr](-1))
+    }
+    $popup=[IntPtr]::Zero
+    for($j=0;$j -lt 40;$j++){$popup=[CommandProbe]::Popup([uint32]$process.Id);if($popup -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 50}
+    Assert ($popup -ne [IntPtr]::Zero) "context menu opens (tab bar: $tabBar)"
+    $items=@([CommandProbe]::Entries($popup));$group=@($items | Where-Object Text -eq 'NppHistory')
+    if($submenu){Assert ($group.Count -eq 1) 'exactly one NppHistory submenu';$items=@([CommandProbe]::Entries($group[0].Sub))}
+    else {Assert ($group.Count -eq 0) 'inline mode has no NppHistory submenu'}
+    $our=@($items | Where-Object {$_.Id -in $ids})
+    if(!$submenu -and $our.Count){
+        $first=[array]::IndexOf($items,$our[0]);$last=[array]::IndexOf($items,$our[-1])
+        Assert ($items[$first-1].Separator -and $items[$last+1].Separator) 'inline commands between two separators'
+    }
+    [void][NppHistoryNative]::PostMessage($main,0x1F,[IntPtr]::Zero,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 100
+    return $our
+}
+$process=Start-Process -FilePath "$root\notepad++.exe" -ArgumentList @('-multiInst','-nosession',('"'+"$root\commands.txt"+'"')) -WindowStyle Hidden -PassThru
+try {
+    $main=[IntPtr]::Zero
+    for($i=0;$i -lt 80;$i++){$main=[NppHistoryNative]::FindMainWindow([uint32]$process.Id);if($main -ne [IntPtr]::Zero -and [CommandProbe]::PluginMenu($main) -ne [IntPtr]::Zero){break};Start-Sleep -Milliseconds 100}
+    # Customize Toolbar can finish its icon-size rebuild after NPPN_READY.
+    Start-Sleep -Milliseconds $(if ($WithInstalledToolbarPlugins) {2600} else {1250})
+    $editor=[NppHistoryNative]::FindScintillaWithContent($main)
+    $menu=[CommandProbe]::PluginMenu($main);$entries=@([CommandProbe]::Entries($menu));$ids=@($entries | ForEach-Object {[int]$_.Id})
+    $actualOrder=($entries.Text | ForEach-Object {($_ -split "`t")[0]}) -join '|'
+    if(!$actualOrder){Snapshot $main 'startup-failure.png';Write-Output "Main=$main; Exited=$($process.HasExited); Native=$([NppHistoryNative]::PluginMenuLabels($main,'NppHistory'))"}
+    Assert ($actualOrder -eq ($names -join '|')) "Plugins menu common order: $actualOrder"
+    Assert ($entries.Count -eq 7 -and @($entries | Where-Object Icon).Count -eq 7) 'all seven menu icons'
+    Assert (@($entries | Where-Object {$_.Text.Contains("`t")}).Count -eq 7) 'all seven native shortcuts displayed'
+    Assert (([NppHistoryNative]::GetProp($main,'NppHistoryToolbarButtonsRegistered')).ToInt64() -eq 8) 'all seven toolbar commands registered'
+    $toolbar=[NppHistoryNative]::FindDescendant($main,'ToolbarWindow32')
+    if ($MonitorTransitions) {
+        Add-Type -AssemblyName System.Windows.Forms
+        foreach ($screen in [Windows.Forms.Screen]::AllScreens) {
+            $area=$screen.WorkingArea
+            [void][CommandProbe]::MoveWindow($main,($area.Left+32),($area.Top+32),[Math]::Min(1100,$area.Width-64),[Math]::Min(800,$area.Height-64),$true)
+            Start-Sleep -Milliseconds 1400
+            $toolbar=[NppHistoryNative]::FindDescendant($main,'ToolbarWindow32')
+            $r=[NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$r)
+            $size=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
+            $bh=($size -shr 16) -band 65535
+            Snapshot $main "toolbar-monitor-$($area.Left)-$($area.Top).png"
+            Assert ($bh -ge 16 -and ($r.Bottom-$r.Top) -ge $bh) "toolbar fits buttons after monitor transition at $($area.Left),$($area.Top): height=$($r.Bottom-$r.Top), button=$bh"
+        }
+    }
+    $initialToolbarRect=[NppHistoryNative+RECT]::new()
+    [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$initialToolbarRect)
+    $buttonSize=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
+    $buttonHeight=($buttonSize -shr 16) -band 65535
+    $toolbarHeight=$initialToolbarRect.Bottom-$initialToolbarRect.Top
+    Snapshot $main 'toolbar-startup.png'
+    Assert ($buttonHeight -ge 16 -and $toolbarHeight -ge $buttonHeight) "startup toolbar must fit its icons/buttons (toolbar=$toolbarHeight, button=$buttonHeight)"
+    for ($repeat=0;$repeat -lt 12;$repeat++) {
+        [void][NppHistoryNative]::SendMessage($main,5,[IntPtr]::Zero,[IntPtr]::Zero)
+        Start-Sleep -Milliseconds 180
+        $settled=[NppHistoryNative+RECT]::new()
+        [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$settled)
+        Assert (($settled.Bottom-$settled.Top) -ge $buttonHeight) 'toolbar remains stable during repeated host layouts and timer polls'
+    }
+    $positions=@($ids | ForEach-Object {[NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$_,[IntPtr]::Zero).ToInt32()})
+    $presentPositions=@($positions | Where-Object {$_ -ge 0})
+    $expectedToolbarCount=$(if ($MixedToolbar) {4} else {7})
+    Assert ($presentPositions.Count -eq $expectedToolbarCount -and ($WithInstalledToolbarPlugins -or ($presentPositions -join ',') -eq (($presentPositions | Sort-Object) -join ','))) 'configured toolbar commands remain present and retain native/customized order'
+    Assert ([NppHistoryNative]::GetProp($main,'NppHistoryLiveHotkeysReady').ToInt64() -eq 2) 'live keyboard handler ready and native duplicates removed'
+    # Immediate toolbar visibility and shortcut labels, without closing this process.
+    $settings=Open-Settings
+    Click-Control $settings 1071
+    [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x777,[IntPtr]::Zero)
+    Click-Control $settings 1
+    Assert ([NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt32() -lt 0) 'OK hides Capture toolbar button immediately'
+    $hiddenToolbarRect=[NppHistoryNative+RECT]::new()
+    [void][NppHistoryNative]::GetWindowRect($toolbar,[ref]$hiddenToolbarRect)
+    $buttonSize=[NppHistoryNative]::SendMessage($toolbar,0x43A,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
+    $buttonHeight=($buttonSize -shr 16) -band 65535
+    Assert ($buttonHeight -ge 16 -and ($hiddenToolbarRect.Bottom-$hiddenToolbarRect.Top) -ge $buttonHeight) 'toolbar must still fit buttons after live visibility change'
+    Snapshot $main 'toolbar-after-hide.png'
+    Assert ($hiddenToolbarRect.Top -eq $initialToolbarRect.Top -and
+        $hiddenToolbarRect.Left -eq $initialToolbarRect.Left -and
+        ($hiddenToolbarRect.Bottom-$hiddenToolbarRect.Top) -eq ($initialToolbarRect.Bottom-$initialToolbarRect.Top)) 'toolbar remains in its native rebar position and height after hiding a plugin button'
+    Assert (([CommandProbe]::Entries($menu))[0].Text.EndsWith('Ctrl+Alt+Shift+F8')) 'OK replaces active Capture shortcut suffix'
+    $settings=Open-Settings
+    Click-Control $settings 1071
+    [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x731,[IntPtr]::Zero)
+    Click-Control $settings 2
+    Assert ([NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt32() -lt 0) 'Cancel keeps toolbar visibility unchanged'
+    Assert (([CommandProbe]::Entries($menu))[0].Text.EndsWith('Ctrl+Alt+Shift+F8')) 'Cancel keeps active shortcut unchanged'
+    $settings=Open-Settings
+    Click-Control $settings 1071
+    [void][NppHistoryNative]::SendMessage([NppHistoryNative]::FindControl($settings,1136),0x401,[IntPtr]0x731,[IntPtr]::Zero)
+    Click-Control $settings 1
+    Assert ([NppHistoryNative]::SendMessage($toolbar,0x419,[IntPtr]$ids[0],[IntPtr]::Zero).ToInt32() -ge 0) 'OK shows Capture toolbar button without restart'
+    Assert (([CommandProbe]::Entries($menu))[0].Text -eq $entries[0].Text) 'OK restores original shortcut without restart'
+    if($LayoutOnly) {
+        [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]$ids[3],[IntPtr]::Zero)
+        $list=[NppHistoryNative]::FindControl($main,1002)
+        $panel=[NppHistoryNative]::GetParent($list)
+        Assert ($panel -ne [IntPtr]::Zero) 'History pane opens in layout test'
+        Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1153))) 'History button stays hidden in its own pane'
+        foreach($width in @(270,145,390,270)) {
+            $r=[NppHistoryNative+RECT]::new()
+            [void][NppHistoryNative]::GetWindowRect($panel,[ref]$r)
+            [void][CommandProbe]::MoveWindow($panel,0,0,$width,600,$true)
+            Start-Sleep -Milliseconds 100
+            $rectangles=@(foreach($id in $paneIds){
+                $h=[NppHistoryNative]::FindControl($panel,$id)
+                $b=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($h,[ref]$b)
+                [pscustomobject]@{Id=$id;Left=$b.Left;Top=$b.Top;Right=$b.Right;Bottom=$b.Bottom;Visible=[NppHistoryNative]::IsWindowVisible($h)}
+            })
+            Assert (@($rectangles | Where-Object Visible).Count -eq 6) 'six pane buttons remain visible after wrapping'
+            Assert ((($rectangles | Sort-Object Top,Left).Id -join ',') -eq ($paneIds -join ',')) 'wrapped pane command order preserved'
+            $sizes=@($rectangles | ForEach-Object {"$($_.Right-$_.Left)x$($_.Bottom-$_.Top)"} | Select-Object -Unique)
+            Assert ($sizes.Count -eq 1) 'wrapped buttons have equal widths and heights'
+            $panelBounds=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($panel,[ref]$panelBounds)
+            Assert ((($rectangles | Measure-Object Bottom -Maximum).Maximum) -eq ($panelBounds.Bottom-8)) 'button rows retain the bottom margin'
+            $listBounds=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($list,[ref]$listBounds)
+            Assert ($listBounds.Bottom -le (($rectangles | Measure-Object Top -Minimum).Minimum-5)) 'revision list does not overlap button area'
+            for($a=0;$a -lt $rectangles.Count;$a++) { for($b=$a+1;$b -lt $rectangles.Count;$b++) {
+                $one=$rectangles[$a];$two=$rectangles[$b]
+                Assert (!($one.Left -lt $two.Right -and $one.Right -gt $two.Left -and $one.Top -lt $two.Bottom -and $one.Bottom -gt $two.Top)) 'pane button rectangles do not overlap'
+            }}
+            Snapshot $panel "pane-layout-$width.png"
+        }
+        [pscustomobject]@{Passed=$true;Checks=$script:checks;EvidenceDirectory=$root;Scope='Toolbar geometry and pane layout'}
+        return
+    }
+    $context=@(Read-Context $true)
+    Assert (($context.Text -join '|') -eq ($entries.Text -join '|')) 'submenu order and shortcuts match Plugins menu'
+    Assert (@($context | Where-Object Icon).Count -eq 7) 'all context icons'
+    Assert (!$context[1].Enabled -and !$context[2].Enabled) 'no revisions disables Compare and Restore'
+    [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]$ids[0],[IntPtr]::Zero)
+    [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]$ids[3],[IntPtr]::Zero)
+    $panel=[NppHistoryNative]::FindControl($main,1002)
+    $panel=[NppHistoryNative]::GetParent($panel)
+    Assert ($panel -ne [IntPtr]::Zero) 'History command opens pane'
+    $buttons=@(foreach($id in $paneIds){$h=[NppHistoryNative]::FindControl($panel,$id);$r=[NppHistoryNative+RECT]::new();[void][NppHistoryNative]::GetWindowRect($h,[ref]$r);[pscustomobject]@{Id=$id;Top=$r.Top;Left=$r.Left;Visible=[NppHistoryNative]::IsWindowVisible($h)}})
+    Assert ((($buttons | Sort-Object Top,Left).Id -join ',') -eq ($paneIds -join ',')) 'pane common order'
+    Assert (@($buttons | Where-Object Visible).Count -eq 6) 'six eligible pane commands initially visible'
+    Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1153))) 'History command is never displayed inside its pane'
+    $context=@(Read-Context $true)
+    Assert (!$context[1].Enabled -and !$context[2].Enabled) 'visible pane without selection disables Compare and Restore'
+    $list=[NppHistoryNative]::FindControl($panel,1002)
+    [NppHistoryNative]::BeginLeftClick($list,35,30)
+    Start-Sleep -Milliseconds 200
+    $context=@(Read-Context $true)
+    foreach($i in @(1,2)) {
+        Assert ($context[$i].Enabled -and [NppHistoryNative]::MenuCommandEnabled($main,$ids[$i]) -and [NppHistoryNative]::ToolbarCommandEnabled($main,$ids[$i])) 'selected revision enables Compare/Restore on every command surface'
+    }
+    $settings=Open-Settings
+    Assert ([NppHistoryNative]::Text([NppHistoryNative]::FindControl($settings,1145)) -eq 'No hotkey conflicts.') "hotkey status: $([NppHistoryNative]::Text([NppHistoryNative]::FindControl($settings,1145)))"
+    $restoreKey=[NppHistoryNative]::FindControl($settings,1226)
+    [void][NppHistoryNative]::SendMessage($restoreKey,0x401,[IntPtr]::Zero,[IntPtr]::Zero)
+    [void][NppHistoryNative]::SendMessage($settings,0x111,[IntPtr](1226 -bor (0x300 -shl 16)),$restoreKey)
+    Assert ([NppHistoryNative]::Text([NppHistoryNative]::FindControl($settings,1145)) -eq 'Restore needs a key.') 'new command requires a complete enabled shortcut'
+    [void][NppHistoryNative]::SendMessage($restoreKey,0x401,[IntPtr]0x0733,[IntPtr]::Zero)
+    [void][NppHistoryNative]::SendMessage($settings,0x111,[IntPtr](1226 -bor (0x300 -shl 16)),$restoreKey)
+    Snapshot $settings 'commands-settings.png'
+    # The former Plugins column now edits an independent, opt-in tab bar menu.
+    for($row=0;$row -lt 7;$row++) {
+        $h=[NppHistoryNative]::FindControl($settings,(1202+$row*10))
+        Assert ([NppHistoryNative]::IsWindowEnabled($h) -and [NppHistoryNative]::SendMessage($h,0xF0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64() -eq 0) 'tab context placement is editable and defaults off'
+        Click-Control $settings (1202+$row*10)
+    }
+    $historyPaneChoice=[NppHistoryNative]::FindControl($settings,1261)
+    Assert (![NppHistoryNative]::IsWindowEnabled($historyPaneChoice) -and [NppHistoryNative]::SendMessage($historyPaneChoice,0xF0,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64() -eq 0) 'History Pane checkbox for History is cleared and locked'
+    Assert ([NppHistoryNative]::Text([NppHistoryNative]::FindControl($settings,1272)) -notmatch 'Plugins') 'Plugins column removed'
+    Click-Control $settings 1
+    Start-Sleep -Milliseconds 200
+    $tabMenu=@(Read-Context $true $true)
+    Assert (($tabMenu.Text -join '|') -eq ($entries.Text -join '|')) 'tab submenu has seven commands and active shortcuts in common order'
+    Assert (@($tabMenu | Where-Object Icon).Count -eq 7) 'all tab menu commands have icons'
+    $tabMenuAgain=@(Read-Context $true $true)
+    Assert ($tabMenuAgain.Count -eq 7) 'reused native tab popup has no duplicates'
+    $settings=Open-Settings
+    Click-Control $settings 1151
+    Click-Control $settings 1201 # hide Capture in pane only
+    Click-Control $settings 1254 # hide About in context only
+    Click-Control $settings 1
+    Start-Sleep -Milliseconds 200
+    Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1006))) 'pane placement applied immediately'
+    $context=@(Read-Context $false)
+    Assert (($context.Text -join '|') -eq (($entries | Select-Object -First 6).Text -join '|')) 'inline context filters only the disabled command'
+    $tabMenu=@(Read-Context $false $true)
+    Assert ($tabMenu.Count -eq 7) 'document menu filtering does not change tab menu selection'
+    Assert (([CommandProbe]::Entries($menu)).Count -eq 7) 'Plugins menu remains complete'
+    $again=@(Read-Context $false)
+    Assert ($again.Count -eq 6) 'reopening context does not duplicate commands'
+    # Dispatch the ID read from the actual popup through the host's command route.
+    # Physical mouse selection remains installed-environment UAT.
+    [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]$again[4].Id,[IntPtr]::Zero)
+    Start-Sleep -Milliseconds 250
+    $log=Get-Content "$root\plugins\Config\NppHistory\NppHistory.log" -Raw
+    Assert ($log.Contains('[INFO] History for commands.txt Refreshed.')) 'Refresh ID from context popup dispatches and logs correctly'
+    [void][NppHistoryNative]::SendMessage($main,0x111,[IntPtr]41001,[IntPtr]::Zero)
+    $context=@(Read-Context $false)
+    foreach($i in @(0,1,2,4)) {
+        Assert (!$context[$i].Enabled -and ![NppHistoryNative]::MenuCommandEnabled($main,$ids[$i]) -and ![NppHistoryNative]::ToolbarCommandEnabled($main,$ids[$i])) 'unsaved document disables file actions everywhere'
+    }
+    $settings=Open-Settings
+    for($row=0;$row -lt 7;$row++){if($row -ne 5){Click-Control $settings (1204+$row*10)}}
+    Click-Control $settings 1
+    Start-Sleep -Milliseconds 200
+    $context=@(Read-Context $false)
+    Assert ($context.Count -eq 0) 'all context placements can be disabled'
+    $settings=Open-Settings
+    Click-Control $settings 1201
+    Click-Control $settings 2
+    Start-Sleep -Milliseconds 150
+    Assert (![NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,1006))) 'Cancel discards placement edits'
+    $settings=Open-Settings
+    for($row=1;$row -lt 6;$row++){Click-Control $settings (1201+$row*10)}
+    Click-Control $settings 1
+    Start-Sleep -Milliseconds 150
+    Assert (@($paneIds | Where-Object {[NppHistoryNative]::IsWindowVisible([NppHistoryNative]::FindControl($panel,$_))}).Count -eq 0) 'all pane buttons can be hidden without removing Plugins menu access'
+    [pscustomobject]@{Passed=$true;Checks=$script:checks;EvidenceDirectory=$root}
+} finally {
+    if(!$process.HasExited){[void][NppHistoryNative]::PostMessage($main,0x1F,[IntPtr]::Zero,[IntPtr]::Zero);Stop-Process -Id $process.Id -Force}
+}
