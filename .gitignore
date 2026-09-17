@@ -17,3 +17,5 @@ catalog.db
 # Windows
 Thumbs.db
 Desktop.ini
+
+/.tools/

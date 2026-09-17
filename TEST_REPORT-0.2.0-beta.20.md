@@ -123,7 +123,7 @@ These items are not reported as failed; they are the remaining areas where an au
 - confirm Restore through its overwrite prompt and inspect the reopened editor;
 - confirm Delete through its prompt and inspect the row removal;
 - submit Edit Comment through its modal dialog (the underlying metadata update is directly tested);
-- click the Terry Rogers hyperlink and verify the external browser target;
+- click the project website hyperlink and verify the external browser target;
 - fire real focus-loss, tab-change, exit and multi-file autosave events;
 - run a live custom-root migration from an already populated installed plugin;
 - perform extended visual UAT at non-default DPI, themes and multiple monitor layouts.

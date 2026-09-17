@@ -146,7 +146,7 @@
 - Added an Update settings placeholder with an enable option and daily, weekly or monthly frequency; update checking is intentionally not implemented yet.
 - Added distinct icons to all six responsive History-pane buttons and to the three optional main-toolbar commands.
 - Fixed the History-pane Capture button and made an explicit capture create a Manual capture revision even when its contents match the latest revision.
-- Centred the About heading, changed the author to a clickable Terry Rogers website link, and added a Release Date field.
+- Centred the About heading, changed the author to a clickable project website link, and added a Release Date field.
 - Added a separately maintained release-date value to the DLL version resource; it remains blank until this beta receives a release date.
 - Extended native and runtime coverage for settings persistence, tabs, autosave controls, toolbar registration, pane icons, the About link and forced manual captures.
 

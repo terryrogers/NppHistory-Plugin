@@ -97,7 +97,7 @@ A popup-position audit found that assigning the main Notepad++ owner was insuffi
 
 At 23:23 BST, with no Notepad++ processes running, the verified candidate DLL was installed into the user's portable Notepad++ `plugins\NppHistory` directory. The installed SHA-256 was verified as `D809B48A6CF44B8D3352B425C16BBFE60EEE1C0951A00540885D7C1260A39B07`. The previous DLL was backed up and its hash verified in `build\installed-backups\20260902-232335-tab-orientation\NppHistory.dll`. Settings, history data and the updater were not changed. Notepad++ was left closed; startup and horizontal/vertical installed-environment UAT remain pending. This is a local installation, not a published release.
 
-Completed in Terry Rogers' installed Notepad++ environment on 30 August 2026:
+Completed in the maintainer's installed Notepad++ environment on 30 August 2026:
 
 - With the History pane open and no revision selected, pane Compare/Restore, the Plugins menu Compare command and the main-toolbar Compare command were disabled.
 - Selecting a revision enabled all corresponding Compare controls and pane Restore.
@@ -106,7 +106,7 @@ Completed in Terry Rogers' installed Notepad++ environment on 30 August 2026:
 
 The following remain release gates rather than automated claims:
 
-- Installed beta 25 behavior in Terry Rogers' normal Notepad++ environment.
+- Installed beta 25 behavior in the maintainer's normal Notepad++ environment.
 - Auto Save triggers across multiple real open files, focus changes, tab changes and shutdown.
 - File rename, move, external deletion and missing-open-file reconciliation.
 - Adjacent and custom history locations, including inaccessible paths.
