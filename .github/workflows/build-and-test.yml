@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   build-and-test:
-    runs-on: windows-latest
+    runs-on: ${{ fromJSON(((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || !github.event.repository.private) && '["windows-latest"]' || (vars.RQG_WINDOWS_RUNS_ON || '["windows-latest"]')) }}
     timeout-minutes: 20
 
     steps:
