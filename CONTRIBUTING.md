@@ -1,3 +1,5 @@
+<!-- repository-standard: schema=1; standard=Repository Standards; version=1.0.0; owner=terryrogers; source=local; scope=local-override; override=local-file; overrides=https://github.com/terryrogers/.github/blob/main/CONTRIBUTING.md -->
+
 # Contributing to NppHistory
 
 Thank you for helping improve NppHistory.

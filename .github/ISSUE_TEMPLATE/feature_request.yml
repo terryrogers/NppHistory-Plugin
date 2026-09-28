@@ -1,3 +1,4 @@
+# repository-standard: schema=1; standard=Repository Standards; version=1.0.0; owner=terryrogers; source=local; scope=local-override; override=local-file; overrides=https://github.com/terryrogers/.github/blob/main/.github/ISSUE_TEMPLATE/feature_request.yml
 name: Feature request
 description: Suggest an improvement to NppHistory.
 title: "[Feature]: "
