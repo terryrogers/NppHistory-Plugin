@@ -1,0 +1,14 @@
+# Repository-specific dependency update policy. This file is not inherited.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: nuget
+    directory: "/vs.proj"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
