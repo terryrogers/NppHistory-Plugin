@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "templateVersion": "1.5.10",
+  "templateVersion": "2.0.1",
   "modules": [
     "documentation",
     "licensing",
@@ -23,7 +23,7 @@
     {
       "path": ".github/workflows/quality-documentation.yml",
       "module": "documentation",
-      "sha256": "580c77a7814bd00f8be4bb79cf0dcfbd89c886e38c5222ea6b0fd794a7eb7e28"
+      "sha256": "8a84383d06832229439f9d5ed54086229e6176953c020c6eaa1ef0488c00d204"
     },
     {
       "path": ".github/workflows/quality-module-drift.yml",
@@ -48,12 +48,17 @@
     {
       "path": ".rqg/template/modules/catalog.json",
       "module": "module-drift",
-      "sha256": "ade2b2580b9ef56b750a7c821e4d85a12a9c8263eacab5a0a94bfab523eb385d"
+      "sha256": "22eb72dd2a794e4a7352ed1152f02292f5ca15b4fcee1a37b45cd76f59a0b15a"
     },
     {
       "path": ".rqg/template/modules/documentation/payload/.github/workflows/quality-documentation.yml",
       "module": "module-drift",
-      "sha256": "580c77a7814bd00f8be4bb79cf0dcfbd89c886e38c5222ea6b0fd794a7eb7e28"
+      "sha256": "8a84383d06832229439f9d5ed54086229e6176953c020c6eaa1ef0488c00d204"
+    },
+    {
+      "path": ".rqg/template/modules/documentation/payload/scripts/Test-RepositoryStandards.ps1",
+      "module": "module-drift",
+      "sha256": "a99de896100227530cf060655df5b2f07cf9fe255aec5b1857c93ab2e81da55f"
     },
     {
       "path": ".rqg/template/modules/dotnet/payload/.github/workflows/quality-dotnet.yml",
@@ -88,7 +93,7 @@
     {
       "path": ".rqg/template/modules/module-drift/payload/scripts/Test-QualityGateModuleDrift.ps1",
       "module": "module-drift",
-      "sha256": "10e1661140f2206239d291d0d27f84d5d3047efa1ea2a2b3c79ba1ea71a0b48c"
+      "sha256": "7b88d6eec651f864430e5faede33dea1189db9ab9f9d16a4650a4581317d3b86"
     },
     {
       "path": ".rqg/template/modules/node/payload/.github/workflows/quality-node.yml",
@@ -123,7 +128,7 @@
     {
       "path": ".rqg/template/scripts/Invoke-RepositoryQualityGates.ps1",
       "module": "module-drift",
-      "sha256": "ea33b1f84869d6741b002f2f0db44392d4f09b23c01c34e9631d89cfdca34464"
+      "sha256": "da9137cbacea14fa3db2c41e7d953bfc693a958748d08f0568957e0b4040191d"
     },
     {
       "path": ".rqg/template/template/.githooks/pre-commit",
@@ -228,7 +233,7 @@
     {
       "path": "scripts/rqg-module-catalog.json",
       "module": "module-drift",
-      "sha256": "ade2b2580b9ef56b750a7c821e4d85a12a9c8263eacab5a0a94bfab523eb385d"
+      "sha256": "22eb72dd2a794e4a7352ed1152f02292f5ca15b4fcee1a37b45cd76f59a0b15a"
     },
     {
       "path": "scripts/Test-DetectionPolicy.ps1",
@@ -243,7 +248,12 @@
     {
       "path": "scripts/Test-QualityGateModuleDrift.ps1",
       "module": "module-drift",
-      "sha256": "10e1661140f2206239d291d0d27f84d5d3047efa1ea2a2b3c79ba1ea71a0b48c"
+      "sha256": "7b88d6eec651f864430e5faede33dea1189db9ab9f9d16a4650a4581317d3b86"
+    },
+    {
+      "path": "scripts/Test-RepositoryStandards.ps1",
+      "module": "documentation",
+      "sha256": "a99de896100227530cf060655df5b2f07cf9fe255aec5b1857c93ab2e81da55f"
     },
     {
       "path": "scripts/Test-Secrets.ps1",
