@@ -27,3 +27,6 @@ jobs:
             (Get-Content -LiteralPath $_.FullName -Raw) -match '[ \t]+(?=\r?$)'
           }
           if ($bad) { $bad.FullName | Write-Error; exit 1 }
+      - name: Check Repository Standards
+        shell: pwsh
+        run: ./scripts/Test-RepositoryStandards.ps1 -Repository .
