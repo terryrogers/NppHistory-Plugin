@@ -24,7 +24,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$productVersion = '1.5.10'
+$productVersion = '3.0.0'
 $productRepository = 'https://github.com/Cloud-Hub-Digital/repository-quality-gates'
 $toolRoot = Split-Path -Parent $PSScriptRoot
 $detectionLibraryPath = Join-Path $toolRoot 'modules\module-drift\payload\scripts\RepositoryQualityGates.Detection.ps1'
@@ -141,6 +141,13 @@ function Get-RuleStringArray($Object, [string]$Name, [string]$Context) {
     return @($items)
 }
 
+function Get-OpenProjectWorkPackageDisplayId([string]$Reference) {
+    if ($Reference -match '^(?:OP#(?<displayId>[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]*)|\[(?<displayId>[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]*)\])$') {
+        return [string]$Matches.displayId
+    }
+    throw 'An OpenProject work-package reference must use [PROJECT-123] or OP#PROJECT-123.'
+}
+
 function Read-RepositoryRules([string]$Path, $Catalog) {
     $empty = [pscustomobject]@{ includeModules = @(); repositoryOwnedModules = @(); repositoryOwnedPaths = @(); additionalSecretConfigs = @(); pullRequestReferences = @() }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $empty }
@@ -180,21 +187,17 @@ function Read-RepositoryRules([string]$Path, $Catalog) {
     $include = @(Get-RuleStringArray $moduleRules 'include' 'modules')
     $repositoryOwned = @(Get-RuleStringArray $moduleRules 'repositoryOwned' 'modules')
     $repositoryOwnedPaths = @(Get-RuleStringArray $pathRules 'repositoryOwned' 'paths')
-    $pullRequestReferences = @(Get-RuleStringArray $pullRequestRules 'references' 'pullRequest')
-    foreach ($reference in $pullRequestReferences) {
-        if ($reference -notmatch '^OP#[A-Z][A-Z0-9_]{1,31}-[1-9][0-9]*$') {
-            throw "Unsupported pull-request reference: $reference"
-        }
-    }
-    if (@($pullRequestReferences | ForEach-Object { ($_ -replace '^OP#', '') -replace '-[1-9][0-9]*$', '' } | Sort-Object -Unique).Count -gt 1) {
-        throw 'All pull-request references must belong to the same OpenProject project.'
-    }
     $additionalConfigs = @(Get-RuleStringArray $secretRules 'additionalConfigFiles' 'secretScanning')
+    $pullRequestReferences = @(Get-RuleStringArray $pullRequestRules 'references' 'pullRequest')
+    $workPackageDisplayIds = @($pullRequestReferences | ForEach-Object { Get-OpenProjectWorkPackageDisplayId $_ })
+    if (@($workPackageDisplayIds | Sort-Object -Unique).Count -ne $workPackageDisplayIds.Count) { throw 'The pull-request references contain duplicate OpenProject work-package display IDs.' }
+    $projectIdentifiers = @($workPackageDisplayIds | ForEach-Object { $_ -replace '-[1-9][0-9]*$', '' } | Sort-Object -Unique)
+    if ($projectIdentifiers.Count -gt 1) { throw 'All pull-request references must belong to the same OpenProject project.' }
     $catalogIds = @($Catalog.modules | ForEach-Object { [string]$_.id })
     foreach ($moduleId in @($include + $repositoryOwned | Sort-Object -Unique)) {
         if ($moduleId -notin $catalogIds) { throw "Repository rules reference an unknown module: $moduleId" }
     }
-    $universalRepositoryOwned = @($repositoryOwned | Where-Object { $_ -in @('licensing', 'secret-scanning', 'module-drift') })
+    $universalRepositoryOwned = @($repositoryOwned | Where-Object { $_ -in @('licensing', 'secret-scanning', 'module-drift', 'documentation') })
     if ($universalRepositoryOwned.Count) {
         throw "Universal modules cannot be repository-owned: $($universalRepositoryOwned -join ', ')"
     }
@@ -310,7 +313,7 @@ foreach ($includedId in $includedIds) {
 $applicableIds = @($detectedIds + $includedIds | Sort-Object -Unique)
 $applicableModules = @($catalog.modules | Where-Object { [string]$_.id -in $applicableIds })
 $preservedIds = @(@($PreserveExistingModule) + @($repositoryRules.repositoryOwnedModules) | ForEach-Object { [string]$_ } | Where-Object { $_ } | Sort-Object -Unique)
-$universalPreservedIds = @($preservedIds | Where-Object { $_ -in @('licensing', 'secret-scanning', 'module-drift') })
+$universalPreservedIds = @($preservedIds | Where-Object { $_ -in @('licensing', 'secret-scanning', 'module-drift', 'documentation') })
 if ($universalPreservedIds.Count) {
     throw "Universal modules cannot be preserved outside RQG management: $($universalPreservedIds -join ', ')"
 }
