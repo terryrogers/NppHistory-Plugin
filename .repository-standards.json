@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 2,
+  "profile": "downstream",
+  "account": "terryrogers",
+  "centralRepository": "https://github.com/terryrogers/.github",
+  "licence": {
+    "class": "open-source",
+    "identifier": "GPL-3.0-only",
+    "rightsHolder": "Terry Rogers",
+    "decisionStatus": "approved",
+    "templateVersion": null,
+    "overrideReason": "Approved repository-local exception retaining GPL-3.0-only to preserve existing copyleft distribution terms and compatible third-party GPL obligations."
+  },
+  "supportRoute": "github-discussions",
+  "conductRoute": "confidential-email"
+}
