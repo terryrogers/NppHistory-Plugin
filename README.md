@@ -144,6 +144,13 @@ The runtime smoke test uses an isolated portable copy of an installed 64-bit Not
 
 The comparison workflow was implemented after reviewing WinMerge's open-source location view, merge view, file header, status bar, syntax-color and diff-color implementations. NppHistory now draws its own comparison toolbar icons; the remaining comparison-status artwork is documented in `THIRD_PARTY_NOTICES.md`. NppHistory's comparison and history engines remain independently implemented.
 
+## CI artifact retention
+
+Pull-request build artifacts expire after 7 days. Main-branch and manually
+requested build artifacts expire after 30 days. Download any CI build you need
+to keep before it expires. Permanent distributable downloads belong in
+[GitHub Releases](../../releases); this policy does not remove release assets.
+
 ## License
 
 NppHistory is licensed under GPL-3.0. The bundled Notepad++ and Scintilla interface headers retain their upstream notices.

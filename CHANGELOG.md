@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Limited CI build artifact retention to 7 days for pull requests and 30 days for other builds; GitHub Release assets are unaffected.
 - Corrected common history storage to use a hidden `.npphistory` child beneath the selected folder. Existing catalogue-owned revision buckets from the former visible layout are migrated immediately at startup or after settings changes, with comments, timestamps and revisions preserved; successful source removal is logged at INFO and failures retain the source and log a WARNING.
 - Added DEBUG history-location checks for every reconciled file, including whether revision history is enabled, the exact matching exclusion pattern (if any), configured location, adjacent folder, number of legacy history folders found, and migration outcome.
 - Added safe on-access migration of matching legacy adjacent `.npphistory` revisions into the configured common history folder. Existing common history is merged without overwrites, revision timestamps/comments are retained, collisions receive unique names, failed copies roll back and retain the source, and an empty `.npphistory` folder is removed. Success and failure produce enriched INFO/WARNING log entries.
