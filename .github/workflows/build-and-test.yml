@@ -47,6 +47,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: NppHistory-x64-${{ github.sha }}
+          retention-days: ${{ github.event_name == 'pull_request' && 7 || 30 }}
           path: |
             build/x64/Release/NppHistory.dll
             build/x64/Release/NppHistoryUpdater.exe
